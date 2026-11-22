@@ -1,5 +1,6 @@
 #!/bin/bash
-# Sign a .app with tools/make-cert.sh's local identity when .signing/ has it, then verify.
+# Sign a .app with tools/make-cert.sh's local identity when .signing/ has it (or ad-hoc sign when absent,
+# such as on CI / open-source builds so Tauri's bundled Contents/Resources match the bundle seal), then verify.
 #   tools/sign-mac.sh path/to/Sympony.app
 set -euo pipefail
 APP="$1"
@@ -17,5 +18,11 @@ if [ -f "$KC" ]; then
     codesign --force --options runtime --keychain "$KC" -s "$ID" "$bin"
   done < <(find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0)
   codesign --force --options runtime --entitlements "$ENT" --keychain "$KC" -s "$ID" "$APP"
+else
+  # Ad-hoc sign nested libraries and the bundle so codesign --verify passes after Tauri adds Contents/Resources.
+  while IFS= read -r -d '' bin; do
+    codesign --force --options runtime -s - "$bin"
+  done < <(find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0)
+  codesign --force --options runtime --entitlements "$ENT" -s - "$APP"
 fi
 codesign --verify --deep --strict "$APP"

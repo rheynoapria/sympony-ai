@@ -391,17 +391,17 @@ mod tests {
         assert_eq!(timeouts.recv_body, None);
         assert_eq!(timeouts.global, None);
 
-        // Stream 4 chunks spaced 80ms apart (~320ms total) with a 200ms per-read timeout:
-        // would fail if timeout_recv_body were used, must succeed with timeout_per_read.
+        // Stream 6 chunks spaced 150ms apart (~900ms total) with a 500ms per-read timeout:
+        // would fail if timeout_recv_body were used, must succeed with timeout_per_read even under CI jitter.
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
             let (mut sock, _) = listener.accept().unwrap();
             let mut req_buf = [0u8; 1024];
             let _ = sock.read(&mut req_buf);
-            let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\n");
-            for chunk in [b"aaaa", b"bbbb", b"cccc", b"dddd"] {
-                std::thread::sleep(Duration::from_millis(80));
+            let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 24\r\nConnection: close\r\n\r\n");
+            for chunk in [b"aaaa", b"bbbb", b"cccc", b"dddd", b"eeee", b"ffff"] {
+                std::thread::sleep(Duration::from_millis(150));
                 let _ = sock.write_all(chunk);
                 let _ = sock.flush();
             }
@@ -410,10 +410,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("model.bin");
         let cancel = AtomicBool::new(false);
-        let cfg = download_agent_config(Duration::from_secs(5), Duration::from_millis(200));
+        let cfg = download_agent_config(Duration::from_secs(5), Duration::from_millis(500));
         let url = format!("http://{addr}/model.bin");
         let out = download_file_with_config(&url, &dest, "", |_, _| {}, &cancel, cfg).unwrap();
         handle.join().unwrap();
-        assert_eq!(fs::read(out).unwrap(), b"aaaabbbbccccdddd");
+        assert_eq!(fs::read(out).unwrap(), b"aaaabbbbccccddddeeeeffff");
     }
 }
