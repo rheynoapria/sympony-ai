@@ -68,7 +68,7 @@ jobs:
           find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name 'SHA256SUMS.txt' \) -exec cp {} release-assets/ \;
           ls -lh release-assets/
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
           generate_release_notes: true
