@@ -16,7 +16,7 @@ chrono.workspace = true
 chrono-tz = "0.10"
 qrcodegen = "1.8"
 dirs.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 plist = "1"
 aes-gcm = "0.10"
 ureq = { version = "3", features = ["json"] }
