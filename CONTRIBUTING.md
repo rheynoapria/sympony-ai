@@ -18,6 +18,9 @@ Prerequisites:
 Run the app in development:
 
 ```bash
+# Optional (recommended once): enable fast local pre-commit hygiene & frontend checks
+git config core.hooksPath .githooks
+
 cargo tauri dev
 ```
 
@@ -35,6 +38,8 @@ bun test ./frontend/tests
 
 ## Guidelines
 
+- **Code of Conduct**: All contributors and participants are expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- **Changelog**: Note user-facing changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
 - **Small, focused PRs**: Keep each PR scoped to one bug fix, hardening item, or feature with unit tests covering the behaviour or regression.
 - **Security-sensitive areas**: Changes touching `crates/services/src/exec.rs`, `backup.rs`, `http.rs`, `mcp_client.rs`, `hooks.rs`, `phone.rs`, `src-tauri/src/brain.rs`, `hands.rs`, `eyes.rs`, or `tauri.conf.json` require explicit regression tests.
 - **UI & Motion**: Follow `DESIGN.md` — animate only `transform` and `opacity` (never layout properties), respect `prefers-reduced-motion`, and escape all dynamic text/attributes rendered into HTML.

@@ -1,0 +1,37 @@
+name: Feature Request
+description: Propose a new feature, module, or platform backend enhancement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Target Platform
+      options:
+        - All Platforms
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: What workflow or pain point does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: How should it work inside the notch, Pony, Voice, or Settings?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or Extra Context (optional)

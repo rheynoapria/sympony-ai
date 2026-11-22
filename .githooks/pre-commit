@@ -1,0 +1,36 @@
+#!/bin/bash
+# Fast local pre-commit guard for Sympony.
+# Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && exit 0
+
+# 1. Block accidental commits of signing material, env files, or keychains
+if echo "$STAGED" | grep -qE '(^\.signing/|\.env$|\.keychain-db$|id_rsa|id_ed25519)'; then
+  echo "ERROR: Refusing to commit sensitive local file (signing / env / key)." >&2
+  exit 1
+fi
+
+# 2. Validate changed plain-JS frontend files and run fast frontend unit tests
+if echo "$STAGED" | grep -q '^frontend/'; then
+  while IFS= read -r f; do
+    case "$f" in
+      frontend/*.js|frontend/modules/*.js)
+        if command -v node >/dev/null 2>&1; then
+          node --check "$f"
+        fi
+        ;;
+    esac
+  done <<< "$STAGED"
+  if command -v bun >/dev/null 2>&1; then
+    bun test ./frontend/tests
+  fi
+fi
+
+# 3. Run fast settings-ui unit tests when settings-ui/ changes
+if echo "$STAGED" | grep -q '^settings-ui/'; then
+  if command -v bun >/dev/null 2>&1 && [ -d settings-ui/node_modules ]; then
+    bun test --cwd settings-ui
+  fi
+fi

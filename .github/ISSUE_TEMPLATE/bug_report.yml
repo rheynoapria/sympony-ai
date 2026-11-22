@@ -1,0 +1,72 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Sympony
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please search existing issues first.
+        For **security vulnerabilities**, please use **GitHub Security Advisories** instead of a public issue (see `SECURITY.md`).
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform & Architecture
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows (dev / roadmap)
+        - Linux (dev / roadmap)
+    validations:
+      required: true
+
+  - type: input
+    id: os_version
+    attributes:
+      label: OS Version & Sympony Version
+      placeholder: "e.g., macOS 15.3 / Sympony v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      options:
+        - Notch UI / Modules
+        - Pony AI Assistant (Brain / Skills / Memory / MCP)
+        - Pony Eyes & Hands / Ask AI
+        - Voice Dictation (STT / Dictionary / Trigger)
+        - Notifications / Media / YouTube Mode
+        - Settings & Onboarding
+        - Security / Permissions / Build
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly, including what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Screenshots (optional)
+      description: Remember to strip any personal paths, API keys, or tokens before pasting.
+      render: text

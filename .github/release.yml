@@ -1,0 +1,21 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: "🚀 Features"
+      labels: ["enhancement", "feature"]
+    - title: "🐛 Bug Fixes"
+      labels: ["bug", "fix"]
+    - title: "🛡️ Security"
+      labels: ["security"]
+    - title: "⚡ Performance"
+      labels: ["performance"]
+    - title: "🌍 Cross-Platform"
+      labels: ["windows", "linux", "macos"]
+    - title: "📚 Documentation & Maintenance"
+      labels: ["documentation", "ci", "dependencies", "chore"]
+    - title: "Other Changes"
+      labels: ["*"]

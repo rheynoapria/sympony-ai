@@ -1,16 +1,49 @@
-name: ci
+name: CI
 
 on:
   push:
     branches: ["main"]
   pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  frontend:
+    name: Frontend & Hygiene
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Repository hygiene check
+        run: |
+          if git ls-files | grep -qE '(^\.signing/|\.env$|\.keychain-db$)'; then
+            echo "::error::Sensitive local signing or env file committed to git!"
+            exit 1
+          fi
+      - name: Frontend JS syntax check
+        run: |
+          for f in frontend/*.js frontend/modules/*.js; do
+            node --check "$f"
+          done
+      - name: Frontend unit tests
+        run: bun test ./frontend/tests
+      - name: Settings UI install, test, and build
+        run: |
+          bun install --cwd settings-ui --frozen-lockfile
+          bun test --cwd settings-ui
+          bun run --cwd settings-ui build
+
+  rust:
+    name: Rust & Contract Parity (macOS)
     runs-on: macos-latest
     defaults:
       run:
@@ -18,15 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: oven-sh/setup-bun@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ci-rust-macos
       - name: Rust workspace tests
         run: cargo test --workspace
       - name: Contract parity check
         run: cargo run -q -p services --bin parity
-      - name: Settings UI install, test, and build
-        run: |
-          bun install --cwd settings-ui --frozen-lockfile
-          bun test --cwd settings-ui
-          bun run --cwd settings-ui build
-      - name: Frontend tests
-        run: bun test ./frontend/tests
