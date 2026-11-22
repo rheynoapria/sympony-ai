@@ -1,0 +1,30 @@
+# Builds official installers (Tauri can't cross-build them) and attaches them to the run.
+# Official releases may inject SYMPONY_AI_URL via GitHub Actions secrets; open-source builds leave it unset.
+# Re-enable windows-latest and ubuntu-22.04 once crates/platform implements their OS backends.
+name: release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest] # , windows-latest, ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
+      - run: cargo install tauri-cli --version "^2" --locked
+      - env:
+          SYMPONY_AI_URL: ${{ secrets.SYMPONY_AI_URL }}
+        run: release/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sympony-${{ runner.os }}
+          path: release/out/

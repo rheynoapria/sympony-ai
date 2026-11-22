@@ -1,0 +1,617 @@
+# category: English loanwords in Indonesian work speech
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: one term per line, written in the canonical spelling users expect in a transcript
+# licence: MIT / hand-curated for Sympony
+meeting
+deadline
+invoice
+follow up
+schedule
+reschedule
+feedback
+client
+update
+email
+lunch
+approval
+budget
+briefing
+timeline
+weekly
+standup
+one on one
+review
+commit
+push
+pull request
+merge
+deploy
+staging
+production
+branch
+repository
+frontend
+backend
+API
+endpoint
+refactor
+testing
+sprint
+backlog
+laptop
+password
+login
+screenshot
+server
+cloud
+database
+bug
+error
+restart
+install
+upgrade
+download
+upload
+cash flow
+payroll
+reimburse
+reimbursement
+revenue
+profit
+margin
+forecast
+audit
+campaign
+engagement
+leads
+conversion
+branding
+insight
+followers
+influencer
+endorsement
+KPI
+ROI
+onboarding
+resign
+interview
+freelance
+remote
+WFH
+WFO
+project
+report
+call
+team
+leader
+manager
+online
+offline
+deliverable
+task
+progress
+target
+checklist
+to do list
+brainstorming
+presentation
+slide
+deck
+agenda
+minutes of meeting
+handover
+reminder
+urgent
+ASAP
+FYI
+by the way
+on track
+delay
+pending
+cancel
+confirm
+confirmation
+submit
+draft
+revision
+request
+purchase order
+PO
+quotation
+proposal
+contract
+partner
+partnership
+vendor
+supplier
+stakeholder
+customer service
+support
+helpdesk
+ticket
+issue
+planning
+strategy
+milestone
+roadmap
+scope
+requirement
+workload
+overtime
+annual leave
+WFA
+hybrid
+onsite
+outing
+gathering
+team building
+kick off
+sync
+catch up
+discuss
+align
+alignment
+brief
+breakdown
+highlight
+key point
+recap
+use case
+case study
+benchmark
+framework
+template
+guideline
+SOP
+compliance
+workflow
+pipeline
+escalation
+assign
+assignee
+PIC
+management
+monitoring
+monitor
+tracking
+reporting
+dashboard
+spreadsheet
+attachment
+share screen
+mute
+invite
+invitation
+calendar
+available
+availability
+standby
+on the way
+OTW
+noted
+meeting room
+sign in
+sign up
+logout
+account
+username
+uninstall
+screen record
+reboot
+shutdown
+crash
+hang
+lag
+loading
+refresh
+reload
+reset
+setting
+setup
+default
+custom
+software
+charger
+keyboard
+copy paste
+WiFi
+hotspot
+Bluetooth
+router
+internet
+VPN
+website
+browser
+cache
+app
+feature
+release
+subscription
+free trial
+notification
+pop up
+chat
+voice note
+video call
+admin
+access
+permission
+security
+OTP
+IT
+IT support
+troubleshooting
+maintenance
+downtime
+incident
+log
+performance
+mobile
+dark mode
+shortcut
+click
+search
+filter
+export
+import
+PDF
+QR code
+pull
+PR
+merge request
+deployment
+development
+repo
+fullstack
+code review
+unit test
+QA
+story point
+user story
+scrum
+agile
+kanban
+retrospective
+grooming
+sprint planning
+demo
+hotfix
+fix
+bug fix
+debug
+debugging
+console
+terminal
+command
+script
+code
+coding
+source code
+programmer
+developer
+engineer
+software engineer
+DevOps
+CI/CD
+build
+environment
+config
+configuration
+library
+dependency
+plugin
+SDK
+SQL
+query
+migration
+rollback
+revert
+conflict
+merge conflict
+rebase
+checkout
+release notes
+documentation
+feature request
+mockup
+wireframe
+prototype
+UI
+UX
+UI/UX
+design
+designer
+design system
+component
+landing page
+microservices
+webhook
+integration
+open source
+machine learning
+AI
+artificial intelligence
+data science
+data analyst
+analytics
+prompt
+chatbot
+automation
+LLM
+generative AI
+tech stack
+codebase
+tech debt
+go live
+live
+launching
+rollout
+MVP
+POC
+proof of concept
+PRD
+estimate
+effort
+blocker
+test case
+UAT
+optimize
+cost
+expense
+billing
+payment
+transfer
+cash
+cashback
+discount
+voucher
+promo
+refund
+tax
+balance sheet
+P&L
+budgeting
+cost center
+overhead
+operational
+EBITDA
+net profit
+break even point
+investor
+investment
+funding
+fundraising
+startup
+credit card
+debit card
+paylater
+down payment
+DP
+top up
+e-wallet
+payment gateway
+virtual account
+reconciliation
+Q1
+Q2
+Q3
+Q4
+YoY
+MoM
+closing
+cut off
+petty cash
+pricing
+commission
+bonus
+incentive
+salary
+take home pay
+benefit
+procurement
+inventory
+stock opname
+shipping
+delivery
+COD
+dropship
+dropshipper
+reseller
+B2B
+B2C
+GMV
+churn
+retention
+growth
+brand
+brand awareness
+KOL
+content
+content creator
+copywriting
+copywriter
+caption
+hashtag
+posting
+reels
+live streaming
+viral
+trending
+FYP
+reach
+views
+likes
+SEO
+ads
+digital marketing
+marketing
+social media
+target market
+target audience
+CTA
+funnel
+sales funnel
+sales
+upselling
+cross selling
+deal
+pitch
+pitch deck
+CRM
+account manager
+business development
+sponsorship
+merchandise
+giveaway
+flash sale
+product knowledge
+product manager
+market research
+testimonial
+CPC
+CTR
+ROAS
+OKR
+competitor
+brand ambassador
+storytelling
+moodboard
+newsletter
+email blast
+broadcast
+affiliate
+marketplace
+e-commerce
+online shop
+customer journey
+customer experience
+boost
+offboarding
+freelancer
+full time
+part time
+intern
+recruitment
+recruiter
+headhunter
+hiring
+HRD
+HR
+talent acquisition
+candidate
+CV
+resume
+portfolio
+jobdesk
+job description
+offering letter
+probation
+permanent
+outsourcing
+headcount
+manpower
+staff
+employee
+team leader
+supervisor
+CEO
+CFO
+CTO
+founder
+co-founder
+senior
+junior
+fresh graduate
+career path
+skill
+soft skill
+hard skill
+upskilling
+workshop
+webinar
+seminar
+bootcamp
+mentoring
+coaching
+sharing session
+knowledge sharing
+performance review
+reward
+work life balance
+burnout
+company culture
+check in
+check out
+timesheet
+personal branding
+side hustle
+business trip
+booking
+coworking space
+head office
+meeting point
+dress code
+weekend
+long weekend
+company profile
+business plan
+business model
+NDA
+MoU
+SLA
+due date
+on time
+lead time
+ETA
+QC
+basically
+actually
+anyway
+so far
+make sense
+worth it
+mindset
+share
+link
+file
+folder
+document
+camera
+mic
+customer
+user
+priority
+summary
+best practice
+backup
+owner
+final
+done
+order
+version
+premium
+network
+storage
+verification
+desktop
+smartphone
+button
+URL
+JSON
+HTML
+CSS
+model
+training
+regression
+finance
+accounting
+quarter
+stock
+event
+product
+survey
+career
+mentor
+office
+holiday
+legal

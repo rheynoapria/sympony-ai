@@ -1,0 +1,6 @@
+{"total_count": 2, "incomplete_results": false, "items": [
+ {"title": "Fix the parser", "html_url": "https://github.com/acme/api/pull/42", "number": 42, "repository_url": "https://api.github.com/repos/acme/api",
+  "user": {"login": "budi", "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4"}, "updated_at": "2026-11-18T10:00:00Z", "comments": 3, "draft": false},
+ {"title": "WIP: new page", "html_url": "https://github.com/acme/web/pull/7", "number": 7, "repository_url": "https://api.github.com/repos/acme/web",
+  "user": {"login": "sari", "avatar_url": "https://avatars.githubusercontent.com/u/2?v=4"}, "updated_at": "2026-11-18T12:00:00Z", "comments": 0, "draft": true}
+]}

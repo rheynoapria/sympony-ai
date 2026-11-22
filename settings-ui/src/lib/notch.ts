@@ -1,0 +1,102 @@
+import defaults from "../../../crates/contract/defaults/settings.json";
+import { createMock, type DisplayInfo, type Notch, type Settings } from "./mock.ts";
+
+export type { DisplayInfo, Notch, Settings };
+export { createMock };
+
+export interface SymponyPalette {
+  name: string;
+  c: [[number, number, number], [number, number, number], [number, number, number]];
+}
+
+export interface SymponyWaveHandle {
+  colors(
+    c1: [number, number, number],
+    c2: [number, number, number],
+    c3: [number, number, number]
+  ): void;
+  playing?(on: boolean): void;
+  wake?(): void;
+}
+
+export interface ClockPlace {
+  name: string;
+  tz: string;
+}
+
+export interface ClockInfo {
+  night: boolean;
+  offsetMin?: number;
+  diffMin?: number;
+}
+
+export interface SymponyClockAPI {
+  MAX: number;
+  valid(tz: string): boolean;
+  info(tz: string, now: number): ClockInfo;
+  time(tz: string, now: number, h24?: boolean): string;
+  diffLine(info: ClockInfo): string;
+  cityOf(tz: string): string;
+  places(s: Settings): ClockPlace[];
+  search(q: string, n?: number): ClockPlace[];
+  minutes(hhmm: string): number | null;
+  bell(ctx: AudioContext, half?: boolean): void;
+}
+
+export interface LocalEvent {
+  id: string;
+  title: string;
+  start: number;
+  end: number;
+  location?: string;
+  repeat?: string;
+}
+
+export interface LocalEventForm {
+  title: string;
+  day: string;
+  time: string;
+  minutes: number | string;
+  location?: string;
+  repeat?: string;
+}
+
+export interface LocalEventsAPI {
+  repeats(): [string, string][];
+  fields(e: LocalEvent): {
+    title: string;
+    day: string;
+    time: string;
+    minutes: number;
+    location: string;
+    repeat: string;
+  };
+  make(f: LocalEventForm, prev?: LocalEvent): { event?: LocalEvent; bad?: "title" | "day" | "time" };
+  save(
+    list: LocalEvent[] | undefined,
+    f: LocalEventForm,
+    prev?: LocalEvent
+  ): { event?: LocalEvent; bad?: "title" | "day" | "time" };
+  remove(list: LocalEvent[] | undefined, id: string): void;
+}
+
+declare global {
+  interface Window {
+    notch?: Notch;
+    _t?: (s: string, vars?: Record<string, unknown>) => string;
+    _tLocale?: (en?: string) => string;
+    SYMPONY_OS?: string;
+    SYMPONY_DIR?: string;
+    SYMPONY_LANG?: string;
+    SYMPONY_LANGS?: [string, string, boolean?][];
+    SYMPONY_PALETTES?: Record<string, SymponyPalette>;
+    makeWaves?: (box: HTMLElement, shown: () => boolean) => SymponyWaveHandle | null;
+    SymponyClock?: SymponyClockAPI;
+    LocalEvents?: LocalEventsAPI;
+  }
+}
+
+export const notch: Notch =
+  typeof window !== "undefined" && window.notch
+    ? window.notch
+    : createMock(defaults as Settings);

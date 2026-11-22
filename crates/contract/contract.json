@@ -1,0 +1,2183 @@
+[
+ {
+  "kind": "command",
+  "name": "app_info",
+  "class": "mac",
+  "phase": 1,
+  "stub": {
+   "version": "0.1.0"
+  }
+ },
+ {
+  "kind": "command",
+  "name": "app_quit",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "calendar_get",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "calendar_refresh",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "cat_free",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "displays_list",
+  "class": "mac",
+  "phase": 1,
+  "stub": []
+ },
+ {
+  "kind": "command",
+  "name": "helper_cmd",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "helper_state",
+  "class": "mac",
+  "phase": 2,
+  "stub": {}
+ },
+ {
+  "kind": "command",
+  "name": "log",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_arrows",
+  "class": "fix",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_drag",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_focus",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_hitrect",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_hud",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "notch_opened",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "open_calendar_app",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "open_external",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "settings_get",
+  "class": "mac",
+  "phase": 1,
+  "stub": {}
+ },
+ {
+  "kind": "command",
+  "name": "settings_open",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "settings_reset",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "settings_secret",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "settings_set",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "share_files",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "shelf_start_drag",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "svc",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "update_check",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "update_page",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "command",
+  "name": "update_state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "actions.catalog",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "actions.reveal",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "actions.run",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "adhan.clear",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "adhan.data",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "adhan.pick",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "adhan.start",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "adhan.stop",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "agent.result",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "ai.agents",
+  "phase": 5,
+  "class": "fix",
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "aiusage.get",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "aiusage.status",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "aiusage.watch",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "apps.open",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "audio.devices",
+  "class": "mac",
+  "phase": 2,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "audio.setDefault",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "backup.export",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "backup.import",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "backup.open",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "bookmarks.clipboard",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "bookmarks.meta",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "brief.now",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cat.clear",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cat.data",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cat.pick",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "chat.send",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "claude.answer",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "claude.list",
+  "class": "mac",
+  "phase": 5,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "claude.status",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.clear",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.copy",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.list",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.open",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.pin",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clipboard.remove",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "clock.quiet",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cursor.info",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cursor.pack",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cursor.pick",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cursor.ready",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "cursor.set",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.bar",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.click",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.close",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.closeWindow",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.desktop",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.desktopClose",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.desktopNew",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.desktopStep",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.desktops",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.displays",
+  "class": "excluded",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "dock.dragRaise",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.dropInfo",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.endTask",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.endable",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.focusWindow",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.fromTaskbar",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.glass",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.icon",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.langSettings",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.launch",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.layout",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.layouts",
+  "class": "excluded",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "dock.memory",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.move",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.openFiles",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.pin",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.pinFiles",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.prayer",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.resetIcon",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.reveal",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.scale",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.setIcon",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.shape",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.showDesktop",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.start",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.taskManager",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.taskView",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.trash",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.unpin",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "dock.windows",
+  "class": "excluded",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "fps.allow",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "fps.state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "github.get",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "github.refresh",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.breakDone",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.eyeBreakDone",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.eyeBreakNow",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.get",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.mindful",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "health.water",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lang.prepare",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lang.restart",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lang.state",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "launcher.add",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "launcher.list",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "launcher.open",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "launcher.remove",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "location.detect",
+  "class": "fix",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.forget",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.get",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.pick",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.romanize",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.search",
+  "class": "mac",
+  "phase": 2,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.shift",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.suggest",
+  "class": "mac",
+  "phase": 2,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "lyrics.translate",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notch.page",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.access",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.clear",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.dnd",
+  "class": "excluded",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.grant",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.grantBanners",
+  "phase": 3,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.history",
+  "class": "mac",
+  "phase": 3,
+  "stub": {
+   "unseen": 0
+  }
+ },
+ {
+  "kind": "method",
+  "name": "notif.open",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.read",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.remove",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.seen",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.setDnd",
+  "class": "excluded",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.telegram",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "notif.test",
+  "phase": 3,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "paseo.open",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "paseo.status",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "phone.folder",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "phone.pickFolder",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "phone.start",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "phone.state",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "phone.stop",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.get",
+  "class": "mac",
+  "phase": 4,
+  "stub": {}
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.pause",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.reset",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.setPhase",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.skip",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.start",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "pomodoro.toggle",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "prayer.search",
+  "class": "mac",
+  "phase": 2,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "radio.countries",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "radio.country",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.fav",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.forget",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.list",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "radio.play",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.state",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.stop",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radio.volume",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "radios.set",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "screentime.summary",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.add",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.clear",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.copy",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.list",
+  "class": "mac",
+  "phase": 6,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "shelf.open",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.pick",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.remove",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.reveal",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "shelf.share",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "snap.apply",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "speedtest.get",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "stats.now",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "stats.wifi",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "store.get",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "store.set",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "system.toggle",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "teleprompter.keys",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "teleprompter.read",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "temp.zones",
+  "class": "mac",
+  "phase": 4,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "timer.add",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "timer.get",
+  "class": "mac",
+  "phase": 4,
+  "stub": {}
+ },
+ {
+  "kind": "method",
+  "name": "timer.start",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "timer.stop",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "timer.toggle",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.lists",
+  "class": "mac",
+  "phase": 4,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "todosync.state",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "translate.translate",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "update.whatsNew",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "vlc.status",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wallcolor.get",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wallpaper.clear",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wallpaper.pick",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wallpaper.state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "warmth.get",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "weather.get",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "weather.refresh",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "weather.search",
+  "class": "mac",
+  "phase": 2,
+  "stub": []
+ },
+ {
+  "kind": "method",
+  "name": "wifi.connect",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wifi.disconnect",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "wifi.list",
+  "class": "mac",
+  "phase": 4,
+  "stub": []
+ },
+ {
+  "kind": "event",
+  "name": "agent:tool",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "aiusage",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "aiusage:alert",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "calendar",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "cat:place",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "cat:relay",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "cat:sympony",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "chat:brief",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "chat:searching",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "claude",
+  "class": "mac",
+  "phase": 5,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "clipboard:changed",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "clock:changed",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "colorpick:picked",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "cursor:render",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "dock:leaving",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "dock:maximized",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "dock:moved",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "dock:standby",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "dock:state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "health:goal",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "health:remind",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "helper",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "hud:edge",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "lang",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "lang:ready",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "look:wall",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "look:warm",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:anchor",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:arrow",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:autohideApp",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:blur",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:camera",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:cursor",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:focusHere",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:hover",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:hudOnly",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:leaving",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:navigate",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:near",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:openTab",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:reset",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:soundHere",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:standby",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:toggle",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:topGap",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notch:visible",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notif",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notif:dndSummary",
+  "class": "excluded",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notif:history",
+  "class": "mac",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "notif:quiet",
+  "class": "excluded",
+  "phase": 3,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "onboard:hint",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "phone:received",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "phone:state",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "phone:text",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "pomodoro",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "pomodoro:done",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "prayer:adhanStop",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "prayer:due",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "settings",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "settings:section",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "shelf:changed",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "snap:cursor",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "snap:state",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "speedtest",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "stats",
+  "class": "mac",
+  "phase": 2,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:bookmarks",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:chats",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:notes",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:stopwatch",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:teleprompter",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "store:todo",
+  "class": "mac",
+  "phase": 1,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "tele:key",
+  "class": "mac",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "timer",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "timer:done",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "todosync",
+  "class": "mac",
+  "phase": 4,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "tsCancel",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "tsIn",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "tsNow",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "tsOut",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "viz",
+  "class": "excluded",
+  "phase": 6,
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "weather",
+  "phase": 2,
+  "class": "mac",
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "health",
+  "phase": 4,
+  "class": "mac",
+  "stub": null
+ },
+ {
+  "kind": "event",
+  "name": "github",
+  "phase": 4,
+  "class": "mac",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "speedtest.start",
+  "phase": 6,
+  "class": "mac",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "speedtest.cancel",
+  "phase": 6,
+  "class": "mac",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "bluetooth.connect",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "bluetooth.disconnect",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.signIn",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.cancel",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.signOut",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.syncNow",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.setList",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "todosync.newList",
+  "phase": 4,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "claude.install",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ },
+ {
+  "kind": "method",
+  "name": "claude.remove",
+  "phase": 5,
+  "class": "fix",
+  "stub": null
+ }
+]

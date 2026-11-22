@@ -1,0 +1,493 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  @keyframes kn-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--hue, currentColor) 16%, transparent); }
+  }
+  @keyframes kn-rise {
+    from { transform: translateY(6px); }
+  }
+  @keyframes kn-shimmer {
+    to { transform: translateX(300%); }
+  }
+  @keyframes kn-sweep {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+  }
+  @keyframes kn-sweep-rtl {
+    from { transform: translateX(100%); }
+    to { transform: translateX(-250%); }
+  }
+  @keyframes kn-word {
+    from { opacity: 0; filter: blur(3px); }
+  }
+  @keyframes kn-pop {
+    from { opacity: 0; transform: scale(0.92); }
+  }
+  @keyframes kn-fall {
+    to { opacity: 0; transform: translateY(6px); }
+  }
+  @keyframes kn-fade-in {
+    from { opacity: 0.35; }
+  }
+  @keyframes kn-fade-out {
+    to { opacity: 0; }
+  }
+  @keyframes kn-fade-x {
+    0% { --kn-fade-l: 0px; --kn-fade-r: 28px; }
+    6%, 94% { --kn-fade-l: 28px; --kn-fade-r: 28px; }
+    100% { --kn-fade-l: 28px; --kn-fade-r: 0px; }
+  }
+}
+
+/* =====================================================================
+   MINIMAL MODERN PALETTE (96% Neutral Architecture · 4% Disciplined Color)
+   Inspired by Lunor / Linear / macOS Sequoia + single refined Indigo accent
+   ===================================================================== */
+:root {
+  --radius: 0.7rem;
+  --background: #f4f4f6;
+  --foreground: #111114;
+  --card: #ffffff;
+  --card-foreground: #111114;
+  --popover: #ffffff;
+  --popover-foreground: #111114;
+  --primary: #2c5299;
+  --primary-foreground: #ffffff;
+  --kn-accent: #2c5299;
+  --kn-accent-foreground: #ffffff;
+  --secondary: #efeff2;
+  --secondary-foreground: #18181b;
+  --muted: #f0f0f3;
+  --muted-foreground: #5f5f69;
+  --accent: #ececf0;
+  --accent-foreground: #111114;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: rgba(17, 17, 20, 0.08);
+  --input: rgba(17, 17, 20, 0.12);
+  --ring: #2c5299;
+
+  --shell-bg: #ececf0;
+  --pane-bg: #f8f8fa;
+  --sidebar-card: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-recessed: #f3f3f6;
+  --hairline-top: rgba(255, 255, 255, 0.9);
+  --win-radius: 18px;
+  --pane-radius: 13px;
+  --card-radius: 12px;
+  --control-radius: 9px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+
+  --kn-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --kn-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --kn-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --kn-dur-fast: 120ms;
+  --kn-dur: 180ms;
+  --kn-dur-slow: 280ms;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card: #121215;
+  --card-foreground: #f4f4f5;
+  --popover: #16161a;
+  --popover-foreground: #f4f4f5;
+  --primary: #4361ff;
+  --primary-foreground: #ffffff;
+  --kn-accent: #4361ff;
+  --kn-accent-foreground: #ffffff;
+  --secondary: #1b1b20;
+  --secondary-foreground: #e4e4e7;
+  --muted: #18181c;
+  --muted-foreground: #8b8b96;
+  --accent: #1e1e24;
+  --accent-foreground: #f4f4f5;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.075);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #4361ff;
+
+  --shell-bg: #0c0c0f;
+  --pane-bg: #0e0e11;
+  --sidebar-card: #131317;
+  --surface-elevated: #151519;
+  --surface-recessed: #101014;
+  --hairline-top: rgba(255, 255, 255, 0.05);
+}
+
+/* Cross-platform OS adaptations (same tokens, native OS geometry & type) */
+[data-platform="windows"] {
+  --win-radius: 10px;
+  --pane-radius: 8px;
+  --card-radius: 8px;
+  --control-radius: 6px;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", Inter, -apple-system, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-ui);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+}
+
+.panel-surface {
+  background: var(--surface-elevated);
+  box-shadow: inset 0 1px 0 var(--hairline-top);
+}
+
+/* Rich sculpted icon medallion for section headers (minimal & tactile, low color noise) */
+.section-medallion {
+  position: relative;
+  background:
+    radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--sec-tint, #6366f1) 14%, transparent), transparent 72%),
+    linear-gradient(180deg, #ffffff 0%, #f4f4f7 100%);
+  border: 1px solid rgba(17, 17, 20, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 2px 6px rgba(17, 17, 20, 0.05),
+    0 8px 18px -6px color-mix(in srgb, var(--sec-tint, #6366f1) 18%, transparent);
+}
+.dark .section-medallion {
+  background:
+    radial-gradient(120% 100% at 50% 0%, color-mix(in srgb, var(--sec-tint, #6366f1) 20%, transparent), transparent 72%),
+    linear-gradient(180deg, #1d1d24 0%, #141419 100%);
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.36),
+    0 10px 22px -8px color-mix(in srgb, var(--sec-tint, #6366f1) 26%, transparent);
+}
+
+.card-ico-well {
+  background: linear-gradient(180deg, #fafafa 0%, #f1f1f5 100%);
+  border: 1px solid rgba(17, 17, 20, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.dark .card-ico-well {
+  background: linear-gradient(180deg, #1c1c22 0%, #15151a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* A soft tile behind a Fluent Color icon, in the icon's own colour (`--ic`, components/icons iconTint): a pastel in
+   light mode; in dark mode a richer glass of that colour with a lit edge, so the icons glow rather than sink. */
+.icon-tile {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ic) 20%, #fff), color-mix(in srgb, var(--ic) 9%, #fff));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ic) 18%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.dark .icon-tile {
+  background:
+    radial-gradient(120% 90% at 30% 0%, color-mix(in srgb, var(--ic) 34%, transparent), transparent 70%),
+    linear-gradient(160deg, color-mix(in srgb, var(--ic) 22%, #16151c), color-mix(in srgb, var(--ic) 8%, #121117));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ic) 34%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 4px 14px -6px color-mix(in srgb, var(--ic) 45%, transparent);
+}
+
+.sidebar-inset {
+  background: var(--sidebar-card);
+  box-shadow: inset 0 1px 0 var(--hairline-top), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.dark .sidebar-inset {
+  box-shadow: inset 0 1px 0 var(--hairline-top), 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+@keyframes sy-row-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--primary) 18%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+.row-flash {
+  border-radius: var(--control-radius);
+  animation: sy-row-flash 1.6s ease-out;
+}
+
+/* Knowns UI subtle scrollbar */
+.kn-scroll, .kn-scroll-auto {
+  --kn-thumb: color-mix(in oklch, var(--foreground) 18%, transparent);
+  --kn-thumb-hover: color-mix(in oklch, var(--foreground) 32%, transparent);
+}
+.kn-scroll::-webkit-scrollbar, .kn-scroll-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.kn-scroll::-webkit-scrollbar-track, .kn-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.kn-scroll::-webkit-scrollbar-thumb {
+  border: 2.5px solid transparent;
+  border-radius: 999px;
+  background: var(--kn-thumb) padding-box;
+}
+.kn-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--kn-thumb-hover);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .kn-scroll, .kn-scroll-auto {
+    scrollbar-width: thin;
+    scrollbar-color: var(--kn-thumb) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="kn-"], [class*="kn-"]::before, [class*="kn-"]::after, [data-kn-m], [data-kn-m] * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+/* Fluid 2D GPU Notch tab transitions (clean transform + opacity spring, zero blur/glass) */
+@keyframes sy-tab-from-right {
+  from {
+    opacity: 0;
+    transform: translate3d(8px, 0, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+@keyframes sy-tab-from-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-8px, 0, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+@keyframes sy-eq-bar {
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
+}
+@keyframes sy-beacon {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+/* Native-grade 60/120fps Horizontal Carousel Swipe & Auto-Height Morph */
+.sy-carousel-viewport {
+  overflow: hidden;
+  border-radius: 14px;
+  touch-action: pan-y;
+  transition: height 360ms cubic-bezier(0.28, 0.84, 0.42, 1);
+}
+.sy-carousel-track {
+  display: flex;
+  align-items: flex-start;
+  will-change: transform;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sy-carousel-track[data-dragging="true"] {
+  transition: none;
+}
+.sy-carousel-slide {
+  width: 100%;
+  flex-shrink: 0;
+  will-change: transform, opacity;
+  transform-origin: center center;
+  transition:
+    opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sy-carousel-slide[data-active="false"] {
+  opacity: 0.18;
+  transform: scale(0.965);
+  pointer-events: none;
+}
+.sy-carousel-slide[data-active="true"] {
+  opacity: 1;
+  transform: scale(1);
+}
+.sy-carousel-track[data-dragging="true"] .sy-carousel-slide {
+  opacity: 1;
+  transform: scale(0.99);
+  transition: transform 180ms ease-out, opacity 180ms ease-out;
+}
+.sy-eq-bar {
+  transform-origin: bottom;
+  animation: sy-eq-bar 960ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.sy-beacon {
+  animation: sy-beacon 2.2s ease-in-out infinite;
+}
+.sy-notch-shell {
+  transition:
+    width 360ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-radius 360ms cubic-bezier(0.32, 0.72, 0, 1),
+    padding 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Fluid 2D Flat OLED Notch System (Smooth Continuous Silhouette · Pure Matte 2D · Zero Glass) */
+.notch-oled {
+  background: #000000;
+  color: #ffffff;
+  font-family: "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", Inter, system-ui, sans-serif;
+}
+.notch-display {
+  font-feature-settings: "tnum" 1, "ss01" 1, "cv05" 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+}
+.oled-num {
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.notch-mono {
+  font-family: "SF Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.notch-eyebrow {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  color: #7c7c86;
+}
+/* Pure flat 2D matte ink surface — zero gradients, zero borders, zero glass rim, zero shadows */
+.oled-pocket {
+  background: #0f0f12;
+  transition:
+    background-color 220ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.oled-pocket-hover:hover {
+  background: #16161b;
+}
+.oled-tab-active {
+  background: #1c1c23;
+}
+.oled-primary-pill {
+  background: #4361ff;
+  transition:
+    background-color 180ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.oled-primary-pill:hover {
+  background: #536eff;
+}
+.oled-primary-pill:active {
+  transform: scale(0.95);
+}
+.oled-divider-x {
+  height: 1px;
+  background: #18181e;
+}
+.oled-divider-y {
+  width: 1px;
+  background: #18181e;
+}
+/* Smooth sweeping 28px concave top ears (Apple / Nusa continuous silhouette) */
+.notch-ears {
+  position: relative;
+}
+.notch-ears::before,
+.notch-ears::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+}
+.notch-ears::before {
+  left: -28px;
+  background: radial-gradient(circle at 0 100%, transparent 27.6px, #000000 28.2px);
+}
+.notch-ears::after {
+  right: -28px;
+  background: radial-gradient(circle at 100% 100%, transparent 27.6px, #000000 28.2px);
+}
+.notch-ears-sm {
+  position: relative;
+}
+.notch-ears-sm::before,
+.notch-ears-sm::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+.notch-ears-sm::before {
+  left: -20px;
+  background: radial-gradient(circle at 0 100%, transparent 19.6px, #000000 20.2px);
+}
+.notch-ears-sm::after {
+  right: -20px;
+  background: radial-gradient(circle at 100% 100%, transparent 19.6px, #000000 20.2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sy-eq-bar, .sy-beacon {
+    animation: none !important;
+  }
+  .sy-notch-shell, .sy-carousel-viewport, .sy-carousel-track, .sy-carousel-slide, .oled-pocket, .oled-primary-pill {
+    transition: none !important;
+  }
+}
+
+/* Selects: our own chevron, inset from the edge (WebKit's native arrow sits flush against it) */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 2.25rem !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  background-position: right 0.75rem center;
+}
+.dark select:not([multiple]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+[dir="rtl"] select:not([multiple]) { background-position: left 0.75rem center; }
+select:not([multiple]):disabled { opacity: 0.55; }

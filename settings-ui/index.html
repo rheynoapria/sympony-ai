@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Sympony Settings</title>
+    <!-- the saved theme (or the system's) before the first paint, so a dark Settings never opens white
+         (components/ui/knowns/theme-toggle.tsx themeScript, App.tsx THEME_STORAGE_KEY) -->
+    <style>html{background:#f4f4f6}html.dark{background:#09090b}</style>
+    <script>try{var t=localStorage.getItem("sympony.settingsTheme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}</script>
+    <script src="../i18n.js"></script>
+    <script src="../bridge.js"></script>
+    <script src="../palettes.js"></script>
+    <script src="../waves.js"></script>
+    <script src="../clock.js"></script>
+    <script src="../localevents.js"></script>
+    <script src="../pony.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,886 @@
+# category: Indonesian place names (provinces, cities, regencies, islands, geography, landmarks, transport hubs)
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: one place name per line, official EYD spelling, ordered roughly by how often it is spoken (most common first)
+# licence: MIT / hand-curated for Sympony
+Indonesia
+Jakarta
+Surabaya
+Bandung
+Medan
+Bekasi
+Tangerang
+Depok
+Semarang
+Palembang
+Makassar
+Bogor
+Yogyakarta
+Jogja
+Solo
+Surakarta
+Malang
+Denpasar
+Bali
+Jawa
+Sumatra
+Kalimantan
+Sulawesi
+Papua
+Batam
+Pekanbaru
+Padang
+Bandar Lampung
+Balikpapan
+Samarinda
+Pontianak
+Banjarmasin
+Manado
+Jabodetabek
+Tangerang Selatan
+Nusantara
+IKN
+Ibu Kota Nusantara
+DKI Jakarta
+Daerah Khusus Jakarta
+Jawa Barat
+Jawa Tengah
+Jawa Timur
+Banten
+DI Yogyakarta
+Daerah Istimewa Yogyakarta
+Aceh
+Sumatera Utara
+Sumatera Barat
+Riau
+Kepulauan Riau
+Jambi
+Sumatera Selatan
+Kepulauan Bangka Belitung
+Bengkulu
+Lampung
+Nusa Tenggara Barat
+Nusa Tenggara Timur
+Kalimantan Barat
+Kalimantan Tengah
+Kalimantan Selatan
+Kalimantan Timur
+Kalimantan Utara
+Sulawesi Utara
+Gorontalo
+Sulawesi Tengah
+Sulawesi Barat
+Sulawesi Selatan
+Sulawesi Tenggara
+Maluku
+Maluku Utara
+Papua Barat
+Papua Selatan
+Papua Tengah
+Papua Pegunungan
+Papua Barat Daya
+Jakarta Pusat
+Jakarta Selatan
+Jakarta Barat
+Jakarta Timur
+Jakarta Utara
+Kepulauan Seribu
+Lombok
+Flores
+Madura
+Sumba
+Timor
+Bangka
+Belitung
+Nusa Penida
+Raja Ampat
+Labuan Bajo
+Mataram
+Kupang
+Jayapura
+Ambon
+Kendari
+Palu
+Banda Aceh
+Serang
+Cilegon
+Cirebon
+Sukabumi
+Tasikmalaya
+Cimahi
+Banjar
+Magelang
+Salatiga
+Pekalongan
+Tegal
+Kediri
+Blitar
+Madiun
+Mojokerto
+Pasuruan
+Probolinggo
+Batu
+Tanjungpinang
+Pangkalpinang
+Dumai
+Binjai
+Pematangsiantar
+Tebing Tinggi
+Tanjungbalai
+Sibolga
+Padangsidimpuan
+Gunungsitoli
+Sabang
+Lhokseumawe
+Langsa
+Subulussalam
+Bukittinggi
+Payakumbuh
+Padang Panjang
+Pariaman
+Sawahlunto
+Solok
+Sungai Penuh
+Prabumulih
+Lubuklinggau
+Pagar Alam
+Metro
+Bima
+Singkawang
+Palangka Raya
+Banjarbaru
+Bontang
+Tarakan
+Bitung
+Tomohon
+Kotamobagu
+Parepare
+Palopo
+Baubau
+Tual
+Ternate
+Tidore Kepulauan
+Sorong
+Monas
+Monumen Nasional
+Bundaran HI
+Sudirman
+Thamrin
+SCBD
+Kuningan
+Mega Kuningan
+Senayan
+Gelora Bung Karno
+GBK
+Blok M
+Kemang
+Menteng
+Cikini
+Tanah Abang
+Glodok
+Kota Tua
+Ancol
+Taman Mini Indonesia Indah
+TMII
+Ragunan
+Kelapa Gading
+Pantai Indah Kapuk
+PIK
+Pondok Indah
+Kebayoran Baru
+Tebet
+Cawang
+Semanggi
+Gatot Subroto
+Rasuna Said
+Casablanca
+Mangga Dua
+Pasar Baru
+Pluit
+Sunter
+Cilandak
+Lebak Bulus
+Fatmawati
+Pasar Minggu
+Cempaka Putih
+Kalibata
+Grogol
+Slipi
+Palmerah
+Kebon Jeruk
+Cengkareng
+Kemayoran
+Pulo Gadung
+Cibubur
+Cileungsi
+Cinere
+Ciputat
+Pamulang
+Bintaro
+BSD
+Serpong
+Gading Serpong
+Alam Sutera
+Karawaci
+Lippo Karawaci
+Cikarang
+Cikupa
+Balaraja
+Cibinong
+Sentul
+Puncak
+Bodetabek
+Istana Merdeka
+Istana Negara
+Istana Bogor
+Masjid Istiqlal
+Gereja Katedral
+Kebun Raya Bogor
+Soekarno-Hatta
+Bandara Soekarno-Hatta
+Halim Perdanakusuma
+Ngurah Rai
+Juanda
+Kualanamu
+Yogyakarta International Airport
+YIA
+Adisutjipto
+Adi Soemarmo
+Ahmad Yani
+Sultan Hasanuddin
+Sultan Aji Muhammad Sulaiman
+Sepinggan
+Sam Ratulangi
+Minangkabau
+Sultan Syarif Kasim II
+Hang Nadim
+Sultan Mahmud Badaruddin II
+Kertajati
+Husein Sastranegara
+Supadio
+Syamsudin Noor
+Radin Inten II
+Sultan Iskandar Muda
+Zainuddin Abdul Madjid
+El Tari
+Pattimura
+Sentani
+Komodo
+Gambir
+Pasar Senen
+Manggarai
+Jakarta Kota
+Dukuh Atas
+Karet
+Halim
+Tegalluar
+Padalarang
+Kiaracondong
+Tugu
+Lempuyangan
+Solo Balapan
+Purwosari
+Semarang Tawang
+Poncol
+Gubeng
+Pasar Turi
+Surabaya Kota
+Malang Kota Baru
+Cirebon Kejaksan
+Purwokerto
+Kutoarjo
+Borobudur
+Prambanan
+Candi
+Candi Borobudur
+Candi Prambanan
+Candi Mendut
+Candi Sewu
+Candi Plaosan
+Ratu Boko
+Malioboro
+Keraton Yogyakarta
+Kraton
+Tugu Jogja
+Taman Sari
+Alun-Alun
+Parangtritis
+Kaliurang
+Gunungkidul
+Dieng
+Lawang Sewu
+Kota Lama
+Sam Poo Kong
+Keraton Surakarta
+Pura Mangkunegaran
+Jembatan Suramadu
+Tugu Pahlawan
+Gedung Sate
+Jalan Braga
+Braga
+Dago
+Lembang
+Kawah Putih
+Tangkuban Parahu
+Ciwidey
+Pangandaran
+Kuta
+Ubud
+Seminyak
+Canggu
+Sanur
+Nusa Dua
+Jimbaran
+Uluwatu
+Legian
+Tanah Lot
+Kintamani
+Bedugul
+Lovina
+Amed
+Tegallalang
+Pura Besakih
+Garuda Wisnu Kencana
+GWK
+Nusa Lembongan
+Nusa Ceningan
+Gili Trawangan
+Gili Air
+Gili Meno
+Senggigi
+Mandalika
+Sirkuit Mandalika
+Karimunjawa
+Bunaken
+Wakatobi
+Derawan
+Togean
+Pulau Komodo
+Pulau Rinca
+Taman Nasional Komodo
+Taman Nasional Lorentz
+Taman Nasional Ujung Kulon
+Taman Nasional Gunung Leuser
+Taman Nasional Bromo Tengger Semeru
+Taman Nasional Way Kambas
+Taman Nasional Tanjung Puting
+Kawah Ijen
+Jam Gadang
+Ngarai Sianok
+Istana Maimun
+Masjid Raya Baiturrahman
+Jembatan Ampera
+Pulau Kemaro
+Benteng Rotterdam
+Pantai Losari
+Pantai Kuta
+Pantai Pink
+Pulau Samosir
+Parapat
+Berastagi
+Banda Neira
+Pulau Weh
+Pulau Pramuka
+Pulau Tidung
+Pulau Untung Jawa
+Nusakambangan
+Titik Nol
+Sepaku
+Penajam
+Tol Jagorawi
+Tol Cipali
+Tol Cikampek
+Tol Trans-Jawa
+Tol Trans-Sumatra
+Tol Dalam Kota
+JORR
+Jagorawi
+Sleman
+Bantul
+Kulon Progo
+Bandung Barat
+Garut
+Cianjur
+Karawang
+Purwakarta
+Subang
+Indramayu
+Majalengka
+Sumedang
+Ciamis
+Banyumas
+Cilacap
+Purbalingga
+Banjarnegara
+Kebumen
+Purworejo
+Wonosobo
+Temanggung
+Kendal
+Batang
+Pemalang
+Brebes
+Boyolali
+Klaten
+Sukoharjo
+Wonogiri
+Karanganyar
+Sragen
+Grobogan
+Blora
+Rembang
+Pati
+Kudus
+Jepara
+Demak
+Ungaran
+Banyuwangi
+Jember
+Bondowoso
+Situbondo
+Lumajang
+Sidoarjo
+Gresik
+Lamongan
+Tuban
+Bojonegoro
+Ngawi
+Magetan
+Ponorogo
+Pacitan
+Trenggalek
+Tulungagung
+Nganjuk
+Jombang
+Bangkalan
+Sampang
+Pamekasan
+Sumenep
+Pandeglang
+Lebak
+Badung
+Gianyar
+Tabanan
+Buleleng
+Karangasem
+Klungkung
+Bangli
+Jembrana
+Lombok Barat
+Lombok Tengah
+Lombok Timur
+Lombok Utara
+Sumbawa
+Sumbawa Barat
+Dompu
+Manggarai Barat
+Ruteng
+Ende
+Sikka
+Maumere
+Flores Timur
+Larantuka
+Ngada
+Bajawa
+Nagekeo
+Sumba Barat Daya
+Sumba Timur
+Waingapu
+Sumba Barat
+Belu
+Atambua
+Malaka
+Timor Tengah Selatan
+Timor Tengah Utara
+Alor
+Rote Ndao
+Lembata
+Deli Serdang
+Serdang Bedagai
+Langkat
+Karo
+Simalungun
+Asahan
+Labuhanbatu
+Toba
+Samosir
+Tapanuli Utara
+Tapanuli Selatan
+Tapanuli Tengah
+Mandailing Natal
+Nias
+Dairi
+Humbang Hasundutan
+Batu Bara
+Aceh Besar
+Pidie
+Aceh Utara
+Bireuen
+Aceh Tengah
+Takengon
+Aceh Barat
+Meulaboh
+Aceh Selatan
+Aceh Tamiang
+Gayo Lues
+Simeulue
+Agam
+Tanah Datar
+Lima Puluh Kota
+Pesisir Selatan
+Padang Pariaman
+Pasaman
+Kepulauan Mentawai
+Dharmasraya
+Sijunjung
+Kampar
+Bengkalis
+Siak
+Indragiri Hilir
+Indragiri Hulu
+Rokan Hilir
+Rokan Hulu
+Pelalawan
+Kuantan Singingi
+Kepulauan Meranti
+Bintan
+Karimun
+Natuna
+Lingga
+Kepulauan Anambas
+Muaro Jambi
+Kerinci
+Bungo
+Tebo
+Merangin
+Sarolangun
+Batanghari
+Tanjung Jabung Barat
+Ogan Komering Ilir
+Ogan Komering Ulu
+Ogan Ilir
+Muara Enim
+Lahat
+Musi Banyuasin
+Musi Rawas
+Banyuasin
+Empat Lawang
+Bangka Tengah
+Belitung Timur
+Rejang Lebong
+Bengkulu Utara
+Mukomuko
+Kaur
+Lampung Selatan
+Lampung Tengah
+Lampung Timur
+Lampung Utara
+Pesawaran
+Pringsewu
+Tanggamus
+Way Kanan
+Tulang Bawang
+Pesisir Barat
+Kubu Raya
+Mempawah
+Sambas
+Ketapang
+Sanggau
+Sintang
+Kapuas Hulu
+Bengkayang
+Landak
+Kotawaringin Barat
+Pangkalan Bun
+Kotawaringin Timur
+Sampit
+Kapuas
+Barito Utara
+Barito Selatan
+Katingan
+Seruyan
+Pulang Pisau
+Tanah Laut
+Kotabaru
+Tanah Bumbu
+Hulu Sungai Selatan
+Hulu Sungai Tengah
+Hulu Sungai Utara
+Tabalong
+Tapin
+Barito Kuala
+Martapura
+Kutai Kartanegara
+Tenggarong
+Kutai Timur
+Sangatta
+Kutai Barat
+Berau
+Paser
+Penajam Paser Utara
+Mahakam Ulu
+Bulungan
+Tanjung Selor
+Nunukan
+Malinau
+Minahasa
+Minahasa Utara
+Minahasa Selatan
+Bolaang Mongondow
+Kepulauan Sangihe
+Kepulauan Talaud
+Bone Bolango
+Boalemo
+Pohuwato
+Donggala
+Sigi
+Parigi Moutong
+Poso
+Morowali
+Banggai
+Luwuk
+Tolitoli
+Buol
+Mamuju
+Majene
+Polewali Mandar
+Pasangkayu
+Mamasa
+Gowa
+Sungguminasa
+Maros
+Bone
+Watampone
+Bulukumba
+Takalar
+Jeneponto
+Bantaeng
+Sinjai
+Wajo
+Sengkang
+Soppeng
+Sidenreng Rappang
+Pinrang
+Enrekang
+Tana Toraja
+Toraja Utara
+Toraja
+Rantepao
+Makale
+Luwu
+Luwu Utara
+Luwu Timur
+Pangkajene dan Kepulauan
+Barru
+Kepulauan Selayar
+Selayar
+Konawe
+Kolaka
+Muna
+Buton
+Bombana
+Maluku Tengah
+Masohi
+Seram Bagian Barat
+Seram Bagian Timur
+Buru
+Kepulauan Aru
+Maluku Tenggara
+Kepulauan Tanimbar
+Saumlaki
+Halmahera Utara
+Tobelo
+Halmahera Barat
+Halmahera Tengah
+Halmahera Selatan
+Halmahera Timur
+Kepulauan Sula
+Pulau Morotai
+Keerom
+Sarmi
+Biak Numfor
+Kepulauan Yapen
+Waropen
+Mamberamo Raya
+Manokwari
+Fakfak
+Kaimana
+Teluk Bintuni
+Teluk Wondama
+Pegunungan Arfak
+Sorong Selatan
+Maybrat
+Tambrauw
+Merauke
+Boven Digoel
+Mappi
+Asmat
+Mimika
+Timika
+Nabire
+Paniai
+Dogiyai
+Deiyai
+Intan Jaya
+Puncak Jaya
+Lanny Jaya
+Jayawijaya
+Wamena
+Yahukimo
+Tolikara
+Pegunungan Bintang
+Nduga
+Yalimo
+Mamberamo Tengah
+Cikampek
+Kepanjen
+Tigaraksa
+Soreang
+Kajen
+Slawi
+Mungkid
+Wates
+Wonosari
+Bangil
+Kraksaan
+Genteng
+Borneo
+Nusa Tenggara
+Halmahera
+Seram
+Tidore
+Biak
+Siberut
+Morotai
+Kepulauan Kei
+Kepulauan Banda
+Kepulauan Karimunjawa
+Kepulauan Sunda Besar
+Kepulauan Sunda Kecil
+Kepulauan Natuna
+Kepulauan Bangka
+Pulau Jawa
+Pulau Sumatra
+Pulau Bali
+Pulau Lombok
+Pulau Madura
+Selat Sunda
+Selat Malaka
+Selat Bali
+Selat Lombok
+Selat Makassar
+Selat Madura
+Selat Karimata
+Selat Bangka
+Selat Alas
+Laut Jawa
+Laut Banda
+Laut Arafura
+Laut Flores
+Laut Sulawesi
+Laut Maluku
+Laut Natuna Utara
+Laut Cina Selatan
+Laut Tiongkok Selatan
+Laut Timor
+Laut Sawu
+Laut Halmahera
+Laut Seram
+Samudra Hindia
+Samudra Pasifik
+Teluk Jakarta
+Teluk Bone
+Teluk Tomini
+Teluk Cenderawasih
+Teluk Balikpapan
+Danau Toba
+Danau Maninjau
+Danau Singkarak
+Danau Kerinci
+Danau Poso
+Danau Matano
+Danau Towuti
+Danau Tempe
+Danau Sentani
+Danau Batur
+Danau Beratan
+Danau Kelimutu
+Danau Segara Anak
+Danau Ranau
+Danau Sentarum
+Danau Lut Tawar
+Danau Limboto
+Danau Paniai
+Telaga Warna
+Rawa Pening
+Gunung Bromo
+Gunung Semeru
+Gunung Merapi
+Gunung Merbabu
+Gunung Rinjani
+Gunung Kerinci
+Gunung Agung
+Gunung Batur
+Gunung Gede
+Gunung Pangrango
+Gunung Salak
+Gunung Tangkuban Parahu
+Gunung Papandayan
+Gunung Ciremai
+Gunung Slamet
+Gunung Sindoro
+Gunung Sumbing
+Gunung Lawu
+Gunung Arjuno
+Gunung Welirang
+Gunung Penanggungan
+Gunung Kelud
+Gunung Ijen
+Gunung Raung
+Gunung Sinabung
+Gunung Marapi
+Gunung Krakatau
+Anak Krakatau
+Gunung Tambora
+Gunung Kelimutu
+Gunung Lewotobi
+Gunung Ruang
+Gunung Lokon
+Gunung Soputan
+Gunung Dempo
+Gunung Leuser
+Gunung Latimojong
+Gunung Binaiya
+Gunung Galunggung
+Gunung Guntur
+Gunung Andong
+Gunung Prau
+Gunung Ungaran
+Gunung Muria
+Puncak Carstensz
+Pegunungan Jayawijaya
+Bukit Barisan
+Pegunungan Meratus
+Sungai Kapuas
+Sungai Mahakam
+Sungai Barito
+Sungai Musi
+Sungai Batanghari
+Bengawan Solo
+Sungai Brantas
+Sungai Citarum
+Sungai Ciliwung
+Sungai Cisadane
+Sungai Kahayan
+Sungai Mamberamo
+Sungai Digul
+Sungai Siak
+Sungai Indragiri
+Sungai Kampar
+Sungai Rokan
+Sungai Asahan
+Sungai Martapura
+Sungai Progo
+Sungai Serayu
+Sungai Deli
+Sungai Kayan
+Kali Code

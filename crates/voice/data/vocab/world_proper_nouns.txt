@@ -1,0 +1,1236 @@
+# category: common world proper nouns
+# source: generic list from general knowledge (all 193 UN member states + 2 observers and their capitals, continents, oceans, major cities, historical figures, religions, holidays); not derived from any evaluation data
+# format: one term per line; Indonesian exonym first where it differs, English/local name also listed
+# licence: MIT / hand-curated for Sympony
+Afganistan
+Afghanistan
+Kabul
+Afrika Selatan
+South Africa
+Pretoria
+Cape Town
+Bloemfontein
+Albania
+Tirana
+Aljazair
+Algeria
+Aljir
+Algiers
+Amerika Serikat
+United States
+Washington, D.C.
+Andorra
+Andorra la Vella
+Angola
+Luanda
+Antigua dan Barbuda
+Antigua and Barbuda
+Saint John's
+Arab Saudi
+Saudi Arabia
+Riyadh
+Argentina
+Buenos Aires
+Armenia
+Yerevan
+Australia
+Canberra
+Austria
+Wina
+Vienna
+Azerbaijan
+Baku
+Bahama
+Nassau
+Bahrain
+Manama
+Bangladesh
+Dhaka
+Barbados
+Bridgetown
+Belanda
+Netherlands
+Amsterdam
+Den Haag
+The Hague
+Belarus
+Minsk
+Belgia
+Belgium
+Brussel
+Brussels
+Belize
+Belmopan
+Benin
+Porto-Novo
+Bhutan
+Thimphu
+Bolivia
+Sucre
+La Paz
+Bosnia dan Herzegovina
+Bosnia and Herzegovina
+Sarajevo
+Botswana
+Gaborone
+Brasil
+Brazil
+Brasilia
+Britania Raya
+United Kingdom
+Inggris
+England
+London
+Brunei Darussalam
+Brunei
+Bandar Seri Begawan
+Bulgaria
+Sofia
+Burkina Faso
+Ouagadougou
+Burundi
+Gitega
+Bujumbura
+Ceko
+Czech Republic
+Czechia
+Praha
+Prague
+Chad
+N'Djamena
+Chili
+Santiago
+Denmark
+Kopenhagen
+Copenhagen
+Djibouti
+Dominika
+Dominica
+Roseau
+Ekuador
+Quito
+El Salvador
+San Salvador
+Eritrea
+Asmara
+Estonia
+Tallinn
+Eswatini
+Mbabane
+Etiopia
+Ethiopia
+Addis Ababa
+Fiji
+Suva
+Filipina
+Philippines
+Manila
+Finlandia
+Finland
+Helsinki
+Gabon
+Libreville
+Gambia
+Banjul
+Georgia
+Tbilisi
+Ghana
+Accra
+Grenada
+Saint George's
+Guatemala
+Guatemala City
+Guinea
+Conakry
+Guinea-Bissau
+Bissau
+Guinea Khatulistiwa
+Equatorial Guinea
+Malabo
+Guyana
+Georgetown
+Haiti
+Port-au-Prince
+Honduras
+Tegucigalpa
+Hongaria
+Hungary
+Budapest
+India
+New Delhi
+Irak
+Bagdad
+Baghdad
+Iran
+Teheran
+Tehran
+Irlandia
+Ireland
+Dublin
+Islandia
+Iceland
+Reykjavik
+Israel
+Yerusalem
+Jerusalem
+Italia
+Italy
+Roma
+Rome
+Jamaika
+Kingston
+Jepang
+Japan
+Tokyo
+Jerman
+Germany
+Berlin
+Kamboja
+Cambodia
+Phnom Penh
+Kamerun
+Yaounde
+Kanada
+Canada
+Ottawa
+Kazakhstan
+Astana
+Kenya
+Nairobi
+Kirgizstan
+Bishkek
+Kiribati
+Tarawa
+Kolombia
+Colombia
+Bogota
+Komoro
+Moroni
+Republik Kongo
+Republic of the Congo
+Kongo
+Brazzaville
+Republik Demokratik Kongo
+Democratic Republic of the Congo
+Kinshasa
+Korea Selatan
+South Korea
+Seoul
+Korea Utara
+North Korea
+Pyongyang
+Kosta Rika
+Costa Rica
+San Jose
+Kroasia
+Croatia
+Zagreb
+Kuba
+Cuba
+Havana
+Kuwait
+Kuwait City
+Laos
+Vientiane
+Latvia
+Riga
+Lebanon
+Libanon
+Beirut
+Lesotho
+Maseru
+Liberia
+Monrovia
+Libya
+Tripoli
+Liechtenstein
+Vaduz
+Lituania
+Vilnius
+Luksemburg
+Luxembourg
+Madagaskar
+Antananarivo
+Makedonia Utara
+North Macedonia
+Skopje
+Maladewa
+Maldives
+Male
+Malawi
+Lilongwe
+Malaysia
+Kuala Lumpur
+Putrajaya
+Mali
+Bamako
+Malta
+Valletta
+Maroko
+Morocco
+Rabat
+Kepulauan Marshall
+Marshall Islands
+Majuro
+Mauritania
+Nouakchott
+Mauritius
+Port Louis
+Meksiko
+Mexico
+Mexico City
+Kota Meksiko
+Mesir
+Egypt
+Kairo
+Cairo
+Mikronesia
+Palikir
+Moldova
+Chisinau
+Monako
+Monaco
+Mongolia
+Ulaanbaatar
+Ulan Bator
+Montenegro
+Podgorica
+Mozambik
+Maputo
+Myanmar
+Burma
+Naypyidaw
+Namibia
+Windhoek
+Nauru
+Yaren
+Nepal
+Kathmandu
+Niger
+Niamey
+Nigeria
+Abuja
+Nikaragua
+Managua
+Norwegia
+Norway
+Oslo
+Oman
+Muskat
+Muscat
+Pakistan
+Islamabad
+Palau
+Ngerulmud
+Panama
+Panama City
+Pantai Gading
+Ivory Coast
+Côte d'Ivoire
+Yamoussoukro
+Abidjan
+Papua Nugini
+Papua New Guinea
+Port Moresby
+Paraguay
+Asuncion
+Peru
+Lima
+Polandia
+Poland
+Warsawa
+Warsaw
+Portugal
+Lisboa
+Lisbon
+Prancis
+France
+Paris
+Qatar
+Doha
+Republik Afrika Tengah
+Central African Republic
+Bangui
+Republik Dominika
+Dominican Republic
+Santo Domingo
+Rumania
+Romania
+Bukares
+Bucharest
+Rusia
+Russia
+Moskwa
+Moscow
+Rwanda
+Kigali
+Saint Kitts dan Nevis
+Saint Kitts and Nevis
+Basseterre
+Saint Lucia
+Castries
+Saint Vincent dan Grenadine
+Saint Vincent and the Grenadines
+Kingstown
+Samoa
+Apia
+San Marino
+Sao Tome dan Principe
+Sao Tome and Principe
+Sao Tome
+Selandia Baru
+New Zealand
+Wellington
+Senegal
+Dakar
+Serbia
+Beograd
+Belgrade
+Seychelles
+Victoria
+Sierra Leone
+Freetown
+Singapura
+Singapore
+Siprus
+Cyprus
+Nikosia
+Nicosia
+Slowakia
+Slovakia
+Bratislava
+Slovenia
+Ljubljana
+Kepulauan Solomon
+Solomon Islands
+Honiara
+Somalia
+Mogadishu
+Spanyol
+Spain
+Madrid
+Sri Lanka
+Sri Jayawardenepura Kotte
+Kolombo
+Colombo
+Sudan
+Khartoum
+Sudan Selatan
+South Sudan
+Juba
+Suriah
+Syria
+Damaskus
+Damascus
+Suriname
+Paramaribo
+Swedia
+Sweden
+Stockholm
+Swiss
+Switzerland
+Bern
+Tajikistan
+Dushanbe
+Tanjung Verde
+Cabo Verde
+Cape Verde
+Praia
+Tanzania
+Dodoma
+Thailand
+Bangkok
+Tiongkok
+China
+Cina
+Beijing
+Peking
+Timor Leste
+East Timor
+Dili
+Togo
+Lome
+Tonga
+Nuku'alofa
+Trinidad dan Tobago
+Trinidad and Tobago
+Port of Spain
+Tunisia
+Tunis
+Turki
+Turkey
+Türkiye
+Ankara
+Turkmenistan
+Ashgabat
+Tuvalu
+Funafuti
+Uganda
+Kampala
+Ukraina
+Ukraine
+Kyiv
+Kiev
+Uni Emirat Arab
+United Arab Emirates
+Abu Dhabi
+Uruguay
+Montevideo
+Uzbekistan
+Tashkent
+Vanuatu
+Port Vila
+Venezuela
+Caracas
+Vietnam
+Hanoi
+Yaman
+Yemen
+Sana'a
+Yordania
+Jordan
+Amman
+Yunani
+Greece
+Athena
+Athens
+Zambia
+Lusaka
+Zimbabwe
+Harare
+Palestina
+Palestine
+Ramallah
+Vatikan
+Vatican
+Kota Vatikan
+Vatican City
+Takhta Suci
+Holy See
+Asia
+Eropa
+Afrika
+Amerika
+Amerika Utara
+Amerika Selatan
+Amerika Tengah
+Amerika Latin
+Antarktika
+Antartika
+Oseania
+Eurasia
+Timur Tengah
+Asia Tenggara
+Asia Timur
+Asia Selatan
+Asia Tengah
+Asia Pasifik
+Timur Jauh
+Eropa Barat
+Eropa Timur
+Eropa Utara
+Eropa Selatan
+Eropa Tengah
+Afrika Utara
+Afrika Barat
+Afrika Timur
+Afrika Sub-Sahara
+Tanduk Afrika
+Maghreb
+Syam
+Mesopotamia
+Anatolia
+Persia
+Skandinavia
+Nordik
+Balkan
+Kaukasus
+Karibia
+Mediterania
+Siberia
+Baltik
+Iberia
+Indochina
+Anak Benua India
+Semenanjung Arab
+Semenanjung Korea
+Semenanjung Malaya
+Sinai
+Polinesia
+Melanesia
+Patagonia
+Arktik
+Kutub Utara
+Kutub Selatan
+Khatulistiwa
+Ekuator
+Greenland
+Hawaii
+Alaska
+Skotlandia
+Wales
+Irlandia Utara
+Taiwan
+Hong Kong
+Makau
+Tibet
+Xinjiang
+Kashmir
+Kurdistan
+Krimea
+Jalur Gaza
+Gaza
+Tepi Barat
+Dataran Tinggi Golan
+Sisilia
+Kreta
+Tasmania
+Kepulauan Galapagos
+Samudra Atlantik
+Samudra Arktik
+Samudra Selatan
+Laut Tengah
+Laut Merah
+Laut Hitam
+Laut Kaspia
+Laut Mati
+Laut Utara
+Laut Baltik
+Laut Karibia
+Laut Jepang
+Laut Arab
+Laut Andaman
+Teluk Persia
+Teluk Benggala
+Teluk Meksiko
+Selat Gibraltar
+Selat Hormuz
+Selat Bosporus
+Selat Inggris
+Terusan Suez
+Terusan Panama
+Sungai Nil
+Nil
+Sungai Amazon
+Sungai Gangga
+Gangga
+Sungai Yangtze
+Yangtze
+Sungai Kuning
+Sungai Mekong
+Mekong
+Sungai Mississippi
+Mississippi
+Sungai Danube
+Danube
+Sungai Rhein
+Sungai Eufrat
+Eufrat
+Sungai Tigris
+Tigris
+Sungai Yordan
+Sungai Indus
+Indus
+Brahmaputra
+Sungai Volga
+Volga
+Thames
+Seine
+Rio Grande
+Tiber
+Danau Victoria
+Danau Baikal
+Baikal
+Danau Jenewa
+Great Lakes
+Air Terjun Niagara
+Niagara
+Himalaya
+Pegunungan Himalaya
+Alpen
+Pegunungan Alpen
+Andes
+Pegunungan Andes
+Pegunungan Rocky
+Ural
+Pegunungan Ural
+Pirenia
+Hindu Kush
+Karakoram
+Gunung Everest
+Everest
+K2
+Gunung Kilimanjaro
+Kilimanjaro
+Mont Blanc
+Gunung Fuji
+Fuji
+Gunung Olympus
+Gunung Sinai
+Vesuvius
+Gurun Sahara
+Sahara
+Gurun Gobi
+Gobi
+Kalahari
+Atacama
+Serengeti
+New York
+Manhattan
+Los Angeles
+Chicago
+Houston
+San Francisco
+Las Vegas
+Miami
+Boston
+Seattle
+Philadelphia
+Atlanta
+Dallas
+Detroit
+New Orleans
+San Diego
+Denver
+Phoenix
+Orlando
+Honolulu
+Silicon Valley
+Hollywood
+Wall Street
+Toronto
+Vancouver
+Montreal
+Cancun
+Guadalajara
+Rio de Janeiro
+Sao Paulo
+Cusco
+Machu Picchu
+Medellin
+Cartagena
+Manchester
+Liverpool
+Birmingham
+Edinburgh
+Glasgow
+Oxford
+Cambridge
+Belfast
+Marseille
+Lyon
+Nice
+Bordeaux
+Munchen
+Munich
+Hamburg
+Frankfurt
+Koln
+Cologne
+Stuttgart
+Dresden
+Milan
+Milano
+Venesia
+Venice
+Napoli
+Naples
+Firenze
+Florence
+Turin
+Pisa
+Barcelona
+Valencia
+Sevilla
+Malaga
+Granada
+Ibiza
+Porto
+Rotterdam
+Utrecht
+Antwerpen
+Jenewa
+Geneva
+Zurich
+Davos
+Krakow
+Sankt Peterburg
+Saint Petersburg
+Vladivostok
+Odesa
+Istanbul
+Konstantinopel
+Constantinople
+Bizantium
+Dubai
+Mekkah
+Makkah
+Madinah
+Medina
+Jeddah
+Tel Aviv
+Betlehem
+Bethlehem
+Nazaret
+Karbala
+Aleppo
+Marrakesh
+Aleksandria
+Alexandria
+Giza
+Lagos
+Johannesburg
+Zanzibar
+Dar es Salaam
+Shanghai
+Guangzhou
+Kanton
+Shenzhen
+Wuhan
+Chengdu
+Xi'an
+Lhasa
+Taipei
+Osaka
+Kyoto
+Yokohama
+Hiroshima
+Nagasaki
+Kobe
+Okinawa
+Busan
+Jeju
+Mumbai
+Bombay
+Kolkata
+Kalkuta
+Bengaluru
+Bangalore
+Agra
+Jaipur
+Karachi
+Ho Chi Minh City
+Saigon
+Chiang Mai
+Phuket
+Penang
+Johor Bahru
+Kota Kinabalu
+Siem Reap
+Angkor Wat
+Yangon
+Sydney
+Melbourne
+Brisbane
+Perth
+Darwin
+Auckland
+Firaun
+Ramses
+Tutankhamun
+Kleopatra
+Cleopatra
+Nefertiti
+Alexander Agung
+Alexander the Great
+Iskandar Zulkarnain
+Sokrates
+Plato
+Aristoteles
+Pythagoras
+Archimedes
+Homer
+Julius Caesar
+Konfusius
+Confucius
+Lao Tzu
+Sun Tzu
+Qin Shi Huang
+Siddhartha Gautama
+Nabi Muhammad
+Muhammad
+Yesus
+Yesus Kristus
+Isa Almasih
+Musa
+Ibrahim
+Abraham
+Maryam
+Bunda Maria
+Paus
+Paus Fransiskus
+Paus Leo XIV
+Dalai Lama
+Martin Luther
+Abu Bakar
+Umar bin Khattab
+Utsman bin Affan
+Ali bin Abi Thalib
+Salahuddin Al-Ayyubi
+Harun al-Rasyid
+Ibnu Sina
+Al-Khawarizmi
+Ibnu Khaldun
+Ibnu Batutah
+Jalaluddin Rumi
+Al-Ghazali
+Walisongo
+Sunan Kalijaga
+Charlemagne
+Genghis Khan
+Kublai Khan
+Timur Lenk
+Marco Polo
+Cheng Ho
+Muhammad Al-Fatih
+Suleiman Agung
+Leonardo da Vinci
+Michelangelo
+Galileo
+Galileo Galilei
+Copernicus
+Johannes Gutenberg
+Christopher Columbus
+Columbus
+Vasco da Gama
+Ferdinand Magellan
+Jeanne d'Arc
+William Shakespeare
+Shakespeare
+Isaac Newton
+Newton
+Albert Einstein
+Einstein
+Charles Darwin
+Marie Curie
+Nikola Tesla
+Thomas Edison
+Alexander Graham Bell
+Louis Pasteur
+Sigmund Freud
+Karl Marx
+Stephen Hawking
+Mozart
+Beethoven
+Johann Sebastian Bach
+Vincent van Gogh
+Van Gogh
+Pablo Picasso
+Picasso
+Napoleon
+Napoleon Bonaparte
+George Washington
+Abraham Lincoln
+Lincoln
+Benjamin Franklin
+Ratu Victoria
+Lenin
+Stalin
+Hitler
+Adolf Hitler
+Mussolini
+Winston Churchill
+Churchill
+Roosevelt
+John F. Kennedy
+Kennedy
+Martin Luther King Jr.
+Mao Zedong
+Ho Chi Minh
+Mahatma Gandhi
+Gandhi
+Nehru
+Mustafa Kemal Ataturk
+Ataturk
+Nelson Mandela
+Mandela
+Fidel Castro
+Che Guevara
+Ratu Elizabeth II
+Raja Charles III
+Putri Diana
+Mikhail Gorbachev
+Bunda Teresa
+Anne Frank
+Neil Armstrong
+Yuri Gagarin
+Muhammad Ali
+Pele
+Maradona
+Messi
+Ronaldo
+Barack Obama
+Obama
+Donald Trump
+Trump
+Joe Biden
+Biden
+Vladimir Putin
+Putin
+Xi Jinping
+Narendra Modi
+Volodymyr Zelensky
+Zelensky
+Kim Jong Un
+Angela Merkel
+Emmanuel Macron
+Recep Tayyip Erdogan
+Erdogan
+Benjamin Netanyahu
+Netanyahu
+Yasser Arafat
+Mahathir Mohamad
+Lee Kuan Yew
+Anwar Ibrahim
+Bill Gates
+Steve Jobs
+Elon Musk
+Mark Zuckerberg
+Jeff Bezos
+Michael Jackson
+Soekarno
+Bung Karno
+Mohammad Hatta
+Hatta
+Soeharto
+B.J. Habibie
+Habibie
+Abdurrahman Wahid
+Gus Dur
+Megawati Soekarnoputri
+Megawati
+Susilo Bambang Yudhoyono
+SBY
+Joko Widodo
+Jokowi
+Prabowo Subianto
+Prabowo
+Gibran Rakabuming Raka
+Kartini
+Raden Ajeng Kartini
+Diponegoro
+Pangeran Diponegoro
+Cut Nyak Dhien
+Teuku Umar
+Imam Bonjol
+Ki Hajar Dewantara
+Ahmad Dahlan
+Hasyim Asy'ari
+Jenderal Sudirman
+Tan Malaka
+Bung Tomo
+Dewi Sartika
+W.R. Supratman
+Chairil Anwar
+Pramoedya Ananta Toer
+Gajah Mada
+Hayam Wuruk
+Raden Wijaya
+Ken Arok
+Airlangga
+Sultan Agung
+Majapahit
+Sriwijaya
+Singasari
+Tarumanegara
+Kutai
+Pajajaran
+Samudera Pasai
+Kesultanan Aceh
+VOC
+Hindia Belanda
+Romawi
+Romawi Kuno
+Kekaisaran Romawi
+Yunani Kuno
+Kekaisaran Bizantium
+Ottoman
+Kesultanan Utsmaniyah
+Utsmaniyah
+Mesir Kuno
+Sumeria
+Babilonia
+Kekaisaran Persia
+Kartago
+Maya
+Inca
+Aztec
+Viking
+Mongol
+Kekaisaran Mongol
+Mughal
+Dinasti Han
+Dinasti Tang
+Dinasti Ming
+Dinasti Qing
+Samurai
+Shogun
+Abbasiyah
+Bani Umayyah
+Andalusia
+Khulafaur Rasyidin
+Kekaisaran Romawi Suci
+Uni Soviet
+USSR
+Jerman Timur
+Jerman Barat
+Yugoslavia
+Angkor
+Siam
+Perang Salib
+Perang Dunia I
+Perang Dunia II
+Perang Dingin
+Revolusi Prancis
+Revolusi Industri
+Renaisans
+Abad Pertengahan
+Holocaust
+Perang Vietnam
+Islam
+Muslim
+Kristen
+Kristiani
+Nasrani
+Katolik
+Katolik Roma
+Protestan
+Ortodoks
+Anglikan
+Lutheran
+Pentakosta
+Hindu
+Buddha
+Buddhisme
+Konghucu
+Khonghucu
+Taoisme
+Shinto
+Sikh
+Sikhisme
+Yahudi
+Yudaisme
+Zoroastrianisme
+Baha'i
+Sunni
+Syiah
+Ahmadiyah
+Sufi
+Al-Qur'an
+Alquran
+Al Quran
+Quran
+Alkitab
+Injil
+Taurat
+Zabur
+Bible
+Perjanjian Lama
+Perjanjian Baru
+Weda
+Bhagavad Gita
+Tripitaka
+Talmud
+Torah
+Hadis
+Mahabharata
+Ramayana
+Ka'bah
+Kakbah
+Masjidil Haram
+Masjid Nabawi
+Masjid Al-Aqsa
+Al-Aqsa
+Hari Natal
+Christmas
+Easter
+Idul Fitri
+Idul Adha
+Idul Kurban
+Ramadhan
+Muharram
+Nuzulul Quran
+Lailatul Qadar
+Hari Arafah
+Vesak
+Diwali
+Deepavali
+Holi
+Hanukkah
+Passover
+Yom Kippur
+Thanksgiving
+Halloween
+Valentine
+April Mop
+Oktoberfest
+Songkran
+Perserikatan Bangsa-Bangsa
+United Nations
+Dewan Keamanan PBB
+Majelis Umum PBB
+UNESCO
+UNICEF
+Organisasi Kesehatan Dunia
+UNHCR
+UNDP
+FAO
+ILO
+WTO
+Organisasi Perdagangan Dunia
+Dana Moneter Internasional
+Bank Dunia
+World Bank
+Bank Pembangunan Asia
+APEC
+NATO
+Uni Eropa
+European Union
+Uni Afrika
+Liga Arab
+Organisasi Kerja Sama Islam
+OPEC
+G7
+G20
+BRICS
+Gerakan Non-Blok
+GNB
+Persemakmuran
+Commonwealth
+Mahkamah Internasional
+Mahkamah Pidana Internasional
+ICC
+Interpol
+Palang Merah
+Amnesty International
+Greenpeace
+WWF
+OECD
+NASA
+Hadiah Nobel
+Nobel
+FIFA
+Piala Dunia
+UEFA
+Liga Champions
+IOC
+Komite Olimpiade Internasional
+Olimpiade
+Asian Games
+SEA Games
+Federal Reserve
+Gedung Putih
+White House
+Pentagon
+Kremlin
+CIA
+FBI
+Hamas
+Hizbullah
+Taliban
+ISIS
+Al-Qaeda
+BBC
+CNN
+Reuters
+Al Jazeera

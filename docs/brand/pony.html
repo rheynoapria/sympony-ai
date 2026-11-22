@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Sympony · Pony character (live, frontend/pony.js)</title>
+<style>
+:root { --ink: #231d3d; --soft: #6b6390; --card: rgba(255,255,255,.72); --line: rgba(120,100,220,.16); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; color: var(--ink);
+  background: radial-gradient(900px 500px at 10% 0%, #8f7bff 0%, #6d55e8 38%, transparent 70%), linear-gradient(#e9e4ff, #f6f3ff); min-height: 100vh; padding: 28px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; }
+.hero { grid-row: span 2; position: relative; color: #fff; padding: 26px 30px; min-height: 470px; }
+.hero h1 { font-size: 44px; letter-spacing: -.02em; display: flex; align-items: center; gap: 14px; }
+.hero h1 canvas { width: 64px; height: 54px; }
+.hero p { margin-top: 10px; font-size: 22px; line-height: 1.3; opacity: .85; font-weight: 300; }
+.hero p b { font-weight: 700; opacity: 1; }
+#hero { position: absolute; left: 6%; right: 2%; bottom: 0; height: 330px; width: 92%; }
+.card { background: var(--card); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 22px; padding: 18px 22px; }
+.card h2 { font-size: 17px; margin-bottom: 12px; }
+.row { display: flex; gap: 6px; justify-content: space-between; }
+.cell { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12.5px; color: var(--soft); text-align: center; }
+.cell canvas { width: 100%; max-width: 120px; height: 96px; }
+.wide { grid-column: span 2; }
+.idea { display: flex; align-items: center; gap: 18px; }
+.idea p { color: var(--soft); font-size: 13px; }
+.notch { position: relative; height: 150px; border-radius: 26px 26px 0 0; background: linear-gradient(#6b55e6, #3b2a9c); overflow: hidden; border: 6px solid #2a2342; border-bottom: 0; }
+.notch .bar { position: absolute; left: 0; right: 0; top: 0; height: 30px; display: flex; align-items: center; gap: 14px; padding: 0 18px; color: #fff; font-size: 13px; font-weight: 600; }
+.notch .bar span:last-child { margin-left: auto; opacity: .8; }
+.notch .cut { position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 150px; height: 30px; background: #0b0918; border-radius: 0 0 16px 16px; z-index: 2; box-shadow: 0 6px 18px rgba(20,8,60,.35); }
+/* the idea: the notch becomes Pony's fringe. Pony sits over the notch, the fringe (wider than the notch) covers it
+   from the top edge of the screen, the eyes peek out just below */
+.notch canvas { position: absolute; left: 50%; top: -74px; transform: translateX(-50%); width: 280px; height: 206px; z-index: 3; }
+.colors .cell canvas { height: 84px; }
+small { color: var(--soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <h1><canvas id="logo" width="64" height="54"></canvas>Sympony</h1>
+    <p>Your AI Companion<br>That <b>Frees the Notch.</b></p>
+    <canvas id="hero"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Varian</h2>
+    <div class="row">
+      <div class="cell"><canvas data-shape="Classic"></canvas>Classic</div>
+      <div class="cell"><canvas data-shape="Soft"></canvas>Soft (Fluffy)</div>
+      <div class="cell"><canvas data-shape="Pro"></canvas>Pro (Headset)</div>
+    </div>
+  </section>
+
+  <section class="card colors">
+    <h2>Warna poni</h2>
+    <div class="row" id="colors"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Ekspresi <small>(mood di app)</small></h2>
+    <div class="row">
+      <div class="cell"><canvas data-mood="idle"></canvas>Idle</div>
+      <div class="cell"><canvas data-mood="happy"></canvas>Happy</div>
+      <div class="cell"><canvas data-mood="think"></canvas>Thinking</div>
+      <div class="cell"><canvas data-mood="listening"></canvas>Listening</div>
+      <div class="cell"><canvas data-mood="working"></canvas>Working</div>
+      <div class="cell"><canvas data-mood="attention"></canvas>Surprised</div>
+      <div class="cell"><canvas data-mood="sleep"></canvas>Sleepy</div>
+      <div class="cell"><canvas data-mood="done"></canvas>Excited</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Di desktop</h2>
+    <div class="notch"><div class="bar"><span></span><span>Sympony</span><span>⌕ ◔ ▭</span></div><div class="cut"></div><canvas id="peek"></canvas></div>
+  </section>
+
+  <section class="card idea">
+    <div><h2>Idenya</h2><p>Sympony adalah teman AI yang "melampiaskan poni": notch di layar menjadi karakter yang hidup, interaktif, dan ekspresif. Klik Pony untuk mencolek; arahkan kursor, ia menoleh.</p></div>
+  </section>
+</div>
+
+<!-- 2D by default; add ?3d to the address to see the Three.js Pony -->
+<script>if (/[?&]3d\b/.test(location.search)) document.write('<script src="../../frontend/vendor/three/three.min.js"><\/script>');</script>
+
+<script src="../../frontend/pony.js"></script>
+<script>
+const P = window.Pony;
+const live = [];
+const m = (cv, o) => { const h = P.mount(cv, o); if (h) { live.push(h); cv.addEventListener('click', () => h.poke()); } return h; };
+m(document.getElementById('hero'), { scale: 1.05, floorFrac: 0.9, mood: 'idle' });
+m(document.getElementById('logo'), { scale: 1.1, floorFrac: 0.95, mood: 'idle' });
+document.querySelectorAll('[data-shape]').forEach((cv) => m(cv, { shape: cv.dataset.shape, scale: 0.95, floorFrac: 0.88 }));
+document.querySelectorAll('[data-mood]').forEach((cv) => m(cv, { mood: cv.dataset.mood, scale: 0.92, floorFrac: 0.9, hop: 0.4 }));
+const row = document.getElementById('colors');
+P.COLORS.forEach((c) => { const d = document.createElement('div'); d.className = 'cell'; d.innerHTML = `<canvas></canvas>${c}`; row.appendChild(d); m(d.querySelector('canvas'), { color: c, scale: 0.95, floorFrac: 0.88 }); });
+m(document.getElementById('peek'), { scale: 0.92, floorFrac: 0.94, mood: 'idle', shadow: false });
+addEventListener('mousemove', (e) => live.forEach((h) => h.lookAt((e.clientX / innerWidth - 0.5) * 2, (e.clientY / innerHeight - 0.5) * 2)));
+</script>
+</body>
+</html>

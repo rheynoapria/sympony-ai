@@ -1,0 +1,26 @@
+[package]
+name = "voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Offline Indonesian-first voice dictation pipeline for Sympony"
+
+[features]
+default = []
+cuda = ["transcribe-cpp/cuda"]
+vulkan = ["transcribe-cpp/vulkan"]
+
+[dependencies]
+dirs.workspace = true
+libc = "0.2"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+sherpa-onnx = "2.0"
+transcribe-cpp = "0.4"
+unicode-normalization = "0.1"
+ureq = "3.5"
+
+[dev-dependencies]
+tempfile.workspace = true

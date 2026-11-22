@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      - name: Rust workspace tests
+        run: cargo test --workspace
+      - name: Contract parity check
+        run: cargo run -q -p services --bin parity
+      - name: Settings UI install, test, and build
+        run: |
+          bun install --cwd settings-ui --frozen-lockfile
+          bun test --cwd settings-ui
+          bun run --cwd settings-ui build
+      - name: Frontend tests
+        run: bun test ./frontend/tests

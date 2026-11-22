@@ -1,0 +1,154 @@
+# category: core priority (common in Indonesian office/tech speech and likely misheard by an Indonesian-biased ASR model)
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: one term per line, written in the canonical spelling users expect in a transcript
+# licence: MIT / hand-curated for Sympony
+meeting
+invoice
+deadline
+lunch
+commit
+client
+schedule
+feedback
+Zoom
+WhatsApp
+Google Meet
+follow up
+reschedule
+approval
+budget
+briefing
+update
+email
+review
+weekly
+standup
+one on one
+timeline
+push
+pull request
+merge
+deploy
+staging
+production
+branch
+repository
+frontend
+backend
+endpoint
+refactor
+testing
+sprint
+backlog
+laptop
+password
+login
+screenshot
+server
+cloud
+database
+bug
+error
+restart
+install
+upgrade
+download
+upload
+cash flow
+payroll
+reimburse
+revenue
+profit
+margin
+forecast
+audit
+campaign
+engagement
+leads
+conversion
+branding
+insight
+followers
+influencer
+endorsement
+onboarding
+resign
+interview
+freelance
+remote
+Microsoft Teams
+Excel
+PowerPoint
+Google Drive
+Gmail
+Slack
+Notion
+Canva
+Figma
+Jira
+Trello
+GitHub
+ChatGPT
+Claude
+Gemini
+Copilot
+YouTube
+Instagram
+TikTok
+LinkedIn
+Gojek
+Grab
+GrabFood
+GoFood
+Shopee
+Tokopedia
+ShopeePay
+GoPay
+QRIS
+Telkomsel
+IndiHome
+Traveloka
+Docker
+Kubernetes
+Vercel
+VS Code
+Google Sheets
+Google Docs
+Google Calendar
+Outlook
+checklist
+to do list
+brainstorming
+presentation
+slide
+deck
+agenda
+handover
+reminder
+urgent
+quotation
+proposal
+vendor
+stakeholder
+milestone
+roadmap
+workload
+overtime
+WFH
+deliverable
+dashboard
+spreadsheet
+attachment
+share screen
+hotfix
+debug
+code review
+merge conflict
+scrum
+KPI
+ROI
+reels
+caption
+hashtag
+content creator
+jobdesk

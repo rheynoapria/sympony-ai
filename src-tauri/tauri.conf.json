@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sympony",
+  "version": "0.1.0",
+  "identifier": "app.sympony",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "../brand/icon.icns",
+      "../brand/icon.ico",
+      "../brand/icon-1024.png"
+    ],
+    "resources": {
+      "../crates/voice/data/**/*": "voice/data/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    }
+  }
+}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="referrer" content="strict-origin-when-cross-origin">
+<!-- Sympony's YouTube video mode (src-tauri/src/youtube.rs serves this as http://localhost:<port>/yt.html; the notch
+     loads it in an iframe: YouTube refuses tauri:// (153) and, for label videos, 127.0.0.1 (150)). Always muted;
+     driven by the notch over postMessage: {type:load,id,at,playing} {type:play} {type:pause} {type:seek,at} {type:rate,r};
+     answers {type:ready} {type:state,s,t} {type:time,t,d} every 500 ms {type:error,code}. -->
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:fixed;inset:0;width:100vw;height:100vh}</style>
+</head><body><div id="p"></div>
+<script>
+const PARENT_OK = (o) => o === 'tauri://localhost' || o === 'http://tauri.localhost' || o === 'https://tauri.localhost' || /^http:\/\/localhost(:\d+)?$/.test(o || '');
+let parentOrigin = '*';
+const say = (m) => parent.postMessage(m, parentOrigin); // (nothing secret in these)
+let player = null, ready = false, pending = null;
+function load(m) {
+  // (not playing: cued, as a pause right after loading may be dropped)
+  const v = { videoId: m.id, startSeconds: Number(m.at) || 0 };
+  if (m.playing) player.loadVideoById(v); else player.cueVideoById(v);
+  player.mute();
+}
+window.addEventListener('message', (e) => {
+  if (e.source !== parent || !PARENT_OK(e.origin) || !e.data || typeof e.data !== 'object') return;
+  parentOrigin = e.origin;
+  const m = e.data;
+  if (!ready) { if (m.type === 'load') pending = m; return; }
+  if (m.type === 'load') load(m);
+  else if (m.type === 'play') { player.mute(); player.playVideo(); }
+  else if (m.type === 'pause') player.pauseVideo();
+  else if (m.type === 'seek') player.seekTo(Number(m.at) || 0, true);
+  else if (m.type === 'rate') player.setPlaybackRate(Number(m.r) || 1);
+});
+window.onYouTubeIframeAPIReady = () => {
+  player = new YT.Player('p', {
+    width: '100%', height: '100%',
+    playerVars: { controls: 0, disablekb: 1, iv_load_policy: 3, rel: 0, playsinline: 1, mute: 1, modestbranding: 1, autoplay: 1 },
+    events: {
+      onReady: () => { ready = true; player.mute(); say({ type: 'ready' }); if (pending) { load(pending); pending = null; } },
+      onStateChange: (e) => { player.mute(); say({ type: 'state', s: e.data, t: player.getCurrentTime() }); },
+      onError: (e) => say({ type: 'error', code: e.data }),
+    },
+  });
+  setInterval(() => { if (ready && player.getCurrentTime) say({ type: 'time', t: player.getCurrentTime(), d: player.getDuration() }); }, 500);
+};
+const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+</script></body></html>

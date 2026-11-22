@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sympony</title>
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css" />
+  <link rel="stylesheet" href="notch.css" />
+  <link rel="stylesheet" href="carousel.css" />
+  <link rel="stylesheet" href="modules.css" />
+</head>
+<body>
+  <div id="notch" class="closed">
+    <div class="ear left"></div>
+    <div class="ear right"></div>
+    <div id="glow"></div>
+
+    <!-- ===== Collapsed: live activities ===== -->
+    <div id="closed" dir="ltr">
+      <div class="side left" id="closedLeft"></div>
+      <div id="closedMid"></div>
+      <div class="side right" id="closedRight"></div>
+      <div id="idleClock"></div>
+    </div>
+    <div id="below"></div>
+    <div id="peek"><span id="peekText" dir="auto"></span></div>
+    <div id="island" aria-hidden="true"></div>
+
+    <!-- ===== Expanded: carousel shell ===== -->
+    <div id="open">
+      <div id="top">
+        <div class="tl" id="topLeft">
+          <button class="ib back-btn" id="btnBack" title="Back" data-i18n-attrs="title" hidden></button>
+          <div id="topSecTitle" class="sec-hd" hidden></div>
+          <div id="topMeta"></div>
+        </div>
+        <div></div>
+        <div class="tr" id="topRight">
+          <span class="bars off" id="topBars" style="display:none"><span></span><span></span><span></span><span></span><span></span></span>
+          <button class="ib" id="btnCollapse" title="Close" data-i18n-attrs="title"></button>
+          <button class="ib" id="btnSettings" title="Settings" data-i18n-attrs="title"></button>
+        </div>
+        <div class="tc" id="topTitle"></div>
+        <div id="headerFloat"></div>
+      </div>
+
+      <div id="stage">
+        <div id="view"><div id="track"></div></div>
+        <div id="sec"></div>
+      </div>
+      <button class="arrow l" id="prev" title="Previous" data-i18n-attrs="title"></button>
+      <button class="arrow r" id="next" title="Next" data-i18n-attrs="title"></button>
+
+      <div id="specialStage">
+        <!-- Drop actions (shown while files are dragged over the notch) -->
+        <section class="tab-page special" id="page-drop">
+          <div id="dropTiles"></div>
+        </section>
+
+        <!-- Snap zones (shown while a window is dragged over the notch) -->
+        <section class="tab-page special" id="page-snap">
+          <div id="snapTiles"></div>
+        </section>
+      </div>
+
+      <!-- Hidden vault holding builtin & module full-view sections until mounted in place -->
+      <div id="pageVault" hidden>
+        <!-- Agent approvals (HITL) section (inserted first in modules view while pending) -->
+        <section class="tab-page" id="page-hitl"></section>
+
+        <!-- Home: music + calendar + mirror -->
+        <section class="tab-page" id="page-home">
+          <div id="music"><div class="music-in">
+            <div class="art-wrap" id="artWrap">
+              <img id="artBlur" alt="" />
+              <img id="art" alt="" />
+              <div id="artFallback"></div>
+              <div id="appBadge"></div>
+            </div>
+            <div class="music-main">
+              <div class="track">
+                <div class="track-text">
+                  <div class="marquee" id="titleBox"><span id="title" data-i18n>Nothing playing</span></div>
+                  <div class="artist" id="artist" data-i18n>Play something in Spotify, YouTube, Apple Music…</div>
+                </div>
+                <button class="ctl tiny" id="btnLyrics" title="Lyrics" data-i18n-attrs="title"></button>
+              </div>
+              <div class="progress-row" dir="ltr">
+                <span class="time" id="tElapsed">0:00</span>
+                <div class="progress" id="progress"><div class="progress-fill" id="progressFill"></div><div class="progress-knob" id="progressKnob"></div></div>
+                <span class="time" id="tRemain">0:00</span>
+              </div>
+              <div class="controls" dir="ltr">
+                <button class="ctl small" id="btnShuffle" title="Shuffle" data-i18n-attrs="title"></button>
+                <button class="ctl" id="btnPrev" title="Previous" data-i18n-attrs="title"></button>
+                <button class="ctl big" id="btnPlay" title="Play/Pause" data-i18n-attrs="title"></button>
+                <button class="ctl" id="btnNext" title="Next" data-i18n-attrs="title"></button>
+                <button class="ctl small" id="btnRepeat" title="Repeat" data-i18n-attrs="title"></button>
+              </div>
+            </div>
+          </div></div>
+
+          <div id="calendarBox">
+            <div class="cal-head">
+              <span id="calMonth"></span>
+              <button class="link-btn" id="calAdd" title="Calendar settings" data-i18n-attrs="title"></button>
+            </div>
+            <div id="calStrip"></div>
+            <div id="calEvents"></div>
+          </div>
+
+          <div id="mirror">
+            <video id="mirrorVideo" autoplay muted playsinline></video>
+            <div id="mirrorIdle"><div class="mirror-icon"></div><span data-i18n>Mirror</span></div>
+          </div>
+          <!-- lyrics: in the place of the calendar and Mirror while the ❝ button is on -->
+          <div class="lyrics-panel" id="lyrics"></div>
+        </section>
+
+        <!-- Shelf -->
+        <section class="tab-page" id="page-shelf">
+          <div id="shelfItems"></div>
+          <div id="shelfEmpty">
+            <div class="drop-icon"></div>
+            <div class="drop-title" data-i18n>Drop files here</div>
+            <div class="drop-sub" data-i18n>Keep files handy, then drag them out anywhere</div>
+          </div>
+          <!-- the Clipboard side: what you copy (Settings → Drop Actions & Shelf → Remember what you copy) -->
+          <div id="clipItems"></div>
+          <div id="clipEmpty">
+            <div class="clip-empty-icon"></div>
+            <div class="drop-title" data-i18n>Nothing copied yet</div>
+            <div class="drop-sub" data-i18n>Texts, links and pictures you copy show up here</div>
+          </div>
+          <!-- the Phone side: a QR code for the phone's camera while sharing with it (notch.js, phone.rs) -->
+          <div id="phonePanel"></div>
+          <div id="shelfSide">
+            <div class="shelf-top">
+              <div class="shelf-switch" id="shelfSwitch" hidden>
+                <button data-v="files" title="Files" data-i18n-attrs="title"></button>
+                <button data-v="clip" title="Clipboard" data-i18n-attrs="title"></button>
+              </div>
+              <button class="shelf-phone" id="shelfPhone" title="Send and receive with your phone" data-i18n-attrs="title" hidden></button>
+            </div>
+            <div id="shareTarget" title="Drop to share with Windows Share (Nearby sharing, Mail, apps)" data-i18n-attrs="title">
+              <div class="share-icon"></div><span data-i18n>Share</span>
+            </div>
+            <div id="clipCard"><div class="clip-card-icon"></div><b data-i18n>Clipboard</b><span id="clipHint"></span></div>
+            <div class="shelf-actions">
+              <button class="mini-btn" id="shelfAdd" title="Add files" data-i18n-attrs="title"></button>
+              <button class="mini-btn" id="shelfClear" title="Clear shelf" data-i18n-attrs="title"></button>
+              <button class="mini-btn" id="clipClear" title="Clear all (pinned ones stay)" data-i18n-attrs="title"></button>
+            </div>
+          </div>
+        </section>
+
+        <!-- System stats -->
+        <section class="tab-page" id="page-stats">
+          <div class="stat" id="statCpu"><canvas width="220" height="70"></canvas><div class="stat-ico"></div><div class="stat-label">CPU</div><div class="stat-value">–</div><div class="stat-sub"></div></div>
+          <div class="stat" id="statMem"><canvas width="220" height="70"></canvas><div class="stat-ico"></div><div class="stat-label" data-i18n>Memory</div><div class="stat-value">–</div><div class="stat-sub"></div></div>
+          <div class="stat" id="statNet"><canvas width="220" height="70"></canvas><div class="stat-ico"></div><div class="stat-label" data-i18n>Network</div><div class="stat-value">–</div><div class="stat-sub"></div></div>
+          <div class="stat" id="statDisk"><canvas width="220" height="70"></canvas><div class="stat-ico"></div><div class="stat-label" data-i18n>Disk</div><div class="stat-value">–</div><div class="stat-sub"></div></div>
+          <div class="stat" id="statTemp" hidden><canvas width="220" height="70"></canvas><div class="stat-ico"></div><div class="stat-label" data-i18n>Temperature</div><div class="stat-value">–</div><div class="stat-sub"></div></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="hotzone" aria-hidden="true"></div>
+    <div id="ctxMenu"></div>
+  </div>
+  <div id="bubble" aria-hidden="true"></div>
+  <div id="ponyPeek" aria-hidden="true"><canvas id="ponyPeekCanvas" width="76" height="58"></canvas></div>
+  <div id="pill" aria-hidden="true"><div id="dock"></div></div>
+  <div id="dockTip" hidden></div>
+
+  <script src="i18n.js"></script>
+  <script src="bridge.js"></script>
+  <script src="tint.js"></script>
+  <script src="icons.js"></script>
+  <script src="cursors.js"></script>
+  <script src="clock.js"></script>
+  <script src="palettes.js"></script>
+  <script src="waves.js"></script>
+  <script src="notchkit.js"></script>
+  <script src="pony.js"></script>
+  <script src="notch.js"></script>
+  <script src="carousel.js"></script>
+  <script src="pick.js"></script>
+  <script src="datetime.js"></script>
+  <script src="localevents.js"></script>
+  <script src="focussound.js"></script>
+  <script src="modules/data.js"></script>
+  <script src="modules/control.js"></script>
+  <script src="modules/calendar.js"></script>
+  <script src="modules/prayer.js"></script>
+  <script src="modules/nlp.js"></script>
+  <script src="modules/todo.js"></script>
+  <script src="modules/notes.js"></script>
+  <script src="modules/pomodoro.js"></script>
+  <script src="modules/weather.js"></script>
+  <script src="modules/health.js"></script>
+  <script src="modules/screentime.js"></script>
+  <script src="modules/dayprogress.js"></script>
+  <script src="modules/bluetooth.js"></script>
+  <script src="modules/translate.js"></script>
+  <script src="modules/chat.js"></script>
+  <script src="modules/github.js"></script>
+  <script src="modules/radio.js"></script>
+  <script src="modules/bookmarks.js"></script>
+  <script src="modules/aiusage.js"></script>
+  <script src="modules/worldclock.js"></script>
+  <script src="modules/teleprompter.js"></script>
+  <script src="modules/notifs.js"></script>
+  <script src="modules/launcher.js"></script>
+  <script src="boot.js"></script>
+</body>
+</html>

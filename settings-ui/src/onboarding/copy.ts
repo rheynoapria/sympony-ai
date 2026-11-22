@@ -1,0 +1,229 @@
+export const COPY_EN = {
+  introSub: "Your notch, brought to life.",
+  ponyHi: "Hi! I'm Pony.",
+  ponyWelcome: "Let's set it up together!",
+  ponyPoke: "Hehe, that tickles!",
+  welcomeKicker: "Welcome",
+  welcomeTitle1: "Everything you need,",
+  welcomeTitle2: "right under the notch.",
+  welcomeTitlePlain: "Everything you need, right under the notch.",
+  welcomeSub:
+    "Music, your day, prayer times, AI and focus, at a glance. Setting up takes about a minute.",
+  begin: "Set up Sympony",
+  settingsImported: "Previous settings came along",
+  tryTitle: "Point at the notch",
+  trySub: "Hover to peek, click to open. Drop files on it to keep them close.",
+  tryYes: "Nice. That's all it takes.",
+  pickTitle: "What should it hold?",
+  pickSub: "Pick a few. You can change this later in Settings.",
+  permsTitle: "A few permissions",
+  permsSub: "Switch them on here once, and Sympony won't need to ask again. Each opens the right place in macOS.",
+  permsMore: "For other features",
+  permsNone: "Nothing to switch on for what you picked.",
+  feelTitle: "How should it feel?",
+  feelSub: "The essentials. Everything else lives in Settings.",
+  look: "Look",
+  lookSub: "The closed notch",
+  lookBlack: "Black",
+  lookGlass: "Glass",
+  lookColor: "Color",
+  openOnHover: "Open on hover",
+  openOnHoverSub: "Otherwise click to open",
+  prayerTimes: "Prayer times",
+  prayerCityAuto: "From your location · Change in Settings",
+  prayerCitySet: "{city} · From your location",
+  launchAtLogin: "Launch at login",
+  launchAtLoginSub: "So it's there every morning",
+  allow: "Allow",
+  optional: "Optional",
+  aiTitle: "Sympony AI",
+  aiWhy: "So Pony can chat and help. Free, daily quota.",
+  aiSignIn: "Sign in with Google",
+  aiWaiting: "Finish signing in, in your browser…",
+  aiSignedAs: "Signed in as {who}",
+  openSystemSettings: "Open System Settings",
+  tryAgain: "Try again",
+  noDialog: "The permission dialog didn't appear.",
+  stepOf: "Step {n} / 4",
+  stageTry: "Point at the notch above",
+  stagePick: "{n} picked",
+  stagePerms: "{a} of {b} on",
+  stageNone: "No permissions needed",
+  stageTune: "Your notch, previewed",
+  continue: "Continue",
+  skip: "Skip",
+  later: "Later",
+  finish: "Finish",
+  back: "Back",
+  enterHint: "↵ to continue",
+  turnOn: "Turn on {name} for Sympony",
+  chooseAllow: "Choose Allow in the dialog",
+  permIsOn: "{name} is on",
+  ready: "Sympony is ready",
+  skipConfirm: "Skip setup? You can run it again from About.",
+  cancel: "Cancel",
+  askOnFirstPlay: "Will ask on first play",
+  "mod.music": "Music",
+  "mod.calendar": "Calendar",
+  "mod.prayer": "Prayer Times",
+  "mod.ai": "Pony",
+  "mod.focus": "Focus",
+  "mod.notifications": "Notifications",
+  "mod.weather": "Weather",
+  "mod.todo": "Todo & Notes",
+  "modsub.music": "Lyrics & controls",
+  "modsub.calendar": "Today's agenda",
+  "modsub.prayer": "Reminders & adhan",
+  "modsub.ai": "Ask & translate",
+  "modsub.focus": "Pomodoro & timers",
+  "modsub.notifications": "Stacked in the notch",
+  "modsub.weather": "No API key",
+  "modsub.todo": "Repeating reminders",
+  "perm.calendars.title": "Calendars",
+  "perm.calendars.why": "Today's meetings, read on this Mac",
+  "perm.location.title": "Location",
+  "perm.location.why": "Prayer times and weather where you are",
+  "perm.automation.title": "Music and Spotify",
+  "perm.automation.why": "Play, pause and skip from the notch",
+  "perm.fulldisk.title": "Notifications",
+  "perm.fulldisk.why": "In the notch, through Full Disk Access",
+  "perm.accessibility.title": "Accessibility",
+  "perm.accessibility.why": "No duplicate banners, and typing what you dictate",
+  "perm.microphone.title": "Microphone",
+  "perm.microphone.why": "Voice typing, on this Mac only",
+} as const;
+
+export type CopyKey = keyof typeof COPY_EN;
+
+export const COPY_ID: Record<CopyKey, string> = {
+  introSub: "Notch Anda, kini bernyawa.",
+  ponyHi: "Hai! Aku Pony.",
+  ponyWelcome: "Yuk, kita siapkan bareng!",
+  ponyPoke: "Hehe, geli!",
+  welcomeKicker: "Selamat datang",
+  welcomeTitle1: "Segala yang Anda butuhkan,",
+  welcomeTitle2: "tepat di bawah notch.",
+  welcomeTitlePlain: "Segala yang Anda butuhkan, tepat di bawah notch.",
+  welcomeSub:
+    "Musik, agenda, waktu salat, AI, dan fokus, cukup dalam sekali pandang. Persiapannya hanya sekitar satu menit.",
+  begin: "Siapkan Sympony",
+  settingsImported: "Pengaturan sebelumnya sudah dibawa",
+  tryTitle: "Arahkan ke notch",
+  trySub: "Sorot untuk mengintip, klik untuk membuka. Letakkan berkas di atasnya agar selalu dekat.",
+  tryYes: "Tepat. Semudah itu.",
+  pickTitle: "Apa yang ingin Anda simpan di sini?",
+  pickSub: "Pilih beberapa. Anda bisa mengubahnya kapan saja di Pengaturan.",
+  permsTitle: "Beberapa izin",
+  permsSub: "Aktifkan sekali di sini, dan Sympony tak perlu bertanya lagi nanti. Masing-masing membuka tempat yang tepat di macOS.",
+  permsMore: "Untuk fitur lain",
+  permsNone: "Tidak ada yang perlu diaktifkan untuk pilihan Anda.",
+  feelTitle: "Seperti apa rasanya?",
+  feelSub: "Yang esensial saja. Selebihnya ada di Pengaturan.",
+  look: "Tampilan",
+  lookSub: "Notch saat tertutup",
+  lookBlack: "Hitam",
+  lookGlass: "Kaca",
+  lookColor: "Warna",
+  openOnHover: "Buka saat disorot",
+  openOnHoverSub: "Jika mati, klik untuk membuka",
+  prayerTimes: "Waktu salat",
+  prayerCityAuto: "Dari lokasi Anda · Ubah di Pengaturan",
+  prayerCitySet: "{city} · Dari lokasi Anda",
+  launchAtLogin: "Buka saat login",
+  launchAtLoginSub: "Agar selalu siap setiap pagi",
+  allow: "Izinkan",
+  optional: "Opsional",
+  aiTitle: "Sympony AI",
+  aiWhy: "Agar Pony bisa mengobrol. Gratis, kuota harian.",
+  aiSignIn: "Masuk dengan Google",
+  aiWaiting: "Selesaikan masuk di browser…",
+  aiSignedAs: "Masuk sebagai {who}",
+  openSystemSettings: "Buka Pengaturan Sistem",
+  tryAgain: "Coba lagi",
+  noDialog: "Dialog izin tidak muncul.",
+  stepOf: "Langkah {n} / 4",
+  stageTry: "Arahkan kursor ke notch di atas",
+  stagePick: "{n} modul dipilih",
+  stagePerms: "{a} dari {b} izin aktif",
+  stageNone: "Tidak ada izin yang diperlukan",
+  stageTune: "Pratinjau notch Anda",
+  continue: "Lanjut",
+  skip: "Lewati",
+  later: "Nanti saja",
+  finish: "Selesai",
+  back: "Kembali",
+  enterHint: "↵ untuk lanjut",
+  turnOn: "Aktifkan {name} untuk Sympony",
+  chooseAllow: "Pilih Izinkan pada dialog",
+  permIsOn: "{name} sudah aktif",
+  ready: "Sympony siap",
+  skipConfirm: "Lewati penyiapan? Anda bisa menjalankannya lagi dari Tentang.",
+  cancel: "Batal",
+  askOnFirstPlay: "Akan meminta izin saat pertama memutar",
+  "mod.music": "Musik",
+  "mod.calendar": "Kalender",
+  "mod.prayer": "Waktu Salat",
+  "mod.ai": "Pony",
+  "mod.focus": "Fokus",
+  "mod.notifications": "Notifikasi",
+  "mod.weather": "Cuaca",
+  "mod.todo": "Tugas & Catatan",
+  "modsub.music": "Lirik & kontrol",
+  "modsub.calendar": "Agenda hari ini",
+  "modsub.prayer": "Pengingat & azan",
+  "modsub.ai": "Tanya & terjemah",
+  "modsub.focus": "Pomodoro & timer",
+  "modsub.notifications": "Ditumpuk di notch",
+  "modsub.weather": "Tanpa kunci API",
+  "modsub.todo": "Pengingat berulang",
+  "perm.calendars.title": "Kalender",
+  "perm.calendars.why": "Rapat hari ini, dibaca di Mac ini saja",
+  "perm.location.title": "Lokasi",
+  "perm.location.why": "Waktu salat dan cuaca di tempat Anda",
+  "perm.automation.title": "Musik dan Spotify",
+  "perm.automation.why": "Putar, jeda, dan lewati dari notch",
+  "perm.fulldisk.title": "Notifikasi",
+  "perm.fulldisk.why": "Tampil di notch, lewat Akses Disk Penuh",
+  "perm.accessibility.title": "Aksesibilitas",
+  "perm.accessibility.why": "Tanpa banner ganda, dan ketik hasil dikte",
+  "perm.microphone.title": "Mikrofon",
+  "perm.microphone.why": "Mengetik dengan suara, di Mac ini saja",
+};
+
+function fill(template: string, vars?: Record<string, unknown>): string {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (_, k: string) =>
+    vars[k] === undefined ? `{${k}}` : String(vars[k])
+  );
+}
+
+export function activeLang(override?: string): string {
+  if (override) return override;
+  if (typeof window !== "undefined") {
+    const w = window as unknown as { SYMPONY_LANG?: string };
+    if (w.SYMPONY_LANG) return w.SYMPONY_LANG;
+  }
+  return "en";
+}
+
+export function copy(
+  key: CopyKey,
+  vars?: Record<string, unknown>,
+  langOverride?: string
+): string {
+  const lang = activeLang(langOverride);
+  if (lang === "id") {
+    return fill(COPY_ID[key], vars);
+  }
+  const en = COPY_EN[key];
+  if (typeof window !== "undefined") {
+    const fn = (window as unknown as { _t?: (s: string, v?: Record<string, unknown>) => string })._t;
+    if (typeof fn === "function") return fn(en, vars);
+  }
+  return fill(en, vars);
+}
+
+export function echo(key: CopyKey, langOverride?: string): string {
+  const lang = activeLang(langOverride);
+  return lang === "en" ? "" : COPY_EN[key];
+}

@@ -1,0 +1,28 @@
+[package]
+name = "platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notifications) for Sympony"
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+libc = "0.2"
+cpal = "0.15"
+objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rusqlite = "0.37"
+security-framework = "3"
+objc2 = "0.6"
+objc2-core-location = { version = "0.3", features = ["CLLocationManager", "CLLocation", "CLGeocoder", "CLPlacemark", "block2"] }
+block2 = "0.6"
+objc2-av-foundation = { version = "0.3", features = ["AVPlayer", "AVPlayerItem", "AVAsset", "AVMediaFormat"] }
+dispatch2 = "0.3"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSDictionary", "NSValue", "NSGeometry", "NSArray", "NSObject", "NSError", "NSTimeZone", "NSDate", "NSProcessInfo", "NSData", "NSURL", "NSFileManager", "NSItemProvider", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3", features = ["NSScreen", "NSWindow", "NSResponder", "NSGraphics", "NSRunningApplication", "NSWorkspace", "NSEvent", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics", "NSColor", "NSColorSpace", "NSPasteboard", "NSPasteboardItem", "NSSharingService", "NSView", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSApplication"] }

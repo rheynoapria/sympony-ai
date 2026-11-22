@@ -1,0 +1,2 @@
+Provider icons from Lobe Icons (@lobehub/icons-static-svg 1.104.0, https://github.com/lobehub/lobe-icons), MIT License.
+The logos are their owners' trademarks, used here only to name each provider.

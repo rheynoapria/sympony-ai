@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sympony · icon generator</title>
+<!--
+  Renders Sympony's icons from the live Pony renderer (frontend/pony.js):
+  #app   1024 px app icon: Pony on a purple squircle (macOS grid: 824 px tile, 100 px margin)
+  #tray  44 px menu-bar template: the logo mark (bean, two eye holes) in black on transparent; macOS tints it
+  #mark  192 px in-app logo: the same mark in white on the purple tile
+  Screenshot each with a transparent background (tools: scratch my_icons.mjs), then `cargo tauri icon`.
+-->
+<style>
+body { margin: 0; padding: 20px; background: #e9e6f2; display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+canvas { display: block; }
+#app { width: 512px; height: 512px; }
+</style>
+</head>
+<body>
+<canvas id="app" width="1024" height="1024"></canvas>
+<canvas id="mark" width="192" height="192" style="width:96px;height:96px"></canvas>
+<canvas id="logo" width="384" height="384" style="width:96px;height:96px"></canvas>
+<canvas id="tray2" width="88" height="88" style="width:44px;height:44px;background:#fff"></canvas>
+<svg id="tray" width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+  <!-- the logo mark: a soft bean with two oval eye holes (evenodd) -->
+  <path fill="#000" fill-rule="evenodd" d="M4.5 23.5C4.5 14.5 8.8 10 15 10c3 0 5.2 1 7 2.2C23.8 11 26 10 29 10c6.2 0 10.5 4.5 10.5 13.5C39.5 31 33 34.5 22 34.5S4.5 31 4.5 23.5z
+    M17.4 17.6a2.9 4.6 0 1 0 0.01 0z M26.6 17.6a2.9 4.6 0 1 0 0.01 0z"/>
+</svg>
+<!-- 2D by default; add ?3d to the address to see the Three.js Pony -->
+<script>if (/[?&]3d\b/.test(location.search)) document.write('<script src="../../frontend/vendor/three/three.min.js"><\/script>');</script>
+<script src="../../frontend/pony.js"></script>
+<script>
+function tile(ctx, x, y, s, r) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, s, s, r);
+}
+function purple(ctx, x, y, s) {
+  const g = ctx.createLinearGradient(x, y, x + s * 0.4, y + s);
+  g.addColorStop(0, '#7a5cf5');
+  g.addColorStop(0.55, '#4f33cf');
+  g.addColorStop(1, '#2c1a8f');
+  ctx.fillStyle = g;
+  ctx.fill();
+  const l = ctx.createRadialGradient(x + s * 0.28, y + s * 0.18, 0, x + s * 0.28, y + s * 0.18, s * 0.75);
+  l.addColorStop(0, 'rgba(255,255,255,.32)');
+  l.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = l;
+  ctx.fill();
+}
+// app icon
+(function () {
+  const c = document.getElementById('app');
+  const ctx = c.getContext('2d');
+  const x = 100, s = 824, r = 184;
+  ctx.save();
+  ctx.shadowColor = 'rgba(30,10,80,.35)';
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 16;
+  tile(ctx, x, x, s, r);
+  ctx.fillStyle = '#6d52ea';
+  ctx.fill();
+  ctx.restore();
+  tile(ctx, x, x, s, r);
+  purple(ctx, x, x, s);
+  ctx.save();
+  tile(ctx, x, x, s, r);
+  ctx.clip();
+  // a soft light behind Pony, so the fringe stands off the tile
+  const halo = ctx.createRadialGradient(512, 560, 0, 512, 560, 420);
+  halo.addColorStop(0, 'rgba(225,210,255,.55)');
+  halo.addColorStop(1, 'rgba(225,210,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(x, x, s, s);
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img, x + 72, x + 92, s - 144, s - 144);
+    document.body.dataset.app = 'ready';
+  };
+  img.src = window.Pony.snapshot({ size: 780, scale: 1.0, floorFrac: 0.86, mood: 'idle', shape: 'Classic', color: 'Lavender' });
+  ctx.restore();
+})();
+// in-app logo (Settings' sidebar): the app icon's tile and Pony, edge to edge, no margin or shadow
+(function () {
+  const c = document.getElementById('logo');
+  const ctx = c.getContext('2d');
+  const s = 384, r = 86;
+  tile(ctx, 0, 0, s, r);
+  purple(ctx, 0, 0, s);
+  ctx.save();
+  tile(ctx, 0, 0, s, r);
+  ctx.clip();
+  const halo = ctx.createRadialGradient(s / 2, s * 0.56, 0, s / 2, s * 0.56, s * 0.5);
+  halo.addColorStop(0, 'rgba(225,210,255,.55)');
+  halo.addColorStop(1, 'rgba(225,210,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, s, s);
+  const img = new Image();
+  img.onload = () => { ctx.drawImage(img, s * 0.06, s * 0.1, s * 0.88, s * 0.88); ctx.restore(); document.body.dataset.logo = 'ready'; };
+  img.src = window.Pony.snapshot({ size: 400, scale: 1.0, floorFrac: 0.86, mood: 'idle', shape: 'Classic', color: 'Lavender' });
+})();
+// menu bar (template): Pony's silhouette in black, rendered at 88 px (44 pt @2x)
+window.Pony.glyph(document.getElementById('tray2').getContext('2d'), 88);
+// the mark in white on the purple tile
+(function () {
+  const c = document.getElementById('mark');
+  const ctx = c.getContext('2d');
+  tile(ctx, 8, 8, 176, 40);
+  purple(ctx, 8, 8, 176);
+  const p = new Path2D('M4.5 23.5C4.5 14.5 8.8 10 15 10c3 0 5.2 1 7 2.2C23.8 11 26 10 29 10c6.2 0 10.5 4.5 10.5 13.5C39.5 31 33 34.5 22 34.5S4.5 31 4.5 23.5z');
+  const eyes = new Path2D('M17.4 17.6a2.9 4.6 0 1 0 0.01 0z M26.6 17.6a2.9 4.6 0 1 0 0.01 0z');
+  ctx.save();
+  ctx.translate(96 - 22 * 3.4, 96 - 22.4 * 3.4);
+  ctx.scale(3.4, 3.4);
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = 'rgba(30,10,80,.3)';
+  ctx.shadowBlur = 6;
+  ctx.fill(p);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#2a2245';
+  ctx.fill(eyes);
+  ctx.restore();
+})();
+</script>
+</body>
+</html>

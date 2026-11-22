@@ -1,0 +1,376 @@
+//! The AI coding agents Sympony answers through (AI Chat, Translate, the lyrics' extras): each one's command for a
+//! single answer in read-only mode, how to tell it's signed in from its files, and one reader for all their outputs.
+use serde_json::Value;
+use std::path::Path;
+
+pub struct Agent {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// the icon in frontend/vendor/ai-icons/
+    pub icon: &'static str,
+    /// executable names, first found wins
+    pub bins: &'static [&'static str],
+    /// where to get it
+    pub install: &'static str,
+}
+
+pub const AGENTS: &[Agent] = &[
+    Agent { id: "claude", name: "Claude Code", icon: "claudecode-color", bins: &["claude"], install: "https://docs.claude.com/en/docs/claude-code/setup" },
+    Agent { id: "codex", name: "Codex", icon: "codex-color", bins: &["codex"], install: "https://developers.openai.com/codex/cli" },
+    Agent { id: "antigravity", name: "Antigravity", icon: "antigravity-color", bins: &["agy"], install: "https://antigravity.google/docs/cli" },
+    Agent { id: "gemini", name: "Gemini CLI", icon: "geminicli-color", bins: &["gemini"], install: "https://geminicli.com" },
+    Agent { id: "cursor", name: "Cursor Agent", icon: "cursor", bins: &["cursor-agent", "agent"], install: "https://cursor.com/cli" },
+    Agent { id: "opencode", name: "OpenCode", icon: "opencode", bins: &["opencode"], install: "https://opencode.ai" },
+    Agent { id: "qwen", name: "Qwen Code", icon: "qwen-color", bins: &["qwen"], install: "https://qwenlm.github.io/qwen-code-docs/" },
+    Agent { id: "hermes", name: "Hermes Agent", icon: "nousresearch", bins: &["hermes"], install: "https://hermes-agent.nousresearch.com/docs/getting-started/installation" },
+];
+
+pub fn find(id: &str) -> Option<&'static Agent> {
+    AGENTS.iter().find(|a| a.id == id)
+}
+
+/// The command line (after the executable) for one answer, read-only. `system` goes in an option where the agent has
+/// one, else at the top of the prompt; the prompt is always the last word and never reads as an option.
+pub fn args(id: &str, prompt: &str, system: &str, model: Option<&str>, web: bool) -> Vec<String> {
+    let has_system = id == "claude";
+    let mut p = if has_system || system.is_empty() { prompt.to_string() } else { format!("{system}\n\n{prompt}") };
+    if p.starts_with('-') {
+        p.insert_str(0, "Message: ");
+    }
+    let model = model.filter(|m| !m.trim().is_empty());
+    let mut a: Vec<String> = match id {
+        "claude" => {
+            // (the prompt right after -p, and --tools last: it takes every word after it)
+            // (no MCP servers, plugins, hooks or skills of the user's setup; nothing saved)
+            let mut v = vec!["-p", p.as_str(), "--output-format", "json", "--system-prompt", system, "--safe-mode", "--strict-mcp-config",
+                             "--no-session-persistence", "--disable-slash-commands"];
+            if let Some(m) = model {
+                v.extend(["--model", m]);
+            }
+            v.extend(["--tools", if web { "WebSearch,WebFetch" } else { "" }]);
+            return v.into_iter().map(String::from).collect();
+        }
+        "codex" => {
+            let mut v = vec!["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-c", "mcp_servers={}"];
+            if let Some(m) = model {
+                v.extend(["-m", m]);
+            }
+            v.into_iter().map(String::from).collect()
+        }
+        "antigravity" => opt(vec!["--output-format", "stream-json", "--mode", "plan"], "--model", model).into_iter().chain(["-p".into()]).collect(),
+        "gemini" => opt(vec!["-o", "json", "--approval-mode", "plan", "--allowed-mcp-server-names", "__none__", "-e", "none"], "-m", model).into_iter().chain(["-p".into()]).collect(),
+        "cursor" => opt(vec!["-p", "--output-format", "json"], "--model", model),
+        "opencode" => opt(vec!["run", "--format", "json", "--agent", "plan"], "-m", model),
+        "qwen" => {
+            let mut v = opt(vec!["--approval-mode", "plan", "--allowed-mcp-server-names", "__none__", "-e", "none"], "-m", model);
+            v.push("-p".into());
+            v
+        }
+        "hermes" => {
+            let mut v: Vec<String> = vec!["chat".into(), "-q".into(), p.clone(), "--oneshot".into(), "--format".into(), "stream-json".into()];
+            if let Some(m) = model {
+                v.extend(["-m".into(), m.into()]);
+            }
+            return v;
+        }
+        _ => vec![],
+    };
+    a.push(p);
+    a
+}
+
+/// Environment for the run: OpenCode takes its tool switches from a config given inline (every tool off).
+pub fn env(id: &str) -> Vec<(&'static str, String)> {
+    match id {
+        "opencode" => vec![("OPENCODE_CONFIG_CONTENT", r#"{"tools":{"*":false},"mcp":{}}"#.to_string())],
+        _ => vec![],
+    }
+}
+
+/// Whether Sympony may answer through it: an agent without a read-only mode (Hermes runs its terminal and file tools
+/// as it sees fit) is listed but not used until one is checked.
+pub fn supported(id: &str) -> bool {
+    id != "hermes"
+}
+
+fn opt(base: Vec<&str>, flag: &str, model: Option<&str>) -> Vec<String> {
+    let mut v: Vec<String> = base.into_iter().map(String::from).collect();
+    if let Some(m) = model {
+        v.extend([flag.to_string(), m.to_string()]);
+    }
+    v
+}
+
+/// The conversation as one prompt (the agent keeps no session): what Sympony knows about the day, then the turns.
+pub fn prompt(context: &str, msgs: &[Value]) -> String {
+    let mut out = String::from("Here is what Sympony knows about the user right now (use it when it helps):\n");
+    out.push_str(if context.trim().is_empty() { "(nothing shared)" } else { context.trim() });
+    out.push_str("\n\nThe conversation so far:\n");
+    for m in msgs {
+        let who = if m["role"] == "assistant" { "Assistant" } else { "User" };
+        out.push_str(&format!("{who}: {}\n\n", m["content"].as_str().unwrap_or("").trim()));
+    }
+    out.push_str("Assistant:");
+    out
+}
+
+fn s(v: &Value) -> Option<String> {
+    v.as_str().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+}
+
+/// The answer from an agent's output (any of their JSON shapes, or plain text). Err: what went wrong, in its words.
+pub fn answer(_id: &str, stdout: &str, stderr: &str, exit_ok: bool) -> Result<String, String> {
+    let mut objs: Vec<Value> = vec![];
+    match serde_json::from_str::<Value>(stdout.trim()) {
+        Ok(v) if v.is_object() || v.is_array() => objs.extend(if let Value::Array(a) = v { a } else { vec![v] }),
+        _ => objs.extend(stdout.lines().filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok()).filter(Value::is_object)),
+    }
+    let (mut text, mut parts, mut error): (Option<String>, String, Option<String>) = (None, String::new(), None);
+    for o in &objs {
+        let kind = o["type"].as_str().unwrap_or("");
+        if o["is_error"] == true {
+            error = s(&o["result"]).or(s(&o["error"])).or(Some("The agent said it couldn’t answer".into()));
+        }
+        if kind == "error" || kind == "turn.failed" {
+            error = s(&o["error"]["message"]).or(s(&o["message"])).or(s(&o["error"])).or(Some("The agent failed".into()));
+        }
+        if o["event"] == "result" {
+            let r = &o["result"];
+            if r["status"].as_str().is_some_and(|st| !st.eq_ignore_ascii_case("success")) {
+                error = s(&r["response"]).or(s(&r["error"])).or(Some("The agent failed".into()));
+            } else if let Some(t) = s(&r["response"]) {
+                text = Some(t);
+            }
+        }
+        if o["status"].as_str().is_some_and(|st| st.eq_ignore_ascii_case("error")) {
+            error = s(&o["error"]).or(s(&o["error"]["message"])).or(Some("The agent failed".into()));
+        }
+        if kind == "result" && o["is_error"] != true {
+            if let Some(t) = s(&o["result"]).or(s(&o["text"])) {
+                text = Some(t);
+            }
+        }
+        if let Some(t) = s(&o["response"]) {
+            text = Some(t);
+        }
+        if kind == "item.completed" && o["item"]["type"] == "agent_message" {
+            if let Some(t) = s(&o["item"]["text"]) {
+                text = Some(t);
+            }
+        }
+        if kind == "text" {
+            parts.push_str(o["part"]["text"].as_str().unwrap_or(""));
+        }
+    }
+    if let Some(e) = error {
+        return Err(e);
+    }
+    if let Some(t) = text.or(Some(parts.trim().to_string()).filter(|p| !p.is_empty())) {
+        return Ok(t);
+    }
+    if exit_ok && objs.is_empty() && !stdout.trim().is_empty() {
+        return Ok(stdout.trim().to_string());
+    }
+    Err(stderr.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(String::from).unwrap_or_else(|| "The agent gave no answer".into()))
+}
+
+/// Whether the agent's own files say someone signed in (no process started).
+pub fn signed_in(id: &str, home: &Path) -> bool {
+    let has = |p: &str| home.join(p).exists();
+    let holds = |p: &str, what: &str| std::fs::read_to_string(home.join(p)).is_ok_and(|t| t.contains(what));
+    match id {
+        "claude" => holds(".claude.json", "\"oauthAccount\""),
+        "codex" => has(".codex/auth.json"),
+        "antigravity" => has(".gemini/antigravity-cli"),
+        "gemini" => has(".gemini/oauth_creds.json"),
+        "cursor" => holds(".cursor/cli-config.json", "\"authInfo\""),
+        "opencode" => std::fs::read_to_string(home.join(".local/share/opencode/auth.json")).is_ok_and(|t| t.trim().len() > 2),
+        "qwen" => has(".qwen/oauth_creds.json"),
+        "hermes" => has(".hermes/auth.json") || has(".hermes/.env"),
+        _ => false,
+    }
+}
+
+/// An install too old for the command above (Codex 0.1.x, the first TypeScript CLI, has no `exec`).
+pub fn needs_update(id: &str, version: &str) -> bool {
+    let v = version.split_whitespace().find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit())).unwrap_or("");
+    id == "codex" && v.starts_with("0.1.")
+}
+
+/// Pony's base rules: with Sympony's tools (MCP) the brain calls them; without, it writes
+/// the `[[…]]` action lines Sympony runs from the answer. Pass `now = ""` when `pony::system_prompt` appends the time.
+pub fn chat_rules_for(now: &str, tools: bool) -> String {
+    rules(now, tools, false)
+}
+
+/// What a CLI agent is told it can't do; Pony's own engine is told its tools are its limits instead (Eyes, Commands
+/// and files and the rest add their own rules when they're on).
+const NO_CODE: &str = " You are answering inside Sympony, not working on code: don't read or change files on disk and don't run shell commands.";
+const CANT: &str = "Apart from these tools and actions you can't do anything on the Mac: no other alarms or timers, no apps outside the launcher, no opening websites yourself (a link only shows a button), no sending messages, no reading the screen or files. Never say you did, will do, or can do something you can't.";
+const ENGINE_CANT: &str = "Do only what your tools allow; never say you did, will do, or can do something they don't cover.";
+
+/// The rules for Pony's own engine (services::brain): its tools, without the CLI agents' limits.
+pub fn engine_rules(now: &str) -> String {
+    rules(now, true, true)
+}
+
+fn rules(now: &str, tools: bool, engine: bool) -> String {
+    let now_line = if now.trim().is_empty() {
+        String::new()
+    } else {
+        format!("It is now {}.", now.trim())
+    };
+    let all = include_str!("chat_rules.txt").replace("{now_line}", &now_line);
+    let all = if engine { all.replace(NO_CODE, "").replace(CANT, ENGINE_CANT) } else { all };
+    let (a, b) = (all.find("<<ACTIONS>>").unwrap_or(0), all.find("<<END>>").unwrap_or(0));
+    let block = if tools {
+        "Tools: Call get_context before answering about the user's calendar, todos, weather, prayer times or this Mac, and \
+before changing an item (for its id); never make an id up. When asked to do something, call the tool, then confirm in one \
+short sentence (Sympony shows it with an Undo button). Skills: pick one by its description in the Skills list, \
+read_skill(name) loads it, follow its steps (read_skill_file for files it mentions). Memory: remember(text) lasting facts \
+about the user and how they want you to work (a preference or a correction), never secrets; forget(id) when asked; \
+recall(query) when they refer to an earlier conversation. Call ask_user(questions) before removing anything, before \
+replacing a skill with save_skill, or when a request is ambiguous, then end your reply at once with one short line."
+            .to_string()
+    } else {
+        all[a + "<<ACTIONS>>".len()..b].trim().to_string()
+    };
+    format!("{}{}{}", &all[..a], block, &all[b + "<<END>>".len()..])
+}
+
+/// As `chat_rules_for` without tools.
+pub fn chat_rules(now: &str) -> String {
+    chat_rules_for(now, false)
+}
+
+/// Whether Sympony can hand its tools to this agent (an MCP server it takes from the command line, its run folder or
+/// its environment, and runs without asking). The rest get the `[[…]]` lines.
+/// Only those a live run proved (Claude Code, 2026-11-21); `with_tools` also wires Codex, Gemini, Qwen and OpenCode
+/// once each passes a live check (see design spec §9).
+pub fn tools_for(id: &str) -> bool {
+    id == "claude"
+}
+
+/// A run with Sympony's tools: its command line, environment, and the files to put in its (empty) run folder.
+pub struct Wired {
+    pub args: Vec<String>,
+    pub env: Vec<(&'static str, String)>,
+    pub files: Vec<(String, String)>,
+}
+
+/// `args` (from `args`) with Sympony's MCP server added: `exe --mcp`, with `env` for it.
+pub fn with_tools(id: &str, mut args: Vec<String>, exe: &str, env: &[(&str, &str)]) -> Wired {
+    let env_map: serde_json::Map<String, Value> = env.iter().map(|(k, v)| (k.to_string(), Value::from(*v))).collect();
+    let server = serde_json::json!({"command": exe, "args": ["--mcp"], "env": env_map});
+    let mut w = Wired { args: vec![], env: self::env(id), files: vec![] };
+    match id {
+        "claude" => {
+            // (--safe-mode turns every MCP server off, Sympony's too: no user settings at all instead, so no hooks or plugins)
+            if let Some(i) = args.iter().position(|a| a == "--safe-mode") {
+                args.splice(i..=i, ["--setting-sources".to_string(), String::new(), "--settings".into(), r#"{"disableAllHooks":true}"#.into()]);
+            }
+            args.extend(["--mcp-config".into(), serde_json::json!({"mcpServers": {"sympony": server}}).to_string(), "--allowedTools".into(), "mcp__sympony".into()]);
+        }
+        "gemini" | "qwen" => {
+            for a in args.iter_mut().filter(|a| *a == "__none__") {
+                *a = "sympony".into();
+            }
+            let mut s = server.clone();
+            s["trust"] = Value::Bool(true);
+            w.files.push((format!(".{id}/settings.json"), serde_json::json!({"mcpServers": {"sympony": s}}).to_string()));
+        }
+        "codex" => {
+            let at = args.len().saturating_sub(1);
+            let mut extra = vec!["-c".to_string(), format!("mcp_servers.sympony.command={}", serde_json::to_string(exe).unwrap_or_default()),
+                                 "-c".into(), "mcp_servers.sympony.args=[\"--mcp\"]".into()];
+            for (k, v) in env {
+                extra.extend(["-c".into(), format!("mcp_servers.sympony.env.{k}={}", serde_json::to_string(v).unwrap_or_default())]);
+            }
+            args.splice(at..at, extra);
+        }
+        "opencode" => {
+            let cfg = serde_json::json!({"tools": {"*": false, "sympony_*": true},
+                "mcp": {"sympony": {"type": "local", "command": [exe, "--mcp"], "environment": env_map, "enabled": true}}});
+            w.env = vec![("OPENCODE_CONFIG_CONTENT", cfg.to_string())];
+        }
+        _ => {}
+    }
+    w.args = args;
+    w
+}
+
+/// Translate's prompt.
+pub fn translate_prompt(text: &str, from: &str, to: &str) -> String {
+    let from = if from.is_empty() || from == "auto" { "whatever language it is in".to_string() } else { from.to_string() };
+    format!("Translate the text between the markers from {from} into {to}. Reply with the translation only: no notes, no quotes, no markers.\n<<<\n{text}\n>>>")
+}
+
+/// The lyrics' extras: one line out for each line in, as a JSON array.
+pub fn lines_prompt(lines: &[String], what: &str) -> String {
+    format!("{what} Reply with only a JSON array of strings: exactly {} items, one for each line below, in the same order (an empty line stays \"\"). No other text.\n{}",
+        lines.len(), serde_json::to_string(lines).unwrap_or_default())
+}
+
+/// The array an answer to `lines_prompt` holds (a code fence around it is fine), when it has as many lines.
+pub fn lines_answer(text: &str, n: usize) -> Option<Vec<String>> {
+    let (a, b) = (text.find('[')?, text.rfind(']')?);
+    let v: Vec<String> = serde_json::from_str(text.get(a..=b)?).ok()?;
+    (v.len() == n).then_some(v)
+}
+
+// ================================================================== Pony's bridge to other agents (M2 §3)
+
+/// The folder a project name means: an exact folder name first, then one that contains it (case aside), among
+/// `candidates` (Paseo's workspaces first, then folders under the usual code places). A path is taken as it is.
+pub fn pick_folder(project: &str, candidates: &[String]) -> Option<String> {
+    let p = project.trim().trim_end_matches('/');
+    if p.is_empty() {
+        return None;
+    }
+    if p.starts_with('/') {
+        return Some(p.to_string());
+    }
+    let want = p.to_lowercase();
+    let name = |c: &String| c.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_lowercase();
+    candidates.iter().find(|c| name(c) == want).or_else(|| candidates.iter().find(|c| name(c).contains(&want))).cloned()
+}
+
+/// Paseo's `provider/model` for a new agent: the most recent agent of that provider (any provider when none is
+/// named), from `list_agents`.
+pub fn paseo_model(provider: &str, agents: &Value) -> Option<String> {
+    let want = provider.trim().to_lowercase();
+    agents["agents"].as_array()?.iter()
+        .filter(|a| want.is_empty() || a["provider"].as_str().is_some_and(|p| p.eq_ignore_ascii_case(&want)))
+        .find_map(|a| Some(format!("{}/{}", a["provider"].as_str()?, a["model"].as_str()?)))
+}
+
+/// Paseo's agents as lines for the model: short id, state, folder, title.
+pub fn paseo_lines(agents: &Value) -> String {
+    let lines: Vec<String> = agents["agents"].as_array().into_iter().flatten().take(15).map(|a| {
+        let state = if a["requiresAttention"] == true { "waiting on the user" } else { a["status"].as_str().unwrap_or("?") };
+        let folder = a["cwd"].as_str().unwrap_or("").rsplit('/').next().unwrap_or("");
+        format!("{} · {} · {} · {} ({})", a["id"].as_str().unwrap_or(""), state, folder, a["title"].as_str().unwrap_or(""), a["provider"].as_str().unwrap_or(""))
+    }).collect();
+    if lines.is_empty() { "No agents in Paseo in the last two days.".into() } else { lines.join("\n") }
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn folders_models_and_lines() {
+        let c = vec!["/u/Playground/Sympony".to_string(), "/u/Playground/Sympony-yt".to_string(), "/u/code/ai-content-creator".to_string()];
+        assert_eq!(pick_folder("sympony", &c).as_deref(), Some("/u/Playground/Sympony"));
+        assert_eq!(pick_folder("content", &c).as_deref(), Some("/u/code/ai-content-creator"));
+        assert_eq!(pick_folder("/tmp/x/", &c).as_deref(), Some("/tmp/x"));
+        assert_eq!(pick_folder("nope", &c), None);
+        let agents = json!({"agents": [{"id": "a1", "provider": "claude", "model": "opus", "status": "idle", "cwd": "/u/Sympony", "title": "t"},
+            {"id": "a2", "provider": "codex", "model": "gpt-5", "status": "running", "requiresAttention": true, "cwd": "/u/x", "title": "u"}]});
+        assert_eq!(paseo_model("codex", &agents).as_deref(), Some("codex/gpt-5"));
+        assert_eq!(paseo_model("", &agents).as_deref(), Some("claude/opus"));
+        assert_eq!(paseo_model("gemini", &agents), None);
+        assert_eq!(paseo_lines(&agents), "a1 · idle · Sympony · t (claude)\na2 · waiting on the user · x · u (codex)");
+    }
+}

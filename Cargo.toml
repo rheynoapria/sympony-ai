@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri", "crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/rheynoapria/sympony-ai"
+description = "Your desktop notch AI companion — local-first Pony assistant (MCP, Skills, Eyes & Hands), offline Indonesian voice dictation, and 24 OLED modules in Rust."
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+anyhow = "1"
+tempfile = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+dirs = "6"
+
+# Keep target/ small: line tables are enough for backtraces in our crates, none for dependencies
+# (objc2-app-kit & co. are the bulk). Full debug info for lldb: CARGO_PROFILE_DEV_DEBUG=full cargo build
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+strip = true
+# ponytail: no LTO: thin LTO drops clang_rt's __isPlatformVersionAtLeast that ggml-metal (transcribe.cpp) needs at link

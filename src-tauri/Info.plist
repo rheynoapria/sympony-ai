@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSLocationUsageDescription</key>
+  <string>Sympony uses your location for weather and prayer times.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Sympony uses your location for weather and prayer times.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Sympony shows Bluetooth's state and turns it on or off from the Control tab.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Sympony switches Dark mode through System Events.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Sympony shows your calendars' events under the notch and in its Calendar tab.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsForMedia</key>
+    <true/>
+  </dict>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Sympony shows your calendars' events under the notch and in its Calendar tab.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Sympony listens only while you hold the dictation key.</string>
+</dict>
+</plist>

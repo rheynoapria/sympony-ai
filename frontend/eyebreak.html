@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title data-i18n>Eye break</title>
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css" />
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system, "Inter", "Noto Sans", "Ubuntu", "Cantarell", system-ui, sans-serif; color: #fff; user-select: none; }
+    .veil { position: fixed; inset: 0; background: radial-gradient(circle at 50% 40%, rgba(20, 30, 50, 0.86), rgba(0, 0, 0, 0.94)); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; animation: in 0.6s ease; }
+    @keyframes in { from { opacity: 0; } }
+    .eye { font-size: 64px; color: #ffd60a; animation: blink 4s infinite; }
+    @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+    h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.5px; }
+    p { margin: 0; color: #aeaeb2; font-size: 16px; }
+    .count { font-size: 64px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    button { margin-top: 10px; background: rgba(255,255,255,0.12); color: #fff; border: 0; border-radius: 20px; padding: 9px 22px; font: inherit; font-size: 14px; cursor: pointer; }
+    button:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+  <div class="veil">
+    <i class="fa-solid fa-eye eye"></i>
+    <h1 data-i18n>Eye break</h1>
+    <p data-i18n>Look at something about 6 metres (20 feet) away and let your eyes relax.</p>
+    <div class="count" id="count">20</div>
+    <button id="skip" data-i18n>Skip</button>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="bridge.js"></script>
+  <script src="eyebreak.js"></script>
+</body>
+</html>

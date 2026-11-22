@@ -1,0 +1,191 @@
+# category: Indonesian calendar terms (months, days, holidays, religious and national observances, Hijri/Javanese/Saka calendar names, time zones)
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: one term per line, official EYD spelling (KBBI forms for Hijri months), proper names and capitalized terms only, most common first
+# licence: MIT / hand-curated for Sympony
+Januari
+Februari
+Maret
+April
+Mei
+Juni
+Juli
+Agustus
+September
+Oktober
+November
+Desember
+Senin
+Selasa
+Rabu
+Kamis
+Jumat
+Sabtu
+Minggu
+Ahad
+Lebaran
+Idulfitri
+Hari Raya Idulfitri
+Hari Raya
+Ramadan
+Bulan Ramadan
+Iduladha
+Hari Raya Iduladha
+Hari Raya Kurban
+Natal
+Hari Raya Natal
+Malam Natal
+Tahun Baru
+Tahun Baru Masehi
+Malam Tahun Baru
+Imlek
+Tahun Baru Imlek
+Isra Mikraj
+Isra Mikraj Nabi Muhammad SAW
+Nyepi
+Hari Suci Nyepi
+Hari Raya Nyepi
+Tahun Baru Saka
+Waisak
+Hari Raya Waisak
+Kenaikan Isa Almasih
+Kenaikan Yesus Kristus
+Wafat Isa Almasih
+Jumat Agung
+Paskah
+Hari Paskah
+Kebangkitan Yesus Kristus
+Maulid Nabi
+Maulid Nabi Muhammad SAW
+Tahun Baru Islam
+Tahun Baru Hijriah
+Hari Kemerdekaan
+Hari Kemerdekaan Republik Indonesia
+Hari Proklamasi
+Tujuhbelasan
+Agustusan
+Hari Lahir Pancasila
+Hari Buruh
+Hari Buruh Internasional
+Hari Kartini
+Hari Pahlawan
+Hari Pendidikan Nasional
+Hardiknas
+Hari Kebangkitan Nasional
+Harkitnas
+Hari Sumpah Pemuda
+Sumpah Pemuda
+Hari Guru
+Hari Guru Nasional
+Hari Ibu
+Hari Anak Nasional
+Hari Kesaktian Pancasila
+Hari Batik Nasional
+Hari Santri
+Hari Santri Nasional
+Hari TNI
+Hari Bhayangkara
+Hari Pers Nasional
+Hari Gizi Nasional
+Hari Kesehatan Nasional
+Hari Bela Negara
+Hari Nusantara
+Hari Pramuka
+Hari Olahraga Nasional
+Hari Musik Nasional
+Hari Film Nasional
+Hari Peduli Sampah Nasional
+Hari Bumi
+Hari Lingkungan Hidup Sedunia
+Hari Perempuan Internasional
+Hari AIDS Sedunia
+Hari Antikorupsi Sedunia
+Hari Disabilitas Internasional
+Hari Pangan Sedunia
+Hari Valentine
+Hari Ayah
+cuti bersama
+Harpitnas
+Hari Kejepit Nasional
+Libur Nasional
+Hari Libur Nasional
+Tanggal Merah
+Mudik
+Arus Mudik
+Arus Balik
+Halalbihalal
+Syawalan
+Malam Takbiran
+Takbiran
+Nuzululquran
+Lailatulkadar
+Nisfu Syakban
+Asyura
+Malam Satu Sura
+Satu Sura
+Rebo Wekasan
+Sekaten
+Grebeg Maulud
+Dugderan
+Galungan
+Hari Raya Galungan
+Hari Raya Kuningan
+Pagerwesi
+Saraswati
+Melasti
+Ngembak Geni
+Ogoh-ogoh
+Cap Go Meh
+Ceng Beng
+Peh Cun
+Muharam
+Safar
+Rabiulawal
+Rabiulakhir
+Jumadilawal
+Jumadilakhir
+Rajab
+Syakban
+Syawal
+Zulkaidah
+Zulhijah
+Sura
+Sapar
+Mulud
+Bakda Mulud
+Rejeb
+Ruwah
+Pasa
+Sawal
+Sela
+Besar
+Legi
+Pahing
+Wage
+Kliwon
+Weton
+Masehi
+Hijriah
+Saka
+Kalender Jawa
+Kalender Hijriah
+Kalender Masehi
+WIB
+WITA
+WIT
+Waktu Indonesia Barat
+Waktu Indonesia Tengah
+Waktu Indonesia Timur
+UTC
+GMT
+Jan
+Feb
+Mar
+Apr
+Jun
+Jul
+Agu
+Agt
+Sep
+Okt
+Nov
+Des

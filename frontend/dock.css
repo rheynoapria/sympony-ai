@@ -1,0 +1,605 @@
+/* The Dock: a bar at the bottom of the screen. The window is transparent and shaped to what's drawn here
+   (dock.js tells main), so only the bar, the magnified icons, a name and the menu take clicks. */
+:root {
+  --size: 50px;      /* icon size (Settings → Dock) */
+  --pad: 6px;        /* around the icons inside the bar */
+  --lift: 0px;       /* how much higher the bar floats (Settings → Dock → Gap from the bottom edge) */
+  --gap: 4px;
+  --spring: cubic-bezier(0.32, 1.28, 0.54, 1);
+  --smooth: cubic-bezier(0.32, 0.72, 0, 1);
+  /* the bar coming up (a little past its place, ~4 %, and back) and going down (slow at first, then faster) */
+  --rise: cubic-bezier(0.3, 1.36, 0.5, 1);
+  --sink: cubic-bezier(0.4, 0, 0.7, 0.2);
+  /* The look (Settings → Dock → Style; dock.js sets data-style on <html>): Black unless a style below says
+     otherwise. The bar, its status area and dots, and the name, menu and window list over it. */
+  --text: #f5f5f7;
+  --dim: #a1a1a8;
+  --bar: linear-gradient(180deg, #36363e, #1c1c22);
+  --bar-edge: rgba(255, 255, 255, 0.16);
+  --bar-top: var(--bar-edge);
+  /* the bar's shadow inside it, and with the one it casts (#dock.flat has only the first) */
+  --bar-inset: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --bar-shadow: 0 12px 32px rgba(0, 0, 0, 0.38), var(--bar-inset);
+  --bar-radius: calc(var(--size) * 0.36 + var(--pad));
+  --text-shadow: none;
+  --line: rgba(255, 255, 255, 0.14);  /* before the status area */
+  --sep: rgba(255, 255, 255, 0.22);
+  --hover: rgba(255, 255, 255, 0.09);
+  --press: rgba(255, 255, 255, 0.05);
+  --dot: rgba(255, 255, 255, 0.85);
+  --dot-on: #fff;
+  --dot-glow: rgba(255, 255, 255, 0.8);
+  --dot-halo: transparent;
+  /* the corner and line open-app markers: their colour (for the app in front), the ring around the corner one
+     (the bar's colour) and the edge around the line (it sits on the icon) */
+  --mark: #d4d4da;
+  --mark-on: #fff;
+  --ring: #303037;
+  --mark-edge: rgba(0, 0, 0, 0.45);
+  --icon-shadow: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  --pop: rgba(36, 36, 42, 0.96);
+  --pop-edge: rgba(255, 255, 255, 0.14);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --pop-line: rgba(255, 255, 255, 0.1);
+  --pop-hover: rgba(255, 255, 255, 0.08);
+  --accent: #0a84ff;
+  --tile-start: linear-gradient(160deg, #3d9bff, #0a64d8);
+  --tile-tv: linear-gradient(160deg, #56565f, #303037);
+  --tile-tv-text: #fff;
+  --tile-edge: transparent;
+  /* the plate under an icon that isn't square (Same shape for every icon) */
+  --plate: linear-gradient(160deg, #45454e, #26262c);
+  --plate-edge: rgba(255, 255, 255, 0.10);
+  /* Tint icons (Settings → Dock): each icon's lightness from the first colour (its darkest) to the second (its
+     lightest), worked out by dock.js; the tiles without an icon in the same two */
+  --tint-lo: #4c4c55;
+  --tint-hi: #f2f2f6;
+  /* behind a tray icon that would be hard to see on the grid (Windows drew it dark), and the grid's warnings */
+  --tray-plate: rgba(255, 255, 255, 0.85);
+  --warn: #ff9f0a;
+  /* the next prayer's countdown and its time when it comes (green, as in the notch), and the light behind it then */
+  --prayer: #30d158;
+  --prayer-lit: rgba(48, 209, 88, 0.2);
+  color-scheme: dark;
+}
+
+/* White: a solid light bar with dark icons and text; the name, menu and window list are light too */
+:root[data-style="white"] {
+  --text: #1d1d1f;
+  --dim: #6e6e73;
+  --bar: linear-gradient(180deg, #fdfdfe, #e9e9ee);
+  --bar-edge: rgba(0, 0, 0, 0.10);
+  --bar-inset: inset 0 1px 0 #fff;
+  --bar-shadow: 0 12px 30px rgba(0, 0, 0, 0.22), var(--bar-inset);
+  --line: rgba(0, 0, 0, 0.12);
+  --sep: rgba(0, 0, 0, 0.15);
+  --hover: rgba(0, 0, 0, 0.06);
+  --press: rgba(0, 0, 0, 0.1);
+  --dot: rgba(0, 0, 0, 0.5);
+  --dot-on: #1d1d1f;
+  --dot-glow: rgba(0, 0, 0, 0.25);
+  --mark: #8a8a90;
+  --mark-on: #1d1d1f;
+  --ring: #f7f7f9;
+  --mark-edge: rgba(255, 255, 255, 0.8);
+  --icon-shadow: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.18));
+  --pop: rgba(252, 252, 253, 0.98);
+  --pop-edge: rgba(0, 0, 0, 0.10);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  --pop-line: rgba(0, 0, 0, 0.08);
+  --pop-hover: rgba(0, 0, 0, 0.05);
+  --tile-tv: linear-gradient(160deg, #ffffff, #dcdce3);
+  --tile-tv-text: #1d1d1f;
+  --tile-edge: rgba(0, 0, 0, 0.08);
+  --plate: linear-gradient(160deg, #ffffff, #e6e6ec);
+  --plate-edge: rgba(0, 0, 0, 0.09);
+  /* (its dark end a dark grey, not near-black: an icon on a dark square stays a grey square with its picture readable) */
+  --tint-lo: #48484f;
+  --tint-hi: #b4b4bc;
+  --tray-plate: rgba(36, 36, 42, 0.88);
+  --warn: #b25f00;
+  --prayer: #1b8a3a;
+  --prayer-lit: rgba(27, 138, 58, 0.14);
+  color-scheme: light;
+}
+
+/* Clear Glass: nearly colourless and see-through, with a bright edge and a soft glow inside; no blur (CSS only),
+   so the text gets a shadow to stay readable over a busy wallpaper. Also Frosted Glass's look while Windows
+   doesn't frost (transparency effects off, energy saver on). */
+:root[data-style="clear"] {
+  --text: #fff;
+  --dim: rgba(255, 255, 255, 0.84);
+  --bar: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.08));
+  --bar-edge: rgba(255, 255, 255, 0.32);
+  --bar-top: rgba(255, 255, 255, 0.72);
+  --bar-inset: inset 0 1px 1px rgba(255, 255, 255, 0.55), inset 1px 0 1px rgba(255, 255, 255, 0.22), inset 0 0 14px rgba(255, 255, 255, 0.14);
+  --bar-shadow: var(--bar-inset), 0 10px 26px rgba(0, 0, 0, 0.18);
+  --text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 8px rgba(0, 0, 0, 0.35);
+  --line: rgba(255, 255, 255, 0.4);
+  --sep: rgba(255, 255, 255, 0.5);
+  --hover: rgba(255, 255, 255, 0.16);
+  --press: rgba(255, 255, 255, 0.1);
+  --dot: rgba(255, 255, 255, 0.95);
+  --dot-glow: rgba(255, 255, 255, 0.85);
+  --dot-halo: rgba(0, 0, 0, 0.6);
+  --mark: rgba(255, 255, 255, 0.92);
+  --ring: rgba(0, 0, 0, 0.32);
+  --mark-edge: rgba(0, 0, 0, 0.5);
+  --icon-shadow: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  --pop: rgba(26, 26, 32, 0.88);
+  --pop-edge: rgba(255, 255, 255, 0.3);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --pop-line: rgba(255, 255, 255, 0.14);
+  --tile-start: linear-gradient(160deg, rgba(80, 160, 255, 0.88), rgba(10, 100, 216, 0.88));
+  --tile-tv: linear-gradient(160deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08));
+  --tile-edge: rgba(255, 255, 255, 0.45);
+  --plate: linear-gradient(160deg, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.10));
+  --plate-edge: rgba(255, 255, 255, 0.5);
+  --tint-lo: #5e5e68;
+  --tint-hi: #ffffff;
+}
+
+/* Frosted Glass: a see-through bar; the blur of what's behind it comes from a frosted window main keeps right
+   under the bar (dock.rs), tinted dark by Sympony itself (not by Windows' light or dark mode). */
+:root[data-style="frosted"] {
+  --dim: rgba(255, 255, 255, 0.82);
+  --bar: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+  --bar-edge: rgba(255, 255, 255, 0.26);
+  --bar-inset: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  --bar-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), var(--bar-inset);
+  /* the frosted window under it has Windows 11's 8 px corners and sits 2 px inside the bar (dock.rs
+     GLASS_INSET): a radius up to ~15 px keeps all of it inside the bar */
+  --bar-radius: 14px;
+  --text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --line: rgba(255, 255, 255, 0.25);
+  --sep: rgba(255, 255, 255, 0.3);
+  --hover: rgba(255, 255, 255, 0.14);
+  --dot: rgba(255, 255, 255, 0.95);
+  --dot-halo: rgba(0, 0, 0, 0.4);
+  --mark: rgba(255, 255, 255, 0.92);
+  --ring: rgba(36, 36, 44, 0.55);
+  --pop: rgba(30, 30, 36, 0.94);
+  --pop-edge: rgba(255, 255, 255, 0.2);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --tile-tv: linear-gradient(160deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  --tile-edge: rgba(255, 255, 255, 0.35);
+  --plate: linear-gradient(160deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08));
+  --plate-edge: rgba(255, 255, 255, 0.4);
+  --tint-lo: #5e5e68;
+  --tint-hi: #ffffff;
+}
+
+/* Midnight: a solid deep navy bar, its accents slightly blue */
+:root[data-style="midnight"] {
+  --text: #e8edff;
+  --dim: #93a2cc;
+  --bar: linear-gradient(180deg, #1c2746, #0b1124);
+  --bar-edge: rgba(130, 160, 255, 0.24);
+  --bar-inset: inset 0 1px 0 rgba(160, 190, 255, 0.16);
+  --bar-shadow: 0 12px 32px rgba(2, 6, 24, 0.5), var(--bar-inset);
+  --line: rgba(130, 160, 255, 0.2);
+  --sep: rgba(130, 160, 255, 0.28);
+  --hover: rgba(130, 160, 255, 0.13);
+  --press: rgba(130, 160, 255, 0.08);
+  --dot: #a8bbff;
+  --dot-on: #e2e9ff;
+  --dot-glow: rgba(110, 150, 255, 0.9);
+  --mark: #a8bbff;
+  --mark-on: #e2e9ff;
+  --ring: #19233f;
+  --mark-edge: rgba(0, 4, 20, 0.6);
+  --pop: rgba(15, 21, 42, 0.97);
+  --pop-edge: rgba(130, 160, 255, 0.22);
+  --pop-shadow: 0 10px 28px rgba(0, 4, 20, 0.55);
+  --pop-line: rgba(130, 160, 255, 0.14);
+  --pop-hover: rgba(130, 160, 255, 0.1);
+  --accent: #3b78ff;
+  --tile-start: linear-gradient(160deg, #5a8bff, #2546c2);
+  --tile-tv: linear-gradient(160deg, #2b3a6b, #161f3d);
+  --plate: linear-gradient(160deg, #2e3d70, #172142);
+  --plate-edge: rgba(130, 160, 255, 0.22);
+  --tint-lo: #2b3a72;
+  --tint-hi: #b4c3ff;
+}
+
+/* Wallpaper color: a solid bar in the main colour of the wallpaper on this display (dock.js sets --wall, "r, g, b",
+   from main), a shade lighter at its top, its plates and Task View tile in the same colour; on a light colour the
+   text, dots and marks turn dark and the name, menu and window list light, as on White (data-ink="dark") */
+:root[data-style="wallpaper"] {
+  --wall: 44, 44, 46;
+  --bar: linear-gradient(180deg, color-mix(in srgb, rgb(var(--wall)) 86%, #fff), rgb(var(--wall)));
+  --bar-edge: rgba(255, 255, 255, 0.18);
+  --bar-inset: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --hover: rgba(255, 255, 255, 0.12);
+  --ring: rgb(var(--wall));
+  --tile-tv: linear-gradient(160deg, color-mix(in srgb, rgb(var(--wall)) 78%, #fff), color-mix(in srgb, rgb(var(--wall)) 88%, #000));
+  --plate: linear-gradient(160deg, color-mix(in srgb, rgb(var(--wall)) 80%, #fff), color-mix(in srgb, rgb(var(--wall)) 90%, #000));
+  --plate-edge: rgba(255, 255, 255, 0.14);
+  --tint-lo: #5e5e68;
+  --tint-hi: #ffffff;
+}
+:root[data-style="wallpaper"][data-ink="dark"] {
+  --text: #1d1d1f;
+  --dim: #4f4f55;
+  --bar: linear-gradient(180deg, color-mix(in srgb, rgb(var(--wall)) 80%, #fff), rgb(var(--wall)));
+  --bar-edge: rgba(0, 0, 0, 0.12);
+  --bar-inset: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --bar-shadow: 0 12px 30px rgba(0, 0, 0, 0.22), var(--bar-inset);
+  --line: rgba(0, 0, 0, 0.14);
+  --sep: rgba(0, 0, 0, 0.18);
+  --hover: rgba(0, 0, 0, 0.07);
+  --press: rgba(0, 0, 0, 0.1);
+  --dot: rgba(0, 0, 0, 0.55);
+  --dot-on: #1d1d1f;
+  --dot-glow: rgba(0, 0, 0, 0.25);
+  --mark: #4f4f55;
+  --mark-on: #1d1d1f;
+  --mark-edge: rgba(255, 255, 255, 0.8);
+  --icon-shadow: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.18));
+  --pop: rgba(252, 252, 253, 0.98);
+  --pop-edge: rgba(0, 0, 0, 0.10);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  --pop-line: rgba(0, 0, 0, 0.08);
+  --pop-hover: rgba(0, 0, 0, 0.05);
+  --tile-tv-text: #1d1d1f;
+  --tile-edge: rgba(0, 0, 0, 0.08);
+  --plate-edge: rgba(0, 0, 0, 0.09);
+  --tint-lo: #48484f;
+  --tint-hi: #b4b4bc;
+  --tray-plate: rgba(36, 36, 42, 0.88);
+  --warn: #b25f00;
+  --prayer: #1b8a3a;
+  --prayer-lit: rgba(27, 138, 58, 0.14);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden; background: transparent;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--text); user-select: none; -webkit-user-select: none; font-size: 13px;
+}
+
+/* the bar: it keeps its height while icons grow out of the top of it, and grows wider with them: its ends go out
+   by --grow-l and --grow-r (dock.js), the margin keeps what's between them in its place */
+#dock {
+  position: absolute; left: 50%; bottom: calc(6px + var(--lift)); transform: translateX(-50%);
+  /* more room below the icons for the dots under them; as much above as below with the other open-app markers
+     (Settings → Dock → Open-app marker), the bar as tall either way */
+  --pad-top: var(--pad); --pad-bottom: calc(var(--pad) + 4px);
+  padding: var(--pad-top) calc(var(--pad) + 2px + var(--grow-r, 0px)) var(--pad-bottom) calc(var(--pad) + 2px + var(--grow-l, 0px));
+  margin-inline-start: calc((var(--grow-r, 0px) - var(--grow-l, 0px)) / 2);
+  border-radius: var(--bar-radius);
+  /* solid, or see-through like glass (Settings → Dock → Style) */
+  background: var(--bar);
+  border: 1px solid var(--bar-edge); border-top-color: var(--bar-top);
+  box-shadow: var(--bar-shadow);
+  /* coming up: on a spring, a few px past its place and back, growing to its size as it fades in (like the notch
+     opening); going down: gathering speed, a little smaller, fading at the end. dock.js keeps the window's shape
+     on the bar for the whole slide. */
+  transition: transform 0.52s var(--rise), opacity 0.2s ease-out;
+}
+/* At rest (and sliding) the window is shaped to the bar's rect, so the shadow it casts would show only in the four
+   corners outside its round ones, cut square there (GitHub #22): it keeps the shadow inside it until the window is
+   bigger than the bar (the mouse on it, a menu or list open, a drag; dock.js dropShadow). */
+#dock.flat { box-shadow: var(--bar-inset); }
+#dock[data-mark="corner"], #dock[data-mark="line"], #dock[data-mark="none"] { --pad-top: calc(var(--pad) + 2px); --pad-bottom: calc(var(--pad) + 2px); }
+#dock.hidden {
+  transform: translateX(-50%) translateY(calc(100% + 12px + var(--lift))) scale(0.96); opacity: 0;
+  transition: transform 0.34s var(--sink), opacity 0.24s ease-in 0.1s;
+}
+/* leaving for a fullscreen app, or with Sympony hidden from the tray (dock.js dock:leaving): the same slide, a little
+   quicker, done before main hides the window */
+#dock.hidden.leaving { transition: transform 0.24s var(--sink), opacity 0.16s ease-in 0.08s; }
+#dock.leaving, #dock.leaving * { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { #dock.hidden.leaving { transition: none; } }
+#dock.dragover { border-color: var(--accent); }
+#dock { display: flex; align-items: flex-end; }
+#items { display: flex; align-items: flex-end; gap: var(--gap); height: var(--size); }
+
+/* the status area at the right end (while the Dock stands in for the taskbar) */
+#status { display: flex; align-items: center; gap: 2px; height: var(--size); margin-inline-start: 10px; padding-inline-start: 8px; border-inline-start: 1px solid var(--line); text-shadow: var(--text-shadow); }
+#status[hidden] { display: none; }
+#status button {
+  height: 100%; padding: 0 7px; border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; display: flex; align-items: center; gap: 7px; cursor: default; white-space: nowrap;
+}
+#status button:hover { background: var(--hover); }
+#status button:active { background: var(--press); }
+#status i { font-size: 13px; }
+#status .lang { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; }
+#status .clock { flex-direction: column; justify-content: center; align-items: flex-end; gap: 1px; font-size: 12px; line-height: 1.2; }
+#status .clock small { font-size: 11px; color: var(--dim); }
+#status .dim { opacity: 0.45; }
+#status .tray i { font-size: 11px; transition: transform 0.2s var(--smooth); }
+#status .tray.on { background: var(--hover); }
+#status .tray.on i { transform: rotate(180deg); }
+
+/* the next prayer (dock.js), before the status area, after a line like it; the status area then follows without
+   a line of its own. Counting down: the time left in green; when it's time: lit up green for a minute. */
+#prayer { display: flex; align-items: center; height: var(--size); margin-inline-start: 10px; padding-inline-start: 8px; border-inline-start: 1px solid var(--line); text-shadow: var(--text-shadow); }
+#prayer:not([hidden]) + #status { margin-inline-start: 2px; padding-inline-start: 0; border-inline-start: 0; }
+#prayer button {
+  height: 100%; padding: 0 8px 0 7px; border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; text-shadow: inherit; display: flex; align-items: center; gap: 7px; cursor: default; white-space: nowrap;
+}
+#prayer button:hover { background: var(--hover); }
+#prayer button:active { background: var(--press); }
+#prayer i { font-size: 13px; }
+#prayer .pt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 12px; line-height: 1.2; }
+#prayer .pt b { font-weight: 400; }
+#prayer .pt small { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+#prayer .soon i, #prayer .now i, #prayer .soon .pt small, #prayer .now .pt small { color: var(--prayer); font-weight: 600; }
+#prayer .now { background: var(--prayer-lit); animation: prayer-lit 1.6s ease-in-out infinite; }
+#prayer .now:hover { background: var(--prayer-lit); }
+@keyframes prayer-lit { 50% { box-shadow: inset 0 0 0 1px var(--prayer); } }
+
+/* Show desktop: a small desktop button at the very end, after a line, where the taskbar has its far corner (dock.js) */
+#desk {
+  position: relative; flex: none; height: var(--size); margin-inline-start: 9px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); text-shadow: var(--text-shadow); display: grid; place-items: center; cursor: default;
+}
+#desk::before { content: ''; position: absolute; left: -5px; top: 0; bottom: 0; width: 1px; background: var(--line); pointer-events: none; }
+#desk i { font-size: 13px; }
+#prayer[hidden] + #status[hidden] + #desk { margin-inline-start: 15px; }
+#desk:hover { background: var(--hover); }
+#desk:active { background: var(--press); }
+
+/* other apps' tray icons: a grid above the arrow in the status area, like Windows' box of hidden icons, in the
+   colours of the Style's menus. Settings → Dock → Tray icon size: small, medium or large (dock.js data-size). */
+#tray {
+  --cell: 36px; --tic: 20px;
+  position: absolute; padding: 6px; border-radius: 11px; color: var(--text);
+  background: var(--pop); border: 1px solid var(--pop-edge); box-shadow: var(--pop-shadow);
+}
+#tray[data-size="small"] { --cell: 28px; --tic: 16px; }
+#tray[data-size="large"] { --cell: 44px; --tic: 24px; }
+#tray .grid { display: grid; grid-template-columns: repeat(var(--cols), var(--cell)); gap: 2px; justify-content: center; }
+#tray .ti {
+  width: var(--cell); height: var(--cell); border: 0; border-radius: 7px; background: none; color: var(--text);
+  display: grid; place-items: center; font: inherit; font-weight: 700; cursor: default;
+}
+#tray .ti:hover { background: var(--pop-hover); }
+#tray .ti:active { background: var(--press); }
+#tray .ti img { width: var(--tic); height: var(--tic); object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+/* an icon Windows drew dark on a dark grid (or light on White's): on a small plate of the other kind */
+#tray .ti.plate img { box-sizing: content-box; padding: 3px; border-radius: 6px; background: var(--tray-plate); }
+#tray .empty { padding: 6px 10px; color: var(--dim); font-size: 12px; white-space: nowrap; text-align: center; }
+#tray .note { max-width: 200px; padding: 6px 6px 2px; color: var(--warn); font-size: 11.5px; line-height: 1.35; }
+#tray .more {
+  display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 4px; padding: 5px 8px; border: 0; border-radius: 7px;
+  background: none; color: var(--dim); font: inherit; font-size: 12px; white-space: nowrap; cursor: default;
+}
+#tray .more:hover { background: var(--accent); color: #fff; }
+/* Clear and Frosted Glass: the grid is glass like the bar (on Frosted over a frosted window of its own, dock.rs),
+   with a faint shade on Clear (no blur there: Windows' white tray icons stay readable over a light wallpaper),
+   the icons with a tight shadow; one Windows drew dark gets its light plate as on the dark grids */
+:root[data-style="clear"] #tray, :root[data-style="frosted"] #tray {
+  /* (its window is shaped 4 px around it: a cast shadow would be cut square, as the bar's at rest) */
+  background: var(--bar); border: 1px solid var(--bar-edge); border-top-color: var(--bar-top); box-shadow: var(--bar-inset);
+  text-shadow: var(--text-shadow);
+}
+:root[data-style="clear"] #tray { background: linear-gradient(rgba(16, 16, 22, 0.16), rgba(16, 16, 22, 0.16)), var(--bar); }
+:root[data-style="clear"] #tray .ti:hover, :root[data-style="frosted"] #tray .ti:hover { background: var(--hover); }
+:root[data-style="clear"] #tray .ti img, :root[data-style="frosted"] #tray .ti img { filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4)); }
+:root[data-style="clear"] #tray .ti.plate img, :root[data-style="frosted"] #tray .ti.plate img { filter: none; }
+
+/* An item keeps its place in the bar; its icon grows from its foot and moves aside for the growing ones next to
+   it (dock.js: --s and --x). Only the icon takes the mouse, where it's drawn. */
+.item { position: relative; flex: none; width: var(--size); height: var(--size); pointer-events: none; }
+.item .mag { position: absolute; inset: 0; pointer-events: auto; transform-origin: 50% 100%; transform: translateX(var(--x, 0px)) scale(var(--s, 1)); }
+.item .ic {
+  position: absolute; left: 0; bottom: 0; width: 100%; height: 100%;
+  display: grid; place-items: center; border-radius: 22%;
+}
+.item img { width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; pointer-events: none; filter: var(--icon-shadow); }
+/* Same shape for every icon (dock.js shapes): one rounded square each; a picture that isn't square sits on a plate */
+.item .ic.uni { border-radius: 23%; overflow: hidden; filter: var(--icon-shadow); }
+.item .ic.uni img { filter: none; }
+.item .ic.uni.plate { background: var(--plate); box-shadow: inset 0 0 0 1px var(--plate-edge); }
+/* no icon (a web link, a missing app): a tile with a glyph or the first letter */
+.item .ic.tile { background: linear-gradient(160deg, #5e5ce6, #3a3a8c); color: #fff; font-weight: 700; font-size: calc(var(--size) * 0.42); }
+.item .ic.tile i { font-size: calc(var(--size) * 0.44); }
+.item .ic.tile.start { background: var(--tile-start); box-shadow: inset 0 0 0 1px var(--tile-edge); }
+.item .ic.tile.taskview { background: var(--tile-tv); color: var(--tile-tv-text); box-shadow: inset 0 0 0 1px var(--tile-edge); }
+.item .ic.tile.taskview svg { width: 56%; height: 56%; }
+/* Search (Settings → Dock): a tile like Task View's */
+.item .ic.tile.search { background: var(--tile-tv); color: var(--tile-tv-text); box-shadow: inset 0 0 0 1px var(--tile-edge); }
+.item .ic.tile.search svg { width: 54%; height: 54%; }
+/* Windows 11's logo (dock.js), as big as Windows 10's glyph */
+.item .ic.tile.start svg { width: 40%; height: 40%; }
+/* Show today's date on calendar icons (Settings → Dock, dock.js calendarOf): a calendar app as a white page with the
+   short month on a red band and the day under it; the same rounded square as the other icons with Same shape for
+   every icon, a little smaller without (as most icons sit in theirs) */
+.item .ic.cal {
+  inset: 6%; width: auto; height: auto; border-radius: 22%; overflow: hidden;
+  display: flex; flex-direction: column; place-items: stretch; background: linear-gradient(180deg, #ffffff, #f1f0f4);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); filter: var(--icon-shadow);
+  font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+.item .ic.cal.uni { inset: 0; border-radius: 23%; }
+.item .ic.cal .cm {
+  flex: 0 0 30%; display: grid; place-items: center; background: linear-gradient(180deg, #ff5f57, #e3352b); color: #fff;
+  font-size: calc(var(--size) * 0.16); font-weight: 700; letter-spacing: 0.04em; line-height: 1; white-space: nowrap;
+}
+.item .ic.cal .cd {
+  flex: 1; display: grid; place-items: center; padding-bottom: 3%; color: #1d1d1f;
+  font-size: calc(var(--size) * 0.46); font-weight: 600; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
+/* Task View: the number of the desktop in front, with two or more */
+.item .ic .badge {
+  position: absolute; top: -3px; right: -3px; min-width: max(13px, calc(var(--size) * 0.32)); height: max(13px, calc(var(--size) * 0.32));
+  padding: 0 3px; border-radius: 999px; display: grid; place-items: center; background: var(--accent); color: #fff;
+  font-size: max(9px, calc(var(--size) * 0.21)); font-weight: 700; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.item .ic.loading { background: var(--hover); }
+/* open apps (Settings → Dock → Open-app marker, dock.js data-mark): a dot under the icon for each window, up to
+   three */
+.item::after {
+  content: ''; display: none; position: absolute; left: 50%; bottom: -8px; width: 4px; height: 4px;
+  transform: translateX(calc(-50% + var(--x, 0px)));
+  background: radial-gradient(circle at 2px 2px, var(--dot) 1.7px, transparent 2.1px) 0 0 / 7px 4px repeat-x;
+  filter: drop-shadow(0 0 1.5px var(--dot-halo));
+}
+[data-mark="dot"] .item.running::after { display: block; }
+.item[data-w="2"]::after { width: 11px; }
+.item[data-w="3"]::after { width: 18px; }
+.item.active::after { background-image: radial-gradient(circle at 2px 2px, var(--dot-on) 1.8px, transparent 2.2px); filter: drop-shadow(0 0 3px var(--dot-glow)); }
+/* or a dot in the icon's top corner, ringed in the bar's colour, growing with the icon; with two windows or more
+   their number on a blue badge. In the other corner when the icon has a badge of its own (Task View's). */
+[data-mark="corner"] .item.running .mag::after {
+  content: ''; position: absolute; top: -1px; right: -1px;
+  width: max(7px, calc(var(--size) * 0.15)); height: max(7px, calc(var(--size) * 0.15)); border-radius: 999px;
+  background: var(--mark); box-shadow: 0 0 0 2px var(--ring);
+}
+[data-mark="corner"] .item.running .mag[data-c]::after {
+  content: attr(data-c); top: -3px; right: -3px; width: auto; min-width: max(13px, calc(var(--size) * 0.3)); height: max(13px, calc(var(--size) * 0.3));
+  padding: 0 3px; display: grid; place-items: center; background: var(--accent); color: #fff;
+  font-size: max(9px, calc(var(--size) * 0.2)); font-weight: 700; line-height: 1;
+}
+[data-mark="corner"] .item.running.active .mag::after { background-color: var(--mark-on); box-shadow: 0 0 0 2px var(--ring), 0 0 6px var(--dot-glow); }
+[data-mark="corner"] .item.running.active .mag[data-c]::after { background-color: var(--accent); }
+[data-mark="corner"] .item.badged .mag::after { right: auto; left: -1px; }
+[data-mark="corner"] .item.badged .mag[data-c]::after { right: auto; left: -3px; }
+/* or a short line inside the icon at its bottom, longer with two or three windows, brighter for the app in front */
+[data-mark="line"] .item.running .mag::after {
+  content: ''; position: absolute; left: 50%; bottom: max(2px, calc(var(--size) * 0.05)); transform: translateX(-50%);
+  width: calc(var(--size) * 0.2); height: max(2px, calc(var(--size) * 0.055)); border-radius: 99px;
+  background: var(--mark); box-shadow: 0 0 0 1px var(--mark-edge); opacity: 0.8;
+}
+[data-mark="line"] .item.running[data-w="2"] .mag::after { width: calc(var(--size) * 0.32); }
+[data-mark="line"] .item.running[data-w="3"] .mag::after { width: calc(var(--size) * 0.44); }
+[data-mark="line"] .item.running.active .mag::after { background: var(--mark-on); opacity: 1; box-shadow: 0 0 0 1px var(--mark-edge), 0 0 5px var(--dot-glow); }
+.item.pressed .ic { filter: brightness(0.7); }
+.item.bounce .ic { animation: bounce 0.62s var(--smooth) 3; }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-38%); } 70% { transform: translateY(0); } 85% { transform: translateY(-8%); } }
+/* being dragged to a new place / out of the Dock */
+.item.dragging { z-index: 2; }
+.item.dragging .ic { transition: opacity 0.15s; }
+.item.dragging.out .ic { opacity: 0.45; }
+/* files dragged from File Explorer (dock.js): the app they'd open with lit up behind its icon, or a line where
+   they'd be pinned */
+.item.droptarget .mag::before {
+  content: ''; position: absolute; inset: -4px; z-index: -1; border-radius: 27%;
+  background: var(--hover); box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent);
+}
+#dropmark { position: absolute; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 6px var(--accent); pointer-events: none; }
+
+.sep { flex: none; align-self: center; width: 1px; height: calc(var(--size) * 0.72); margin: 0 3px; background: var(--sep); }
+
+/* the name above the icon under the mouse */
+#label {
+  position: absolute; padding: 4px 10px; border-radius: 7px; white-space: nowrap; transform: translateX(-50%);
+  background: var(--pop); border: 1px solid var(--pop-edge); color: var(--text);
+  font-size: 12.5px; font-weight: 600; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); pointer-events: none;
+}
+
+/* right-click menu, and an app's window list over its icon */
+#menu, #wins {
+  position: absolute; padding: 5px; border-radius: 11px; color: var(--text);
+  background: var(--pop); border: 1px solid var(--pop-edge); box-shadow: var(--pop-shadow);
+}
+#menu { min-width: 190px; }
+#menu .head, #wins .head { padding: 5px 9px 6px; font-size: 12px; font-weight: 700; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+#menu > button {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 9px; border: 0; border-radius: 7px;
+  background: none; color: var(--text); font: inherit; text-align: start; cursor: default; white-space: nowrap;
+}
+#menu > button i { width: 14px; text-align: center; color: var(--dim); }
+#menu > button:hover { background: var(--accent); color: #fff; }
+#menu > button:hover i { color: #fff; }
+/* the keyboard languages (over the input language): the short name at the end, as the taskbar shows it */
+#menu > button .code { margin-inline-start: auto; padding-inline-start: 14px; font-size: 11px; font-weight: 600; color: var(--dim); }
+#menu > button:hover .code { color: rgba(255, 255, 255, 0.8); }
+#menu hr { border: 0; height: 1px; margin: 4px 6px; background: var(--pop-line); }
+/* End task (Settings → Dock): red, as what's unsaved in the app is lost; a darker red on White's light menu */
+#menu > button.danger { --danger: #ff453a; color: var(--danger); }
+:root[data-style="white"] #menu > button.danger { --danger: #d70015; }
+#menu > button.danger i { color: var(--danger); }
+#menu > button.danger:hover { background: var(--danger); color: #fff; }
+#menu > button.danger:hover i { color: #fff; }
+
+/* the windows: the one in front marked, minimized ones and ones on another display dimmer, × closes one */
+#wins { display: flex; flex-direction: column; min-width: 210px; max-width: 320px; }
+#wins .rows { overflow-y: auto; min-height: 0; }
+#menu .wins { max-height: 172px; overflow-y: auto; max-width: 300px; }
+.win { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 9px; min-height: 30px; border-radius: 7px; white-space: nowrap; cursor: default; }
+.win:hover { background: var(--pop-hover); }
+.win .mark { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.win.active .mark { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+.win .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.win.active .t { font-weight: 600; }
+.win.min .t, .win.away .t { color: var(--dim); }
+.win .st { flex: none; font-size: 10px; color: var(--dim); }
+.win .x {
+  flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--dim);
+  display: grid; place-items: center; font-size: 11px; cursor: default; opacity: 0;
+}
+.win:hover .x { opacity: 1; }
+.win .x:hover { background: #ff453a; color: #fff; }
+
+[hidden] { display: none !important; }
+
+/* small icons: the clock on one line, smaller status icons */
+#dock.small #status .clock small { display: none; }
+#dock.small #status i { font-size: 11px; }
+#dock.small #status button { padding: 0 5px; gap: 5px; }
+#dock.small #status .lang { font-size: 10px; }
+#dock.small #prayer .pt { flex-direction: row; align-items: baseline; gap: 5px; }
+#dock.small #prayer i, #dock.small #desk i { font-size: 11px; }
+#dock.small #prayer button { padding: 0 5px; gap: 5px; }
+#dock.small #desk { padding: 0 6px; }
+
+/* tiny icons (under 24 px; the bar's padding shrinks with them, dock.js --pad): the dots a px higher, smaller corner
+   markers and badges, bigger glyphs in the tiles, the status area's text a little smaller to fit the icons' height */
+#dock.tiny .item::after { bottom: -7px; }
+#dock.tiny[data-mark="corner"] .item.running .mag::after { width: 5px; height: 5px; box-shadow: 0 0 0 1.5px var(--ring); }
+#dock.tiny[data-mark="corner"] .item.running .mag[data-c]::after { width: auto; min-width: 11px; height: 11px; padding: 0 2px; font-size: 8px; }
+#dock.tiny[data-mark="corner"] .item.running.active .mag::after { box-shadow: 0 0 0 1.5px var(--ring), 0 0 4px var(--dot-glow); }
+#dock.tiny .item .ic .badge { min-width: 11px; height: 11px; padding: 0 2px; font-size: 8px; }
+#dock.tiny .item .ic.tile { font-size: calc(var(--size) * 0.5); }
+#dock.tiny .item .ic.tile i { font-size: calc(var(--size) * 0.5); }
+#dock.tiny .item .ic.tile.start svg { width: 50%; height: 50%; }
+#dock.tiny .item .ic.tile.taskview svg { width: 64%; height: 64%; }
+#dock.tiny .item .ic.tile.search svg { width: 62%; height: 62%; }
+#dock.tiny #status button, #dock.tiny #prayer button { padding: 0 4px; gap: 4px; border-radius: 6px; }
+#dock.tiny #status .clock, #dock.tiny #prayer .pt { font-size: 11px; line-height: 1.1; }
+#dock.tiny #prayer .pt small { font-size: 10px; }
+#dock.tiny #status i, #dock.tiny #prayer i, #dock.tiny #desk i { font-size: 10px; }
+#dock.tiny #status .tray i { font-size: 9px; }
+#dock.tiny #status .lang { font-size: 9px; }
+#dock.tiny #desk { padding: 0 5px; border-radius: 6px; }
+/* (a calendar's month too small to read: its band alone) */
+#dock.tiny .item .ic.cal .cm { font-size: 0; }
+
+/* Tint icons (Settings → Dock): the icons come one colour from dock.js; the tiles without an icon (Start, Task View,
+   a letter) take the same two colours, the glyph in the light one */
+#dock.tinted .item .ic.tile {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tint-hi) 34%, var(--tint-lo)), var(--tint-lo));
+  color: var(--tint-hi); box-shadow: inset 0 0 0 1px var(--tile-edge);
+}
+/* …and a calendar's page in the light one, its band and day in the dark one */
+#dock.tinted .item .ic.cal { background: var(--tint-hi); }
+#dock.tinted .item .ic.cal .cm { background: var(--tint-lo); color: var(--tint-hi); }
+#dock.tinted .item .ic.cal .cd { color: var(--tint-lo); }
+
+/* Settings → Animations → Windows and popups come out of their Dock icon (dock.js genie): while a window list, the tray grid or a
+   menu comes out of its icon or goes back in, copies of it cut into strips move instead (no clicks on them); the
+   popup itself waits at its place unseen, still taking the mouse */
+#genie { position: absolute; inset: 0; pointer-events: none; }
+#genie .gs { position: absolute; left: 0; top: 0; overflow: hidden; contain: strict; transform-origin: 50% 0; will-change: transform; }
+.genie-hide { opacity: 0 !important; }
+/* Frosted Glass: the tray grid's frosted window comes once it's at rest; meanwhile its copies are shaded like it */
+:root[data-style="frosted"] #genie #tray { background: linear-gradient(rgba(30, 32, 36, 0.5), rgba(30, 32, 36, 0.5)), var(--bar); }
+
+/* Wallpaper color with dark text: End task's red a darker one on its light menu, as on White */
+:root[data-style="wallpaper"][data-ink="dark"] #menu > button.danger { --danger: #d70015; }
+
+/* Warmer colors at night (Settings → General; tint.js sets --warm, 0 to 1, and the class "warm" on <html> after
+   sunset): a thin warm amber layer over the bar's own colours (under the icons) and over the name, the menus, the
+   window list and the tray grid, an eighth of it at full strength; the text keeps its colours */
+:root.warm { --warm-layer: linear-gradient(rgba(255, 143, 61, calc(var(--warm) * 0.12)), rgba(255, 143, 61, calc(var(--warm) * 0.12))); }
+:root.warm #dock { background: var(--warm-layer), var(--bar); }
+:root.warm :is(#label, #menu, #wins, #tray) { background: var(--warm-layer), var(--pop); }
+:root.warm[data-style="frosted"] #tray { background: var(--warm-layer), var(--bar); }
+:root.warm[data-style="clear"] #tray { background: var(--warm-layer), linear-gradient(rgba(16, 16, 22, 0.16), rgba(16, 16, 22, 0.16)), var(--bar); }

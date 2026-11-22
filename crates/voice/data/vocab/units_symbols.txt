@@ -1,0 +1,197 @@
+# category: units, currencies and symbols (written form with spoken Indonesian form)
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: WRITTEN<TAB>SPOKEN, one per line; column 1 is the written form to output, column 2 is the spoken Indonesian form, alternatives separated by "|"
+#	tagar|pagar|hashtag
+# licence: MIT / hand-curated for Sympony
+Rp	rupiah
+%	persen
+km	kilometer
+kg	kilogram
+m	meter
+cm	sentimeter
+mm	milimeter
+g	gram
+GB	gigabyte|giga
+MB	megabyte|mega
+TB	terabyte|tera
+KB	kilobyte
+°C	derajat Celsius|derajat
+°	derajat
+km/jam	kilometer per jam
+US$	dolar AS|dolar Amerika
+$	dolar
+€	euro
+£	poundsterling|poun
+¥	yen|yuan
+@	et|at
+.com	titik com|dot com
+.co.id	titik co titik id|dot co dot id
+.id	titik id|dot id
+.go.id	titik go titik id
+.ac.id	titik ac titik id
+.org	titik org|dot org
+.net	titik net|dot net
+www	we we we
+https://	ha te te pe es
+/	garis miring|per|slash
+\	garis miring terbalik|backslash
+-	strip|tanda hubung|minus
+_	garis bawah|underscore
+&	dan|ampersand
++	plus|tambah
+=	sama dengan
+×	kali
+÷	bagi
+±	kurang lebih|plus minus
+<	kurang dari
+>	lebih dari
+≤	kurang dari atau sama dengan
+≥	lebih dari atau sama dengan
+*	bintang
+~	tilde|sekitar
+"	tanda petik
+'	tanda petik tunggal
+(	buka kurung
+)	tutup kurung
+:	titik dua
+;	titik koma
+,	koma
+.	titik
+!	tanda seru
+?	tanda tanya
+...	titik-titik
+‰	permil
+m²	meter persegi
+km²	kilometer persegi
+cm²	sentimeter persegi
+m³	meter kubik
+cm³	sentimeter kubik
+ha	hektare
+are	are
+L	liter
+ml	mililiter
+cc	cc|sentimeter kubik
+dl	desiliter
+ton	ton
+kuintal	kuintal
+ons	ons
+mg	miligram
+µg	mikrogram
+mcg	mikrogram
+lb	pon
+oz	ons
+inci	inci
+in	inci
+ft	kaki
+mil	mil
+mph	mil per jam
+knot	knot
+mdpl	meter di atas permukaan laut
+m/s	meter per detik
+km/h	kilometer per jam
+rpm	rotasi per menit
+kWh	kilowatt jam|kilowatt-hour
+W	watt
+kW	kilowatt
+MW	megawatt
+GW	gigawatt
+V	volt
+kV	kilovolt
+A	ampere
+mAh	miliampere-hour|miliampere jam
+Wh	watt jam
+VA	volt ampere
+Hz	hertz
+kHz	kilohertz
+MHz	megahertz
+GHz	gigahertz
+dB	desibel
+Mbps	megabit per detik|mbps
+Gbps	gigabit per detik
+kbps	kilobit per detik
+MB/s	megabyte per detik
+fps	frame per detik|fps
+px	piksel
+dpi	dot per inci
+MP	megapiksel
+K	ribu|k
+rb	ribu
+jt	juta
+T	triliun
+Rp1 juta	satu juta rupiah
+Rp1 miliar	satu miliar rupiah
+°F	derajat Fahrenheit
+kal	kalori
+kkal	kilokalori
+cal	kalori
+mmHg	milimeter air raksa
+mg/dL	miligram per desiliter
+bar	bar
+hPa	hektopascal
+N	newton
+J	joule
+ppm	part per million|bagian per sejuta
+pH	pH|pe ha
+IDR	rupiah
+USD	dolar AS
+EUR	euro
+SGD	dolar Singapura
+S$	dolar Singapura
+MYR	ringgit|ringgit Malaysia
+RM	ringgit
+JPY	yen
+CNY	yuan
+RMB	renminbi|yuan
+GBP	poundsterling
+AUD	dolar Australia
+A$	dolar Australia
+HKD	dolar Hong Kong
+KRW	won|won Korea
+₩	won
+SAR	riyal|riyal Arab Saudi
+AED	dirham
+INR	rupee|rupee India
+₹	rupee
+THB	baht
+฿	baht
+₱	peso
+VND	dong
+TWD	dolar Taiwan
+CHF	franc Swiss
+CAD	dolar Kanada
+NZD	dolar Selandia Baru
+BND	dolar Brunei
+QAR	riyal Qatar
+KWD	dinar Kuwait
+TRY	lira Turki
+RUB	rubel
+₽	rubel
+BTC	bitcoin
+ETH	ethereum
+No.	nomor
+Jl.	jalan
+Gg.	gang
+Kel.	kelurahan
+Kec.	kecamatan
+Kab.	kabupaten
+Prov.	provinsi
+RT/RW	RT RW
+Telp.	telepon
+dll.	dan lain-lain
+dsb.	dan sebagainya
+dkk.	dan kawan-kawan
+yth.	yang terhormat
+a.n.	atas nama
+u.p.	untuk perhatian
+s.d.	sampai dengan
+tgl.	tanggal
+thn.	tahun
+hlm.	halaman
+No. Rek.	nomor rekening
+Kp.	kampung
+½	setengah
+¼	seperempat
+¾	tiga perempat
+°LU	derajat lintang utara
+°LS	derajat lintang selatan
+°BT	derajat bujur timur

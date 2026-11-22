@@ -1,0 +1,30 @@
+[package]
+name = "sympony"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[lib]
+name = "sympony_lib"
+# ponytail: rlib only; staticlib/cdylib are for Tauri iOS/Android and cost ~600 MB per build
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+contract = { path = "../crates/contract" }
+services = { path = "../crates/services" }
+platform = { path = "../crates/platform" }
+voice = { path = "../crates/voice" }
+libc = "0.2"
+objc2 = "0.6"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+base64 = "0.22"

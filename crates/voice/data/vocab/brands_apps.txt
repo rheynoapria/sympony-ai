@@ -1,0 +1,388 @@
+# category: brands, apps and services common in Indonesia
+# source: hand-curated generic list (general knowledge), not derived from any evaluation data
+# format: one term per line, written in the canonical spelling users expect in a transcript
+# licence: MIT / hand-curated for Sympony
+WhatsApp
+Zoom
+Google Meet
+Microsoft Teams
+Gojek
+Grab
+Shopee
+Tokopedia
+GoPay
+OVO
+DANA
+QRIS
+BCA
+Excel
+PowerPoint
+Google Drive
+Gmail
+Instagram
+TikTok
+YouTube
+ChatGPT
+Slack
+Notion
+Canva
+Figma
+Jira
+Trello
+GitHub
+Telegram
+LinkedIn
+Lazada
+Blibli
+Bukalapak
+TikTok Shop
+Zalora
+Sociolla
+Amazon
+Alibaba
+Maxim
+inDrive
+GoFood
+GrabFood
+ShopeeFood
+GoRide
+GoCar
+GoSend
+GrabBike
+GrabCar
+GrabExpress
+Lalamove
+JNE
+J&T Express
+SiCepat
+AnterAja
+Ninja Xpress
+Pos Indonesia
+TIKI
+Shopee Express
+Lion Parcel
+DHL
+BRI
+BNI
+Mandiri
+Bank Mandiri
+BSI
+CIMB Niaga
+Jenius
+Jago
+Bank Jago
+SeaBank
+blu
+BTN
+PermataBank
+Danamon
+Maybank
+OCBC
+Bank Mega
+BJB
+HSBC
+DBS
+Allo Bank
+Livin'
+BRImo
+myBCA
+KlikBCA
+wondr
+LinkAja
+ShopeePay
+Flip
+Kredivo
+Akulaku
+GoPayLater
+SPayLater
+Atome
+Xendit
+Midtrans
+Bibit
+Ajaib
+Stockbit
+Pintu
+Indodax
+PayPal
+Wise
+Visa
+Mastercard
+Apple Pay
+Google Pay
+BI-FAST
+Mekari
+Jurnal
+Talenta
+Accurate
+Xero
+QuickBooks
+Majoo
+Telkomsel
+Indosat
+IM3
+XL
+Axis
+Tri
+Smartfren
+by.U
+Telkom
+IndiHome
+Biznet
+First Media
+MyRepublic
+Starlink
+WhatsApp Business
+WhatsApp Web
+Teams
+Discord
+Line
+Signal
+Confluence
+Asana
+ClickUp
+Monday.com
+Lark
+Google Docs
+Google Sheets
+Google Slides
+Google Forms
+Google Calendar
+Google Workspace
+Google Maps
+Google Analytics
+Google Ads
+Meta Ads
+Outlook
+Microsoft Office
+Microsoft 365
+Word
+OneDrive
+SharePoint
+Dropbox
+Miro
+Loom
+Calendly
+HubSpot
+Salesforce
+Adobe
+Photoshop
+Illustrator
+Premiere Pro
+After Effects
+Adobe Acrobat
+CapCut
+Grammarly
+Obsidian
+Airtable
+Zapier
+Odoo
+SAP
+Oracle
+GitLab
+Bitbucket
+Git
+Docker
+Kubernetes
+AWS
+Google Cloud
+GCP
+Azure
+Vercel
+Netlify
+Heroku
+Cloudflare
+Firebase
+Supabase
+DigitalOcean
+Postman
+VS Code
+Android Studio
+Xcode
+Jenkins
+Linux
+Ubuntu
+Windows
+macOS
+iOS
+Android
+MySQL
+PostgreSQL
+MongoDB
+Redis
+Grafana
+Sentry
+npm
+Node.js
+React
+Next.js
+Vue
+Angular
+Laravel
+Flutter
+React Native
+Kotlin
+Swift
+Python
+JavaScript
+TypeScript
+Java
+Golang
+PHP
+Rust
+Django
+Spring Boot
+Tailwind
+Bootstrap
+WordPress
+Shopify
+Stack Overflow
+Cursor
+Hugging Face
+Tableau
+Power BI
+Looker Studio
+BigQuery
+OpenAI
+GPT
+Gemini
+Claude
+Anthropic
+Copilot
+GitHub Copilot
+Midjourney
+Perplexity
+DeepSeek
+Meta AI
+Notion AI
+DALL-E
+NotebookLM
+Claude Code
+Codex
+X
+Twitter
+Facebook
+Threads
+Pinterest
+Reddit
+Netflix
+Spotify
+Vidio
+Disney+ Hotstar
+Prime Video
+Viu
+WeTV
+iQIYI
+Apple Music
+YouTube Music
+YouTube Shorts
+Waze
+Traveloka
+tiket.com
+Pegipegi
+Agoda
+Booking.com
+Airbnb
+OYO
+Halodoc
+Alodokter
+Good Doctor
+Ruangguru
+Zenius
+Kopi Kenangan
+Janji Jiwa
+Fore Coffee
+Starbucks
+Chatime
+Mixue
+McDonald's
+KFC
+Indomaret
+Alfamart
+Alfamidi
+Circle K
+Superindo
+Transmart
+IKEA
+Ace Hardware
+Informa
+Pertamina
+PLN
+Garuda Indonesia
+Citilink
+Lion Air
+Batik Air
+AirAsia
+KAI
+KAI Access
+Whoosh
+KRL
+Commuter Line
+Transjakarta
+MRT Jakarta
+LRT Jabodebek
+JakLingko
+Damri
+Blue Bird
+Astra
+Unilever
+Indofood
+GoTo
+Kitabisa
+Mamikos
+Rumah123
+OLX
+Glints
+JobStreet
+Kalibrr
+Indeed
+KitaLulus
+TIX ID
+CGV
+Cinema XXI
+BPJS Kesehatan
+BPJS Ketenagakerjaan
+SATUSEHAT
+DJP Online
+Coretax
+e-Faktur
+OSS
+Samsung
+Galaxy
+Xiaomi
+Redmi
+Poco
+Oppo
+Vivo
+Realme
+Infinix
+Huawei
+iPhone
+iPad
+Apple
+Apple Watch
+AirPods
+MacBook
+MacBook Air
+MacBook Pro
+iMac
+Mac mini
+Lenovo
+ThinkPad
+Asus
+ROG
+Acer
+HP
+Dell
+MSI
+Chromebook
+Logitech
+Sony
+LG
+Canon
+Epson
+PlayStation
+Nintendo Switch
+Intel
+AMD
+NVIDIA
+Snapdragon

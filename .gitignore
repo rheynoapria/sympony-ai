@@ -1,0 +1,18 @@
+target/
+.DS_Store
+__pycache__/
+# signing identity and the Google OAuth client: never in git
+.signing/
+# plan ledgers (scratch), browser-tool screenshots
+.superpowers/
+.playwright-mcp/
+node_modules/
+dist/
+frontend/settings-dist/
+*.tsbuildinfo
+
+# installers from release/build.sh
+release/out/
+
+# voice eval audio cache (downloaded on demand by crates/voice/eval/fetch.sh)
+crates/voice/eval/.cache/
