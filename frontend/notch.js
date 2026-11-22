@@ -1202,7 +1202,7 @@ function renderNotifs() {
       + '<div class="nf-text">'
       + `<div class="nf-app">${n.icon && n.image ? `<img src="${esc(n.icon)}" alt="" onerror="this.remove()">` : ''}<span>${esc(n.app)}</span><i>${ago(n.at)}</i></div>`
       + `<b dir="auto">${esc(n.title || n.app)}</b>${n.body ? `<span dir="auto">${esc(n.body)}</span>` : ''}</div>`
-      + `<button class="nf-x" title="${_t('Close')}">${fa('xmark')}</button></div>`;
+      + `<button type="button" class="nf-x" title="${esc(_t('Close'))}" aria-label="${esc(_t('Close'))}">${fa('xmark')}</button></div>`;
   }).join('') + (st.notifs.length > NOTIF_SHOW ? `<div class="nf-more">${_t('+{n} more', { n: st.notifs.length - NOTIF_SHOW })}</div>` : '');
   $$('.nf-card', box).forEach((c) => {
     const n = st.notifs.find((x) => String(x.id) === c.dataset.id);
@@ -1287,7 +1287,7 @@ function renderPile() {
         + '<div class="nf-text">'
         + `<div class="nf-app">${n.icon && n.image ? `<img src="${esc(n.icon)}" alt="" onerror="this.remove()">` : ''}<span>${esc(n.app)}</span><i>${sig}</i></div>`
         + `<b dir="auto">${esc(n.title || n.app)}</b>${n.body ? `<span dir="auto">${esc(n.body)}</span>` : ''}</div>`
-        + `<button class="nf-x" title="${_t('Close')}">${fa('xmark')}</button>`;
+        + `<button type="button" class="nf-x" title="${esc(_t('Close'))}" aria-label="${esc(_t('Close'))}">${fa('xmark')}</button>`;
       c.dataset.sig = sig;
     }
     c.dataset.k = k;
@@ -2969,7 +2969,7 @@ function renderClosed(animate) {
       if (st.notifs.length === 1) {
         R = `<span class="clk" style="color:var(--dim);font-weight:600;font-size:11.5px">${esc(ago(n.at))}</span>`;
         const canReply = !!(n.canReply || n.reply || n.launch);
-        B = `${appIconImg(n.image || n.icon, 36, 9, fa('bell'))}<div class="al-txt"><b dir="auto">${esc(n.title || n.app)}</b>${n.body ? `<small dir="auto">${esc(n.body)}</small>` : ''}</div>${canReply ? `<button class="btn" data-nf-open="${esc(n.id)}">${_t('Reply')}</button>` : ''}`;
+        B = `${appIconImg(n.image || n.icon, 36, 9, fa('bell'))}<div class="al-txt"><b dir="auto">${esc(n.title || n.app)}</b>${n.body ? `<small dir="auto">${esc(n.body)}</small>` : ''}</div>${canReply ? `<button type="button" class="btn" data-nf-open="${esc(n.id)}">${_t('Reply')}</button>` : ''}<button type="button" class="al-x" data-nf-close="${esc(n.id)}" title="${esc(_t('Close'))}" aria-label="${esc(_t('Close'))}">${fa('xmark')}</button>`;
         belowMeta = { extra: 60, wide: 440 };
       } else {
         R = `<span class="clk" style="color:var(--dim);font-weight:600;font-size:11.5px">${st.notifs.length}</span>`;
@@ -3028,6 +3028,9 @@ function renderClosed(animate) {
           const act = b.dataset.voiceAction;
           if (act === 'download') api.svc('voice', 'download', '0.6b').catch(() => {});
           else if (api.openSettings) api.openSettings('voice');
+        }
+        else if (b.dataset.nfClose) {
+          dropNotif(b.dataset.nfClose);
         }
         else if (b.dataset.nfOpen) {
           const n = st.notifs.find((x) => String(x.id) === b.dataset.nfOpen);
