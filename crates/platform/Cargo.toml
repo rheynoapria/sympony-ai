@@ -10,7 +10,7 @@ description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notific
 anyhow.workspace = true
 serde_json.workspace = true
 libc = "0.2"
-cpal = "0.15"
+cpal = "0.18"
 objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
