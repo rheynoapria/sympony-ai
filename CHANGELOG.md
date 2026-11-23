@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Windows port, System:** On Windows, the System tab shows the CPU (its name, how busy, over time), memory (in use as Task Manager counts it, the kernel's non-paged part as "wired"; Windows has no public reading of compressed memory), the system drive (named as Explorer does, e.g. "Local Disk (C:)") and the network's speeds over the real adapters; the battery ring and its HUD read the battery, charging and battery saver; and the session readings work: idle time, the lock screen, a fullscreen app in front (for the clock's chime and the health reminders), Caps Lock and the keyboard language for their HUDs, and the windows on screen for onboarding. `platform::windows::readings` holds the System tab's; `cargo run -p platform --example stats` measures them over a second.
+
 ## [0.2.0-beta.4] - 2026-11-23
 
 ### Added

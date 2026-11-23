@@ -72,6 +72,13 @@ fn monitors() -> Vec<Monitor> {
     handles.into_iter().filter_map(monitor).collect()
 }
 
+/// A window's physical rectangle in points, by the scale of the monitor it's mostly on.
+pub(crate) fn points_of(r: RECT) -> Rect {
+    use windows_sys::Win32::Graphics::Gdi::MonitorFromRect;
+    // SAFETY: a plain query with a rectangle that outlives it
+    to_points(px(r), scale(unsafe { MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST) }))
+}
+
 /// A physical rectangle in points, by `scale`.
 fn to_points(r: Px, scale: f64) -> Rect {
     let s = if scale > 0.0 { scale } else { 1.0 };

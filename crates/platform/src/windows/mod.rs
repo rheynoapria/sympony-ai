@@ -18,6 +18,7 @@ pub mod banners;
 mod bluetooth;
 pub mod ax;
 pub mod radios;
+mod readings;
 pub mod calendar;
 pub mod files;
 pub mod media;
