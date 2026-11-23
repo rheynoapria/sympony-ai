@@ -164,9 +164,9 @@ case "$(uname -s)" in
       fi
     done ;;
   MINGW*|MSYS*|CYGWIN*)
-    # Self-heal if Cargo cached sherpa-onnx-sys build script outputs without target/sherpa-onnx-prebuilt
+    # Self-heal if Cargo cached sherpa-onnx-sys build script outputs without target/sherpa-onnx-prebuilt (or left empty dirs)
     if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
-      rm -rf target/release/build/sherpa-onnx-sys* target/release/.fingerprint/sherpa-onnx-sys* target/release/deps/libsherpa_onnx_sys*
+      rm -rf target/sherpa-onnx-prebuilt target/release/build/sherpa-onnx-sys* target/release/.fingerprint/sherpa-onnx-sys* target/release/deps/libsherpa_onnx_sys*
     fi
     cargo build --release -p sympony
     # Bundle sherpa-onnx / onnxruntime shared DLLs right alongside Sympony.exe inside the NSIS installer

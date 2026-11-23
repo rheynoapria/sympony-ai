@@ -106,7 +106,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
-            rm -rf target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
+            rm -rf target/sherpa-onnx-prebuilt target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
           fi
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
@@ -222,7 +222,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
-            rm -rf target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
+            rm -rf target/sherpa-onnx-prebuilt target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
           fi
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
