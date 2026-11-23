@@ -127,7 +127,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let link = h.state::<Clipboard>().list.lock().unwrap().iter().find(|x| x["id"] == id && x["kind"] == "link").and_then(|x| x["text"].as_str().map(|t| t.trim().to_string()));
         if let Some(u) = link.filter(|u| services::shelf::is_link(u)) {
             std::thread::spawn(move || {
-                let _ = std::process::Command::new("/usr/bin/open").arg("--").arg(&u).status();
+                platform::os::shell::open(&u);
             });
         }
         Ok(Value::Null)

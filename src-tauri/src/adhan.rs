@@ -25,12 +25,9 @@ fn stored(dir: &Path, which: &str) -> Option<PathBuf> {
     std::fs::read_dir(dir.join("adhan")).ok()?.flatten().map(|e| e.path()).find(|p| p.file_stem().is_some_and(|s| s == base))
 }
 
-/// macOS's "choose file" (audio only); None when cancelled.
+/// The OS's file dialog for one audio file; None when cancelled.
 fn choose(prompt: &str) -> Option<PathBuf> {
-    let script = format!("POSIX path of (choose file with prompt {prompt:?} of type {{\"public.audio\"}})");
-    let out = std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).output().ok()?;
-    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (out.status.success() && !p.is_empty()).then(|| PathBuf::from(p))
+    platform::os::files::choose("audio", prompt).into_iter().next().map(PathBuf::from)
 }
 
 fn pick(app: &AppHandle, which: &str) -> Value {

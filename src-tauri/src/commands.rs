@@ -120,22 +120,15 @@ pub fn app_quit(handle: tauri::AppHandle) {
     handle.exit(0);
 }
 
-/// ponytail: `/usr/bin/open` (macOS); moves behind the platform layer with the Windows port
+/// A web, mail or settings link (`services::external_url_ok`) in the app that handles it: `open` on macOS,
+/// ShellExecute on Windows (`platform::os::shell`).
 #[tauri::command]
 pub async fn open_external(app: State<'_, App>, url: String) -> Result<bool, String> {
     if !services::external_url_ok(&url) {
         app.log.line(&format!("open_external: refused {url:?}"));
         return Ok(false);
     }
-    Ok(tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("/usr/bin/open")
-            .arg("--")
-            .arg(&url)
-            .status()
-            .is_ok_and(|s| s.success())
-    })
-    .await
-    .unwrap_or(false))
+    Ok(tauri::async_runtime::spawn_blocking(move || platform::os::shell::open(&url)).await.unwrap_or(false))
 }
 
 #[tauri::command]

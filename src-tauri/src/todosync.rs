@@ -203,7 +203,7 @@ fn sign_in(app: &AppHandle) -> Result<(), String> {
     let redirect = format!("http://127.0.0.1:{}", listener.local_addr().map_err(|e| e.to_string())?.port());
     let (verifier, state) = (services::oauth::random(), services::oauth::random());
     let url = services::oauth::auth_url(&id, &redirect, &services::oauth::challenge(&verifier), &state);
-    let _ = std::process::Command::new("/usr/bin/open").arg(&url).status();
+    platform::os::shell::open(&url);
     let s = app.state::<Sync>();
     let (code, tab) = loopback_code(&listener, &state, &s.cancel, "Google Tasks")?;
     done_page(tab, "Google Tasks", Ok(""));

@@ -141,27 +141,17 @@ fn ids_arg(a: &[Value]) -> Vec<Value> {
     }
 }
 
-/// `osascript` choosing files / a folder / an app: their POSIX paths (none: cancelled).
+/// The OS's file dialog choosing files / a folder / an app: their paths (none: cancelled). See
+/// `platform::os::files::choose` for `what`.
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
-    let script = match what {
-        "files" => format!("set l to choose file with prompt {prompt:?} with multiple selections allowed\nset o to \"\"\nrepeat with f in l\nset o to o & POSIX path of f & linefeed\nend repeat\nreturn o"),
-        "folder" => format!("POSIX path of (choose folder with prompt {prompt:?})"),
-        "app" => format!("POSIX path of (choose application with prompt {prompt:?} as alias)"),
-        "backup" => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to downloads folder))"),
-        _ => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to applications folder))"),
-    };
-    let Ok(out) = Command::new("/usr/bin/osascript").args(["-e", &script]).output() else { return vec![] };
-    if !out.status.success() {
-        return vec![];
-    }
-    String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+    platform::os::files::choose(what, prompt)
 }
 
 fn open(target: &str) {
     if !target.is_empty() {
         let target = target.to_string();
         std::thread::spawn(move || {
-            let _ = Command::new("/usr/bin/open").arg("--").arg(&target).status();
+            platform::os::shell::open(&target);
         });
     }
 }
@@ -170,7 +160,7 @@ fn reveal(path: &str) {
     if !path.is_empty() {
         let path = path.to_string();
         std::thread::spawn(move || {
-            let _ = Command::new("/usr/bin/open").args(["-R", "--"]).arg(&path).status();
+            platform::os::shell::reveal(&path);
         });
     }
 }
@@ -345,7 +335,7 @@ fn run_action(action: &str, files: &[String]) -> Value {
         }
         "openwith" => {
             let Some(app) = choose("app", &format!("Open {what} with")).into_iter().next() else { return json!({"ok": true, "quiet": true, "message": ""}) };
-            match run_ok(Command::new("/usr/bin/open").arg("-a").arg(&app).args(&files)) {
+            match platform::os::shell::open_with(&app, &files) {
                 Ok(()) => json!({"ok": true, "quiet": true, "message": ""}),
                 Err(e) => done(false, format!("Couldn’t open: {e}")),
             }

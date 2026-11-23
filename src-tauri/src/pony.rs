@@ -286,7 +286,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             } else {
                 dir
             };
-            let _ = Command::new("/usr/bin/open").arg("-R").arg(&target).spawn();
+            let t = target.to_string_lossy().to_string();
+            std::thread::spawn(move || platform::os::shell::reveal(&t));
             Ok(json!({"ok": true}))
         }),
     );
@@ -298,7 +299,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             let dir = home();
             let _ = ensure_dir(&dir);
             let _ = ensure_dir(&skills_root());
-            let _ = Command::new("/usr/bin/open").arg(&dir).spawn();
+            let d = dir.to_string_lossy().to_string();
+            std::thread::spawn(move || platform::os::shell::open(&d));
             Ok(json!({"ok": true, "path": dir.to_string_lossy()}))
         }),
     );
@@ -396,7 +398,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     Err(e) => return Ok(json!({"ok": false, "error": e})),
                 }
             };
-            let _ = Command::new("/usr/bin/open").arg("-R").arg(&target).spawn();
+            let t = target.to_string_lossy().to_string();
+            std::thread::spawn(move || platform::os::shell::reveal(&t));
             Ok(json!({"ok": true}))
         }),
     );

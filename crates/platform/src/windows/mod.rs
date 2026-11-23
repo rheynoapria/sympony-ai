@@ -18,6 +18,7 @@ pub mod radios;
 pub mod calendar;
 pub mod files;
 pub mod player;
+pub mod shell;
 pub mod voice;
 
 /// Stands for objc2's `MainThreadMarker` (AppKit wants proof of the main thread; the Win32 calls here don't), so the
