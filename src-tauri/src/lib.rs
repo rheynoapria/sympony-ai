@@ -42,6 +42,7 @@ mod todosync;
 mod updater;
 mod voice;
 mod watchers;
+mod wm;
 mod youtube;
 
 use commands::App;
@@ -161,6 +162,7 @@ pub fn run() {
             app.manage(ob);
             notch::create(app.handle())?;
             hover::start(app.handle());
+            wm::start(app.handle());
             shell::setup(app.handle())?;
             colorpick::sync_shortcut(app.handle());
             let force_ob = std::env::var("SYMPONY_ONBOARDING").as_deref() == Ok("1");

@@ -122,3 +122,12 @@ pub unsafe fn bring_front(ns_window: *mut std::ffi::c_void) {
         objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
     }
 }
+
+/// What the app in front does on Sympony's display, for the notch to make way ("full", "max" or "normal"): a Mac's
+/// notch never hides or tucks for another app, so always "normal".
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn foreground_state(_ns_window: *mut std::ffi::c_void) -> &'static str {
+    "normal"
+}

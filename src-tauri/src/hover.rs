@@ -42,7 +42,23 @@ pub fn start(app: &AppHandle) {
     });
 }
 
+/// Sympony out of sight for a fullscreen app (`wm`): the pointer counts as gone, so the frontend hears the hover end
+/// and clicks go through to the app.
+pub fn leave(app: &AppHandle) {
+    let ended = app.state::<HoverState>().0.lock().unwrap().update((-1e6, -1e6));
+    if let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.set_ignore_cursor_events(true);
+    }
+    if ended == Some(false) {
+        let _ = app.emit_to(LABEL, "notch:hover", false);
+    }
+}
+
 fn tick(app: &AppHandle) {
+    // (no hover while it's out of sight, or in only for a HUD)
+    if crate::wm::away() {
+        return;
+    }
     let Some(mtm) = MainThreadMarker::new() else { return };
     let Some(win) = *app.state::<Notch>().win.lock().unwrap() else { return };
     let (mx, my) = mouse_location(mtm);

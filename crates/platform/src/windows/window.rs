@@ -161,3 +161,53 @@ pub unsafe fn bring_front(handle: *mut c_void) {
         SetForegroundWindow(h);
     }
 }
+
+/// What the app in front does on the display Sympony's window `handle` is on: "full" (a window over that whole
+/// display: a game, a video, a presentation), "max" (a maximised window there) or "normal" (anything else, Sympony's
+/// own windows, the desktop and the taskbar included).
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null reads as "normal".
+pub unsafe fn foreground_state(handle: *mut c_void) -> &'static str {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsZoomed};
+    let notch = handle as HWND;
+    if notch.is_null() {
+        return "normal";
+    }
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.is_null() {
+            return "normal";
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(front, &mut pid);
+        if pid == GetCurrentProcessId() {
+            return "normal";
+        }
+        // (the desktop and the taskbars)
+        let mut class = [0u16; 64];
+        let n = GetClassNameW(front, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        let class = String::from_utf16_lossy(&class[..n]);
+        if ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"].contains(&class.as_str()) {
+            return "normal";
+        }
+        let monitor = MonitorFromWindow(front, MONITOR_DEFAULTTONEAREST);
+        if monitor != MonitorFromWindow(notch, MONITOR_DEFAULTTONEAREST) {
+            return "normal";
+        }
+        if IsZoomed(front) != 0 {
+            return "max";
+        }
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetMonitorInfoW(monitor, &mut info) == 0 || GetWindowRect(front, &mut r) == 0 {
+            return "normal";
+        }
+        let s = info.rcMonitor;
+        if r.left <= s.left && r.top <= s.top && r.right >= s.right && r.bottom >= s.bottom { "full" } else { "normal" }
+    }
+}
