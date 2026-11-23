@@ -85,7 +85,14 @@
   setInterval(() => {
     const now = Date.now(); const dt = now - last; last = now;
     paintTime();
-    if (!yt.ready || !yt.id) return;
+    if (!yt.id) {
+      // (opened before any video was found: it says what it waits for)
+      const wait = _t('Waiting for the YouTube video in the tab');
+      body.classList.add('msg');
+      if ($('#msg').textContent !== wait) $('#msg').textContent = wait;
+      return;
+    }
+    if (!yt.ready) return;
     const m = media;
     const showing = !!m.video && m.video === yt.id;
     const settling = yt.state === 3 || yt.state === -1 || now - yt.seekAt < 1000;
