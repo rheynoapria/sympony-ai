@@ -67,6 +67,44 @@ pub fn names(tab_title: &str, now_title: &str) -> bool {
     !t.is_empty() && !want.is_empty() && (t.contains(&want) || want.contains(t.as_str()))
 }
 
+/// A tab in the browser's tab strip is YouTube playing what's playing: its name names it and is a youtube.com
+/// page's ("… - YouTube", then the browser's own notes such as "– Audio playing"), not YouTube Music's.
+pub fn youtube_tab(tab_name: &str, now_title: &str) -> bool {
+    tab_name.rfind(" - YouTube").is_some_and(|i| {
+        let rest = &tab_name[i + " - YouTube".len()..];
+        (rest.is_empty() || rest.starts_with(" \u{2013}") || rest.starts_with(" -")) && names(&tab_name[..i], now_title)
+    })
+}
+
+/// YouTube's search page for a video's title.
+pub fn search_url(title: &str) -> String {
+    format!("https://www.youtube.com/results?search_query={}", crate::http::q(title))
+}
+
+/// From YouTube's search page: the video with exactly that title (letters and digits compared) from that channel
+/// (when it's known); none when no result is it. For a video playing in a tab behind another, whose address can't be
+/// read.
+pub fn id_from_search(html: &str, title: &str, channel: &str) -> Option<String> {
+    let (want, ch) = (norm(title), norm(channel));
+    if want.is_empty() {
+        return None;
+    }
+    const KEY: &str = "\"videoRenderer\":";
+    let mut at = 0;
+    while let Some(i) = html[at..].find(KEY) {
+        let start = at + i + KEY.len();
+        at = start;
+        // (just this result's object, not the whole page)
+        let Some(Ok(v)) = serde_json::Deserializer::from_str(&html[start..]).into_iter::<Value>().next() else { continue };
+        let (Some(id), Some(t)) = (v["videoId"].as_str().and_then(valid_id), v["title"]["runs"][0]["text"].as_str()) else { continue };
+        let owner = norm(v["ownerText"]["runs"][0]["text"].as_str().or(v["longBylineText"]["runs"][0]["text"].as_str()).unwrap_or(""));
+        if norm(t) == want && (ch.is_empty() || (!owner.is_empty() && (owner == ch || owner.contains(&ch) || ch.contains(&owner)))) {
+            return Some(id);
+        }
+    }
+    None
+}
+
 /// From the browser's tabs `(address, title)`: the video of the tab whose title matches what's playing; the only
 /// video tab there is only when nothing names what's playing (an unrelated paused tab must not stand in for YouTube
 /// Music, Spotify Web… playing in another tab); none when that can't be told.

@@ -75,9 +75,10 @@ pub fn fill(app: &AppHandle, m: &mut Value) {
         let (id, avatar) = if s.key == key { (s.id.take(), s.avatar.take()) } else { (None, None) };
         *s = Slot { key: key.clone(), id, avatar, busy: true, at: Instant::now() };
         let (app, title, key) = (app.clone(), m["title"].as_str().unwrap_or("").to_string(), key.clone());
+        let artist = m["artist"].as_str().unwrap_or("").to_string();
         let need_avatar = services::youtube::wants_avatar(m);
         std::thread::spawn(move || {
-            let found = find(&app, &bid, &title);
+            let found = find(&app, &bid, &title, &artist);
             // the id first (sent with the next poll, within a second); the channel picture after, never holding it up
             let fetch = {
                 let y = app.state::<Yt>();
@@ -120,7 +121,7 @@ fn channel_avatar(id: &str) -> Option<String> {
 
 /// The playing tab's video: asks macOS for the Automation permission the first time (the one prompt), then reads
 /// the browser's tabs. (Windows asks nothing: `automation::status` is "granted" there.)
-fn find(app: &AppHandle, bid: &str, title: &str) -> Option<String> {
+fn find(app: &AppHandle, bid: &str, title: &str, artist: &str) -> Option<String> {
     let a = app.state::<App>();
     let st = match automation::status(bid, false) {
         "notAsked" => automation::status(bid, true),
@@ -135,12 +136,12 @@ fn find(app: &AppHandle, bid: &str, title: &str) -> Option<String> {
         return None;
     }
     app.state::<Yt>().allowed.lock().unwrap().insert(bid.to_string(), true);
-    services::youtube::pick_tab(&tabs(app, bid, title)?, title)
+    services::youtube::pick_tab(&tabs(app, bid, title, artist)?, title)
 }
 
 /// The browser's video tabs `(address, title)`, from helper/yt_tabs.js.
 #[cfg(target_os = "macos")]
-fn tabs(app: &AppHandle, bid: &str, _title: &str) -> Option<Vec<(String, String)>> {
+fn tabs(app: &AppHandle, bid: &str, _title: &str, _artist: &str) -> Option<Vec<(String, String)>> {
     let a = app.state::<App>();
     let path = ensure_tabs_script(&a.data_dir);
     let mut child = Command::new("/usr/bin/osascript").args(["-l", "JavaScript"]).arg(&path).arg(bid)
@@ -174,12 +175,43 @@ fn tabs(app: &AppHandle, bid: &str, _title: &str) -> Option<Vec<(String, String)
 }
 
 /// Windows: the address bar of each of the browser's windows whose title names what plays (only those are read),
-/// with that title. A window shows its current tab: a video in a tab behind another is found once it's in front.
+/// with that title. A window shows its current tab only, so a video in a tab behind another (watched in the floating
+/// video while working elsewhere) is found another way: its tab's name in the tab strip says YouTube plays it there,
+/// and YouTube's search for that exact title from that channel gives the video, once per song.
 #[cfg(windows)]
-fn tabs(_app: &AppHandle, bid: &str, title: &str) -> Option<Vec<(String, String)>> {
+fn tabs(app: &AppHandle, bid: &str, title: &str, artist: &str) -> Option<Vec<(String, String)>> {
     let exe = services::youtube::windows_browser(bid)?;
-    Some(platform::os::browser::addresses(exe, &|t| services::youtube::names(t, title)))
+    let front = platform::os::browser::addresses(exe, &|t| services::youtube::names(t, title));
+    if front.iter().any(|(u, _)| services::youtube::video_id(u).is_some()) {
+        return Some(front);
+    }
+    let song = format!("{title}|{artist}");
+    if *SEARCHED.lock().unwrap() == song || !platform::os::browser::has_tab(exe, &|t| services::youtube::youtube_tab(t, title)) {
+        return Some(front);
+    }
+    let log = |m: String| app.state::<App>().log.line(&m);
+    let id = match services::http::get_text(&services::youtube::search_url(title)) {
+        Ok(html) => {
+            // (searched: not again for this song)
+            *SEARCHED.lock().unwrap() = song;
+            let id = services::youtube::id_from_search(&html, title, artist);
+            if id.is_none() {
+                log(format!("youtube: no search result is \"{title}\" by {artist}"));
+            }
+            id
+        }
+        Err(e) => {
+            // (the network failed: tried again with the next lookup)
+            log(format!("youtube: search for \"{title}\": {e:#}"));
+            None
+        }
+    };
+    Some(id.map(|id| vec![(format!("https://www.youtube.com/watch?v={id}"), title.to_string())]).unwrap_or(front))
 }
+
+/// The song last looked up on YouTube's search (Windows, a video in a tab behind another): once per song.
+#[cfg(windows)]
+static SEARCHED: Mutex<String> = Mutex::new(String::new());
 
 /// The floating video (picture in picture): its window, frontend/ytfloat.html.
 pub const FLOAT: &str = "ytfloat";
