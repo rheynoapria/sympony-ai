@@ -1,3 +1,6 @@
+# Security-only Dependabot configuration:
+# - Routine version-bump PRs are disabled (`open-pull-requests-limit: 0`) to prevent PR/CI churn.
+# - Security patch PRs (CVEs) still target `beta` without auto-rebasing on every push.
 version: 2
 updates:
   - package-ecosystem: "cargo"
@@ -5,38 +8,15 @@ updates:
     target-branch: "beta"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 1
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    groups:
-      rust-minor-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    labels: ["dependencies", "rust"]
+    open-pull-requests-limit: 0
+    rebase-strategy: "disabled"
+    labels: ["dependencies", "rust", "security"]
 
   - package-ecosystem: "bun"
     directory: "/settings-ui"
     target-branch: "beta"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 1
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    groups:
-      settings-ui-minor-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    labels: ["dependencies", "frontend"]
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    target-branch: "beta"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 1
-    groups:
-      github-actions:
-        patterns: ["*"]
-    labels: ["dependencies", "ci"]
+    open-pull-requests-limit: 0
+    rebase-strategy: "disabled"
+    labels: ["dependencies", "frontend", "security"]
