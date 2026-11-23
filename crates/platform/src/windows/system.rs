@@ -1,6 +1,6 @@
 //! Sound, screen, power, and the System tab's readings. Sound (Core Audio: `audio.rs`), the built-in screen's
-//! brightness (WMI: `brightness.rs`), keeping awake and the screenshot tool work; the rest is a stand-in for now
-//! (nothing read yet).
+//! brightness (WMI: `brightness.rs`), keeping awake, the screenshot tool and Do not disturb work; the rest is a
+//! stand-in for now (nothing read yet).
 use crate::geometry::Rect;
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -109,9 +109,28 @@ pub fn onscreen_windows(_display: Rect, _skip_pid: u32) -> Vec<Rect> {
     vec![]
 }
 
-/// Whether Focus (Do not disturb) is on.
+/// Whether Focus (Do not disturb) is on: Windows holding notifications back, by hand or by its own rules (a game, a
+/// presentation…).
 pub fn focus_on() -> bool {
-    false
+    use ::windows::UI::Notifications::{ToastNotificationManager, ToastNotificationMode};
+    super::mta();
+    ToastNotificationManager::GetDefault().and_then(|m| m.NotificationMode()).is_ok_and(|m| m != ToastNotificationMode::Unrestricted)
+}
+
+/// Do not disturb on or off, as the notification centre's bell does: through Windows' quiet hours settings
+/// (IQuietHoursSettings, undocumented; Do not disturb is its "priority only" profile). False when Windows refused.
+pub fn set_focus(on: bool) -> bool {
+    use ::windows::core::{HRESULT, PCWSTR};
+    // (QuietHoursSettings, IQuietHoursSettings: get_UserSelectedProfile, then put_UserSelectedProfile, the 5th)
+    const PUT_USER_SELECTED_PROFILE: usize = 4;
+    type PutUserSelectedProfile = unsafe extern "system" fn(*mut std::ffi::c_void, PCWSTR) -> HRESULT;
+    let Some(q) = super::Undocumented::new(0xf53321fa_34f8_4b7f_b9a3_361877cb94cf, 0x6bff4732_81ec_4ffb_ae67_b6c1bc29631f) else { return false };
+    let profile = super::shell::wide(if on { "Microsoft.QuietHoursProfile.PriorityOnly" } else { "Microsoft.QuietHoursProfile.Unrestricted" });
+    // SAFETY: put_UserSelectedProfile's own signature, called with its object and a NUL-terminated id that outlives it
+    unsafe {
+        let (this, call) = q.method::<PutUserSelectedProfile>(PUT_USER_SELECTED_PROFILE);
+        call(this, PCWSTR(profile.as_ptr())).is_ok()
+    }
 }
 
 pub fn screen_locked() -> bool {

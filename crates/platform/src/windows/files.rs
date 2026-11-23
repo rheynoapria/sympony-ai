@@ -97,8 +97,42 @@ pub fn read_clip() -> Clip {
     Clip::None
 }
 
-pub fn write_text(_text: &str) -> bool {
-    false
+/// Puts `text` on the clipboard, as Copy does. False when another app keeps holding it.
+pub fn write_text(text: &str) -> bool {
+    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    use windows_sys::Win32::Foundation::GlobalFree;
+    use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    const CF_UNICODETEXT: u32 = 13;
+    let wide = super::shell::wide(text);
+    // SAFETY: the clipboard is opened, filled and closed here; the memory is Windows' once SetClipboardData takes it,
+    // freed here when it doesn't
+    unsafe {
+        // (another app may hold it for a moment)
+        let open = (0..10).any(|i| {
+            if i > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            OpenClipboard(std::ptr::null_mut()) != 0
+        });
+        if !open {
+            return false;
+        }
+        let mem = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+        let mut taken = false;
+        if !mem.is_null() {
+            let to = GlobalLock(mem) as *mut u16;
+            if !to.is_null() {
+                std::ptr::copy_nonoverlapping(wide.as_ptr(), to, wide.len());
+                GlobalUnlock(mem);
+                taken = EmptyClipboard() != 0 && !SetClipboardData(CF_UNICODETEXT, mem).is_null();
+            }
+            if !taken {
+                GlobalFree(mem);
+            }
+        }
+        CloseClipboard();
+        taken
+    }
 }
 
 pub fn write_png(_png: &[u8]) -> bool {

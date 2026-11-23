@@ -164,8 +164,8 @@ pub fn sync_shortcut(app: &AppHandle) {
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, sc, ev| {
-            // (the Teleprompter's reading keys go to it)
-            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) {
+            // (the Teleprompter's reading keys go to it, the colour picker's starts it)
+            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) && !crate::colorpick::pressed(app, sc) {
                 let _ = app.emit_to(LABEL, "notch:toggle", ());
             }
         })

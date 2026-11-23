@@ -300,10 +300,12 @@
     $('#ctlBack', page).onclick = () => setView('main');
     $$('[data-tgl]', page).forEach((b) => {
       b.onclick = () => {
-        // Windows' snip overlay freezes the screen as it is when it opens: the notch closes first (0.4 s)
-        if (b.dataset.tgl === 'screenshot' && !N.MAC) {
+        // Windows' snip overlay and the colour picker freeze the screen as it is when they open: the notch closes
+        // first (0.4 s)
+        if ((b.dataset.tgl === 'screenshot' || b.dataset.tgl === 'colorPick') && !N.MAC) {
+          const id = b.dataset.tgl;
           N.closeNotch();
-          setTimeout(() => api.svc('system', 'toggle', 'screenshot'), 450);
+          setTimeout(() => api.svc('system', 'toggle', id), 450);
           return;
         }
         api.svc('system', 'toggle', b.dataset.tgl).then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));

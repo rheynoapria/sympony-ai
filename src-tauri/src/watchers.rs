@@ -100,7 +100,7 @@ pub fn start(app: &AppHandle) {
                 *STATS.lock().unwrap() = reading.clone();
                 let _ = app.emit("stats", reading);
                 let on = |b: bool| if b { "on" } else { "off" };
-                let r = json!({ "wifi": radios::wifi_on().map(on), "bluetooth": on(radios::bluetooth_on()), "airplane": null });
+                let r = json!({ "wifi": radios::wifi_on().map(on), "bluetooth": on(radios::bluetooth_on()), "airplane": radios::airplane() });
                 if let Some((r, _)) = radios.update(r) {
                     send(&app, "radios", r);
                 }
@@ -221,6 +221,23 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
         radios::wifi_leave();
         Ok(json!({ "ok": true }))
     }));
+    // the Wi-Fi and Bluetooth tabs' switches, and airplane mode where there's one (Windows)
+    reg.add("radios.set", Box::new(|_, a| {
+        let on = a.get(1).and_then(Value::as_bool).unwrap_or(false);
+        let ok = match a.first().and_then(Value::as_str).unwrap_or("") {
+            "wifi" => radios::set_wifi(on),
+            "bluetooth" => {
+                radios::set_bluetooth(on);
+                true
+            }
+            "airplane" => radios::set_airplane(on),
+            _ => false,
+        };
+        Ok(json!({ "ok": ok }))
+    }));
+    // the Control tab's Focus tile where an app may switch Do not disturb (Windows; on a Mac it opens Focus' settings)
+    reg.add("notif.dnd", Box::new(|_, _| Ok(json!({ "on": system::focus_on() }))));
+    reg.add("notif.setDnd", Box::new(|_, a| Ok(json!({ "ok": system::set_focus(a.first().and_then(Value::as_bool).unwrap_or(false)) }))));
     let h = app.clone();
     reg.add("system.toggle", Box::new(move |ctx, a| {
         let flip = |k: &str| {
@@ -242,6 +259,10 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
             "keepAwake" => flip("keepAwake"),
             "eyeBreaks" => flip("healthEyeBreaks"),
             "lock" => radios::lock_screen(),
+            "airplane" => {
+                radios::set_airplane(!radios::airplane().unwrap_or(false));
+            }
+            "colorPick" => crate::colorpick::pick(&h),
             "screenshot" => system::screenshot(),
             other => (ctx.log)(&format!("system.toggle: {other} isn't on a Mac")),
         }

@@ -74,6 +74,15 @@ pub fn set_dark_mode(on: bool) -> bool {
     std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).status().is_ok_and(|s| s.success())
 }
 
+/// Airplane mode is Windows' (a Mac has none to read): None.
+pub fn airplane() -> Option<bool> {
+    None
+}
+
+pub fn set_airplane(_on: bool) -> bool {
+    false
+}
+
 /// Locks the screen now (login.framework, what the menu's Lock Screen does).
 pub fn lock_screen() {
     unsafe extern "C" {

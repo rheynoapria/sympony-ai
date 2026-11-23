@@ -8,6 +8,7 @@ pub mod aiusage;
 pub mod bluetooth;
 pub mod bookmarks;
 pub mod clipboard;
+pub mod colorpick;
 pub mod codemode;
 pub mod exec;
 pub mod eyes;

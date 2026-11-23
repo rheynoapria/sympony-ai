@@ -617,6 +617,11 @@ pub fn keep_awake(on: bool) {
     }
 }
 
+/// macOS lets no app switch Focus (the Control tab opens its settings instead): false.
+pub fn set_focus(_on: bool) -> bool {
+    false
+}
+
 /// Opens macOS's Screenshot (its toolbar, as ⇧⌘5 does).
 pub fn screenshot() {
     let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.screenshot.launcher"]).status();

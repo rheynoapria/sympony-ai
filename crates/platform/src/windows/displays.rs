@@ -105,6 +105,8 @@ fn taskbar(full: Px, work: Px, scale: f64) -> Option<Rect> {
 }
 
 /// Every display, the primary one first (as macOS lists its main screen). No camera notch on Windows.
+pub use super::picker::pick_color;
+
 pub fn displays(_mtm: MainThreadMarker) -> Vec<Display> {
     let mut all: Vec<Display> = monitors()
         .into_iter()

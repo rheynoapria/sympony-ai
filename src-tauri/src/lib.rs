@@ -5,6 +5,7 @@ mod artwork;
 mod brain;
 mod calendar;
 mod clipboard;
+mod colorpick;
 mod background;
 mod backup;
 mod commands;
@@ -159,6 +160,7 @@ pub fn run() {
             notch::create(app.handle())?;
             hover::start(app.handle());
             shell::setup(app.handle())?;
+            colorpick::sync_shortcut(app.handle());
             let force_ob = std::env::var("SYMPONY_ONBOARDING").as_deref() == Ok("1");
             let first_run = app.state::<App>().settings.get().get("onboarded").is_none_or(|v| v.is_null());
             if force_ob || first_run {

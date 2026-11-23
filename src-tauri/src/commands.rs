@@ -144,6 +144,7 @@ pub fn apply_settings_patch(handle: &tauri::AppHandle, patch: Value) -> Value {
     crate::background::settings_changed(handle, &patch);
     (app.ctx.emit)("settings", out.clone());
     crate::shell::sync_shortcut(handle);
+    crate::colorpick::sync_shortcut(handle);
     if moved {
         crate::shell::send_anchor(handle);
     }
@@ -161,6 +162,7 @@ pub fn settings_reset(handle: tauri::AppHandle, app: State<App>) -> Value {
     let out = app.settings.reset();
     (app.ctx.emit)("settings", out.clone());
     crate::shell::sync_shortcut(&handle);
+    crate::colorpick::sync_shortcut(&handle);
     crate::shell::send_anchor(&handle);
     out
 }

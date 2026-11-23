@@ -1,6 +1,6 @@
 //! Sound on Windows (Core Audio): the default output's volume and mute, the default input's mute (the mic), and the
 //! outputs / inputs to choose from. Reached as `system::…`, the names macOS has.
-use ::windows::core::{Interface, GUID, HRESULT, PCWSTR};
+use ::windows::core::{HRESULT, PCWSTR};
 use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use ::windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use ::windows::Win32::Media::Audio::{
@@ -139,26 +139,20 @@ pub fn toggle_mic() {
 mod policy {
     use super::*;
 
-    const CLSID_POLICY_CONFIG: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
-    const IID_POLICY_CONFIG: GUID = GUID::from_u128(0xf8679f50_850a_41cf_9c72_430f290290c8);
     /// IUnknown's 3, then GetMixFormat … SetPropertyValue (10): SetDefaultEndpoint is the 14th.
     const SET_DEFAULT_ENDPOINT: usize = 13;
     type SetDefaultEndpoint = unsafe extern "system" fn(*mut std::ffi::c_void, PCWSTR, ERole) -> HRESULT;
 
     pub fn set_default(id: &str, role: ERole) -> bool {
-        let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
-        // SAFETY: the object is created and asked for IPolicyConfig through COM; the call goes through that interface's
-        // own table, with a null-terminated id that outlives it; `cfg` releases it when dropped
+        // (CPolicyConfigClient, IPolicyConfig)
+        let Some(cfg) = super::super::Undocumented::new(0x870af99c_171d_4f9e_af0d_e63df40c2bc9, 0xf8679f50_850a_41cf_9c72_430f290290c8) else {
+            return false;
+        };
+        let wide = super::super::shell::wide(id);
+        // SAFETY: SetDefaultEndpoint's own signature, called with its object and a NUL-terminated id that outlives it
         unsafe {
-            let Ok(unknown) = CoCreateInstance::<_, ::windows::core::IUnknown>(&CLSID_POLICY_CONFIG, None, CLSCTX_ALL) else { return false };
-            let mut raw = std::ptr::null_mut();
-            if unknown.query(&IID_POLICY_CONFIG, &mut raw).is_err() || raw.is_null() {
-                return false;
-            }
-            let cfg = ::windows::core::IUnknown::from_raw(raw);
-            let table = *(cfg.as_raw() as *const *const usize);
-            let call: SetDefaultEndpoint = std::mem::transmute(*table.add(SET_DEFAULT_ENDPOINT));
-            call(cfg.as_raw(), PCWSTR(wide.as_ptr()), role).is_ok()
+            let (this, call) = cfg.method::<SetDefaultEndpoint>(SET_DEFAULT_ENDPOINT);
+            call(this, PCWSTR(wide.as_ptr()), role).is_ok()
         }
     }
 }
