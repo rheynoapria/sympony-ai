@@ -383,6 +383,10 @@ fn home() -> String {
 fn launcher_items(app: &AppHandle) -> Vec<Value> {
     let a = app.state::<App>();
     let items = a.settings.get()["launcherItems"].as_array().cloned().unwrap_or_default();
+    // (Windows paths are what a Windows launcher keeps: mapping them to Mac apps, and saving that, is for a Mac only)
+    if !cfg!(target_os = "macos") {
+        return items;
+    }
     let (mac, changed) = services::launcher::for_mac(&items, &home());
     if changed {
         save_launcher(app, &mac);

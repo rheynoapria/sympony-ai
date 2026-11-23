@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows port, phase 2 (the notch):** On Windows the notch now sits centred on its display, stays above other windows and opens on hover with its modules. `platform::windows` reads the displays (per-monitor DPI, in the same points as macOS), the pointer and its buttons, and the taskbar; and sets Sympony's windows topmost, out of Alt+Tab, click-through or in front. With mixed display scales, the displays other than the primary one are placed approximately.
 
 ### Fixed
+- **Windows:** the Launcher no longer maps Windows items to macOS apps (dropping the rest) and saves that over the user's list: that mapping runs on a Mac only.
 - **Windows:** `HOME` is set from `USERPROFILE` at start when missing, so `~/.sympony`, `~/.claude`, Downloads… no longer resolve relative to the folder Sympony was started in.
 - **Windows:** stdio MCP servers keep the Windows system variables they need to start at all (`SYSTEMROOT`, `TEMP`, `APPDATA`, `LOCALAPPDATA`, `PATHEXT`, …; still never keys or tokens). `tools/extract_contract.py` and `tools/classify_contract.py` read and write UTF-8 instead of Windows' default code page.
 
