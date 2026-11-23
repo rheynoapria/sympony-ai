@@ -29,6 +29,7 @@ import { calendar } from "@/sections/calendar";
 import { weather } from "@/sections/weather";
 import { prayer } from "@/sections/prayer";
 import { dropactions } from "@/sections/dropactions";
+import { control } from "@/sections/control";
 import { hud } from "@/sections/hud";
 import { battery } from "@/sections/battery";
 import { github } from "@/sections/github";
@@ -82,6 +83,7 @@ export const BODIES: Record<string, SectionBody> = {
   dock,
   dropactions,
   snap,
+  control,
   hud,
   battery,
   mirror,

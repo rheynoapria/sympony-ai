@@ -302,8 +302,8 @@ fn claude_result(text: &str, ok: bool) -> (String, String, bool) {
 fn done(app: &AppHandle, folder: &str, failed: bool, last: &str) {
     let name = folder.trim_end_matches('/').rsplit('/').next().unwrap_or(folder);
     app.state::<App>().log.line(&format!("bridge: the agent in {name} {}", if failed { "stopped with an error" } else { "finished" }));
-    // (to the main notch window only: the others follow its saved chat)
-    let _ = app.emit_to(crate::notch::LABEL, "pony:agentDone", json!({"project": name, "failed": failed, "text": cut(last, 1200)}));
+    // (to the active chat window only: the other follows its saved chat)
+    let _ = app.emit_to(crate::floating_chat::chat_target(app), "pony:agentDone", json!({"project": name, "failed": failed, "text": cut(last, 1200)}));
 }
 
 pub fn register(reg: &mut services::Registry, app: &AppHandle) {

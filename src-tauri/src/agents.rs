@@ -17,6 +17,28 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::commands::App;
 
 const LIMIT: Duration = Duration::from_secs(180);
+/// Interactive MCP-wired chat runs (Hands/Exec/approval cards) allow up to 180 s idle and 10 min total wall-clock.
+const CHAT_MAX_LIMIT: Duration = Duration::from_secs(600);
+
+/// Active model label for routines & diagnostics across all brain modes (own engine or CLI agent).
+pub fn active_model_name(app: &AppHandle) -> Option<String> {
+    if crate::brain::on(app) {
+        return crate::brain::model_name(app);
+    }
+    let a = pick(app, "chatAgent")?;
+    let id = a["id"].as_str().unwrap_or("");
+    let s = app.state::<App>().settings.get();
+    let m = s["agentModels"][id]
+        .as_str()
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(String::from)
+        .or_else(|| services::agents::default_model(id).map(String::from));
+    Some(match m {
+        Some(m) => format!("{id}:{m}"),
+        None => id.to_string(),
+    })
+}
 
 fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
@@ -217,10 +239,12 @@ fn run_claude_stream(
         });
         rx
     };
+    let last_activity = std::sync::Arc::new(Mutex::new(Instant::now()));
     let stdout_rx = {
         let r = child.stdout.take().unwrap();
         let app = app.clone();
         let sess = session.to_string();
+        let act = last_activity.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let mut parser = ClaudeStream::default();
@@ -228,9 +252,10 @@ fn run_claude_stream(
             let mut last_round = 0u32;
             let mut pending_delta: Option<(u32, String)> = None;
             let emit_delta = |app: &AppHandle, sess: &str, round: u32, text: &str| {
-                let _ = app.emit_to(crate::notch::LABEL, "agent:delta", json!({"session": sess, "round": round, "text": text}));
+                let _ = app.emit("agent:delta", json!({"session": sess, "round": round, "text": text}));
             };
             for line in BufReader::new(r).lines().map_while(Result::ok) {
+                *act.lock().unwrap() = Instant::now();
                 for ev in parser.feed(&line) {
                     match ev {
                         ClaudeEvent::Delta { round, text } => {
@@ -281,14 +306,21 @@ fn run_claude_stream(
         }
     };
     let start = Instant::now();
+    let max_limit = if session.is_empty() { limit } else { CHAT_MAX_LIMIT.max(limit) };
     let status = loop {
         if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
             break st;
         }
-        if start.elapsed() > limit || started.is_some_and(|s| *s.lock().unwrap() != Some(pid)) {
+        // Keep the idle clock fresh while an MCP tool or approval card (pony:approve) is actively running for this session.
+        let mcp_busy = !session.is_empty() && app.state::<crate::mcp::Mcp>().is_busy(session);
+        if mcp_busy {
+            *last_activity.lock().unwrap() = Instant::now();
+        }
+        let timed_out = start.elapsed() > max_limit || (!mcp_busy && last_activity.lock().unwrap().elapsed() > limit);
+        if timed_out || started.is_some_and(|s| *s.lock().unwrap() != Some(pid)) {
             kill_group();
             let _ = child.wait();
-            return Err(if start.elapsed() > limit { "timeout".into() } else { "stopped".into() });
+            return Err(if timed_out { "timeout".into() } else { "stopped".into() });
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -375,13 +407,14 @@ fn ask_in(
         let r = run_claude_stream(app, session.unwrap_or(""), &mut cmd, stdin_line, LIMIT, slot);
         if let Some(s) = session {
             app.state::<crate::mcp::Mcp>().close(s);
+            crate::hands::forget(app, s);
             let _ = std::fs::remove_dir_all(&dir);
         }
         return match r {
             Err(e) if e == "stopped" => Err(e),
             Err(e) if e == "timeout" => {
                 log("no answer in time");
-                Err(format!("{name} didn’t answer within 3 minutes"))
+                Err(format!("{name} didn’t answer in time"))
             }
             Err(e) => {
                 log(&e);
@@ -400,6 +433,7 @@ fn ask_in(
     let r = run_capture_in(&mut cmd, LIMIT, slot);
     if let Some(s) = session {
         app.state::<crate::mcp::Mcp>().close(s);
+        crate::hands::forget(app, s);
         let _ = std::fs::remove_dir_all(&dir);
     }
     match r {
@@ -493,13 +527,13 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let hands_on = eyes_on && crate::hands::available(&h);
         let askai_on = cli_caps && crate::askai::available(&h);
         let agents_on = cli_caps && crate::bridge::available(&h);
-        let outside_on = cli_caps && !crate::mcp_out::tools(&h).0.is_empty();
+        let outside_on = cli_caps && crate::mcp_out::has_enabled(&h);
 
         // (Pony's own engine: its tools are its limits; an MCP-wired CLI agent gets its active abilities' rules too)
         let rules = if own {
             services::agents::engine_rules("")
         } else {
-            chat_rules_with_caps("", tools, web, exec_on, eyes_on)
+            chat_rules_with_caps("", tools, web, exec_on, eyes_on || askai_on || agents_on || outside_on)
         };
         let mut system = services::pony::system_prompt(&rules, &persona, &skills_block, &facts_blk, &now);
         if cli_caps {

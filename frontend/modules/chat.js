@@ -41,9 +41,17 @@
     chats.current = id;
     msgs = ((chats.list.find((x) => x.id === id) || {}).msgs || []).slice();
     history = false;
+    api.svc('store', 'set', 'chats', { ...chats, by: me });
     changed();
   }
-  function newChat() { clearActiveAsk(); chats.current = null; msgs = []; history = false; changed(); }
+  function newChat() {
+    clearActiveAsk();
+    chats.current = null;
+    msgs = [];
+    history = false;
+    api.svc('store', 'set', 'chats', { ...chats, by: me });
+    changed();
+  }
   // The conversation just deleted: its row in History says so with an Undo for a few seconds (until the list closes)
   let deleted = null; // { chat, at (its place in the list), current (it was the open one), timer }
   function removeChat(id) {
@@ -86,11 +94,14 @@
     if (!pending) msgs = ((chats.list.find((x) => x.id === chats.current) || {}).msgs || []).slice();
     changed();
   })();
-  // another notch window saved: follow it (unless this one is waiting for an answer)
+  // another window (notch or floating chat) saved: follow it (unless this one is waiting for an answer)
   api.on('store:chats', (v) => {
     if (!v || v.by === me || pending) return;
-    chats = { current: chats.current, list: v.list || [] };
+    const list = Array.isArray(v.list) ? v.list : [];
+    const cur = v.current !== undefined ? v.current : chats.current;
+    chats = { current: cur, list };
     msgs = ((chats.list.find((x) => x.id === chats.current) || {}).msgs || []).slice();
+    lastRenderSig = '';
     changed();
   });
   // main is searching the web before it answers (Settings → Let AI Chat search the web): the window that asked says so
@@ -107,11 +118,18 @@
     ['envelope', _t('Write a short, polite email asking for a meeting next week'), 'var(--lilac)'],
   ];
 
+  const isLocalServerUrl = (u) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(\/|$)/i.test(String(u || '').trim());
+
   // What the chat is using, and whether it's ready (a key / server set).
   function provider() {
     const s = st.settings || {};
     if (s.ponyBrain === 'sympony') return s.has_symponyAiKey ? { label: _t('Sympony AI'), ready: true } : { label: _t('Sympony AI'), ready: false, need: _t('a sign-in to Sympony AI') };
-    if (s.ponyBrain === 'api') return s.has_brainKey && s.brainUrl ? { label: s.brainModel || _t('AI server'), ready: true } : { label: _t('AI server'), ready: false, need: _t('your AI server and its key') };
+    if (s.ponyBrain === 'api') {
+      const local = isLocalServerUrl(s.brainUrl);
+      return s.brainUrl && (s.has_brainKey || local)
+        ? { label: s.brainModel || (local ? _t('Local AI') : _t('AI server')), ready: true }
+        : { label: _t('AI server'), ready: false, need: _t('your AI server and its key') };
+    }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
     return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') };
@@ -613,73 +631,60 @@
     }).join('');
   }
 
-  // ---- a small, safe Markdown renderer: the text is escaped first, then code, emphasis, lists and links
-  function inline(t) {
-    return t
-      .replace(/`([^`\n]+)`/g, (m, c) => `<code>${c}</code>`)
-      .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
-      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, label, url) => `<a data-href="${url}">${label}</a>`)
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,!?:;'"])/g, (m, pre, url) => `${pre}<a data-href="${url}">${url}</a>`);
-  }
+  // ---- Full, XSS-safe GitHub-Flavored Markdown renderer (shared with NotchKit for unit testing)
   function markdown(src) {
-    const out = [];
-    const parts = esc(src).split(/```/);
-    parts.forEach((part, i) => {
-      if (i % 2) { // fenced code block (the first line may name the language)
-        const code = part.replace(/^[\w+-]*\n/, '').replace(/\n$/, '');
-        out.push(`<pre><button class="ch-copy" title="${_t('Copy code')}">${fa('copy', 'regular')}</button><code>${code}</code></pre>`);
-        return;
-      }
-      let list = null;
-      const flush = () => { if (list) { out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join('')}</${list.tag}>`); list = null; } };
-      let para = [];
-      const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
-      for (const line of part.split('\n')) {
-        const ul = line.match(/^\s*[-*•]\s+(.*)/);
-        const ol = line.match(/^\s*\d+[.)]\s+(.*)/);
-        const h = line.match(/^#{1,4}\s+(.*)/);
-        if (ul || ol) {
-          flushPara();
-          const tag = ul ? 'ul' : 'ol';
-          if (!list || list.tag !== tag) { flush(); list = { tag, items: [] }; }
-          list.items.push((ul || ol)[1]);
-        } else if (h) { flushPara(); flush(); out.push(`<p class="h">${inline(h[1])}</p>`); }
-        else if (!line.trim()) { flushPara(); flush(); }
-        else { flush(); para.push(line); }
-      }
-      flushPara(); flush();
-    });
-    return out.join('');
+    if (window.NotchKit && typeof window.NotchKit.renderMarkdown === 'function') {
+      return window.NotchKit.renderMarkdown(src, {
+        copyTitle: _t('Copy code'),
+        copyIcon: fa('copy', 'regular'),
+      });
+    }
+    return `<p>${esc(src).replace(/\n/g, '<br>')}</p>`;
   }
 
-  function renderAnswerBubble(m) {
+  function copyBtn(i) {
+    return `<button type="button" class="ch-act" data-copy="${i}" title="${esc(_t('Copy'))}" aria-label="${esc(_t('Copy'))}">${fa('copy', 'regular')}</button>`;
+  }
+
+  function copyMessageText(m) {
+    if (!m) return '';
+    if (m.role === 'user' && m.kind === 'answer') {
+      if (Array.isArray(m.qa) && m.qa.length) {
+        return m.qa.map((r) => `${r.question ? `${r.question}: ` : (r.header ? `${r.header}: ` : '')}${r.answer || _t('Skipped')}`).join('\n');
+      }
+      return String(m.content || '').replace(/^(?:Answers to your question|Question & answer):\n/, '');
+    }
+    return String(m.content || '');
+  }
+
+  function renderAnswerBubble(m, i) {
+    const copy = copyMessageText(m).trim() ? copyBtn(i) : '';
     if (Array.isArray(m.qa) && m.qa.length) {
-      return `<div class="ch-qa-ans" dir="auto">${m.qa.map((row) => {
+      return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-qa-ans" dir="auto">${m.qa.map((row) => {
         const qLine = row.question ? `<div class="ch-qa-q">${esc(row.question)}</div>` : '';
         const aLine = row.header
           ? `<div class="ch-qa-row"><span class="cc-tag">${esc(row.header)}</span><span>${esc(row.answer || _t('Skipped'))}</span></div>`
           : `<div class="ch-qa-row"><span>${esc(row.answer || _t('Skipped'))}</span></div>`;
         return `<div class="ch-qa-pair">${qLine}${aLine}</div>`;
-      }).join('')}</div>`;
+      }).join('')}</div></div>`;
     }
     const clean = String(m.content || '').replace(/^(?:Answers to your question|Question & answer):\n/, '');
     if (clean === '(the user skipped your question)') {
-      return `<div class="ch-qa-ans"><div class="ch-qa-row"><span>${esc(_t('Skipped'))}</span></div></div>`;
+      return `<div class="ch-msg me" data-i="${i}"><div class="ch-qa-ans"><div class="ch-qa-row"><span>${esc(_t('Skipped'))}</span></div></div></div>`;
     }
-    return `<div class="ch-qa-ans" dir="auto">${esc(clean).replace(/\n/g, '<br>')}</div>`;
+    return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-qa-ans" dir="auto">${esc(clean).replace(/\n/g, '<br>')}</div></div>`;
   }
 
-  const BUB = 'padding:7px 12px;border-radius:14px 14px 4px 14px;background:#2a2a33;font-size:12.5px;line-height:1.4';
-  function userBubble(m) {
+  function userBubble(m, i) {
     const files = m.files || [];
     const body = esc(m.content).replace(/\n/g, '<br>');
+    const copy = String(m.content || '').trim() ? copyBtn(i) : '';
     // (a message written while Pony worked: "Sends when Pony is done" when the run can't take it now)
     const note = m.later ? `<div class="ch-later">${fa('clock', 'regular')} ${esc(_t('Sends when Pony is done'))}</div>` : '';
-    if (!files.length) return `<div style="align-self:flex-end;max-width:75%;${BUB}" dir="auto">${body}</div>${note}`;
+    if (!files.length) return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-me"><div class="ch-me-bub" dir="auto">${body}</div>${note}</div></div>`;
     const pics = files.filter((f) => f.kind === 'image' && f.thumb);
     const docs = files.filter((f) => f.kind !== 'image').map((f) => { const [ic, c] = fileLook(f.name); return `<div class="ch-att-file sent" style="--c:${c}"><span class="ic">${fa(ic)}</span><span class="nm"><b>${esc(f.name)}</b><span>${esc(f.size ? kb(f.size) : '')}</span></span></div>`; }).join('');
-    return `<div class="ch-me">${pics.length ? `<div class="ch-me-pics">${pics.map((f) => `<img src="${esc(f.thumb)}" alt="" title="${esc(f.name)}">`).join('')}</div>` : ''}<div style="${BUB}" dir="auto">${docs}${body}</div></div>`;
+    return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-me">${pics.length ? `<div class="ch-me-pics">${pics.map((f) => `<img src="${esc(f.thumb)}" alt="" title="${esc(f.name)}">`).join('')}</div>` : ''}<div class="ch-me-bub" dir="auto">${docs}${body}</div>${note}</div></div>`;
   }
   function seenLine(s) {
     const bits = [s.img ? _t('looked at {n} pictures', { n: s.img }) : '', s.txt ? _t('read {n} files', { n: s.txt }) : ''].filter(Boolean).join(' · ');
@@ -751,6 +756,10 @@
   // The notch is closed when Pony finishes, needs an OK or asks something: it comes down open on Pony (as a scheduled
   // brief does) and goes back up by itself after a while if the mouse never comes
   function showInNotch() {
+    if (N.isFloatingChat) {
+      if (api.openFloatingChat) api.openFloatingChat();
+      return;
+    }
     if (st.open || !N.openNotch) return;
     N.openNotch('chat');
     st.openedByShortcut = true;
@@ -838,7 +847,7 @@
   }
   // the streamed answer's words: the ones already there stay still, the new ones come in from a blur (AI Answer)
   function wordsIn(el, from) {
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('pre, code, a.ch-cite') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('pre, code, a.ch-cite, .md-code-hd, .md-chk, button') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
     const nodes = [];
     while (walk.nextNode()) nodes.push(walk.currentNode);
     let k = 0;
@@ -874,6 +883,7 @@
     box.classList.toggle('live', !!(tool && tool.live && tool.live.text));
     avaMood();
     $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
+    $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
     const lv = $('.ch-live', box);
     if (lv && tool && tool.live) tool.live.words = wordsIn(lv, tool.live.words || 0);
     if (tool) tool.steps.forEach((s) => { s.fresh = false; });
@@ -947,7 +957,7 @@
       b.onmouseleave = () => { if (emptyPony) emptyPony.setMood('idle'); };
       b.onclick = () => { const i = $('#chIn', page); i.value = b.dataset.sugg; N.focusField(i); };
     });
-    const s2 = $('#chSetup', box); if (s2) s2.onclick = () => { api.openSettings('ai'); N.closeNotch(); };
+    const s2 = $('#chSetup', box); if (s2) s2.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); };
   }
 
   function render() {
@@ -957,8 +967,11 @@
     if (provEl) provEl.textContent = (st.settings && st.settings.ponyName) || 'Pony';
     if (provEl) provEl.title = p.label || '';
     const box = $('.ch-msgs', page);
-    $('#chHist', page).classList.toggle('on', history);
-    $('#chHist', page).disabled = !chats.list.length && !history;
+    const histBtn = $('#chHist', page);
+    if (histBtn) {
+      histBtn.classList.toggle('on', history);
+      histBtn.disabled = !chats.list.length && !history;
+    }
     if (!history) dropDeleted();
     const agentName = p.label || 'Claude';
     const agentIco = ponyAva(30);
@@ -992,21 +1005,28 @@
           : '';
         box.innerHTML = msgs.map((m, i) => (m.role === 'user'
           ? (m.kind === 'answer'
-            ? renderAnswerBubble(m)
-            : userBubble(m))
-          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:92%">${agentIco}<div class="bub" style="padding:8px 12px;border-radius:14px 14px 14px 4px;background:var(--tile);font-size:12.5px;line-height:1.45;min-width:0;flex:1" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
-            + `${m.error ? '' : `<button type="button" class="ch-act" data-copy="${i}" title="${esc(_t('Copy'))}" style="color:var(--mute);cursor:pointer;flex:none;margin-top:4px">${fa('copy', 'regular')}</button>`}</div>`)).join('')
+            ? renderAnswerBubble(m, i)
+            : userBubble(m, i))
+          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:95%">${agentIco}<div class="bub" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
+            + `${m.error ? '' : copyBtn(i)}</div>`)).join('')
           + (pending && searching ? `<div class="row" style="gap:8px">${thinkingIco}<div style="padding:8px 12px;border-radius:14px;background:var(--tile);font-size:12px;color:var(--dim)">${fa('globe')} ${esc(_t('Searching the web for “{query}”…', { query: searching }))}</div></div>`
             : pending ? `<div class="row" style="gap:8px;align-items:flex-start">${thinkingIco}<div class="ch-think">${thinkHtml()}</div></div>` : '')
           + approveHtml()
           + peekHtml()
           + askHtml;
-        $$('[data-copy]', box).forEach((b) => { b.onclick = () => { navigator.clipboard.writeText(msgs[+b.dataset.copy].content); N.toast(fa('copy', 'regular'), _t('Copied')); }; });
-        $$('.ch-copy', box).forEach((b) => { b.onclick = () => { navigator.clipboard.writeText(b.nextElementSibling.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); }; });
+        $$('[data-copy]', box).forEach((b) => {
+          b.onclick = () => {
+            const txt = copyMessageText(msgs[+b.dataset.copy]);
+            if (!txt) return;
+            navigator.clipboard.writeText(txt);
+            N.toast(fa('copy', 'regular'), _t('Copied'));
+          };
+        });
+        $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
         $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
         bindSuggest(box);
         $$('[data-tab]', box).forEach((b) => { b.onclick = () => N.openModule(b.dataset.tab); });
-        $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); N.closeNotch(); }; });
+        $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); }; });
         $$('[data-srcall]', box).forEach((b) => { b.onclick = () => { msgs[+b.dataset.srcall].srcAll = true; lastRenderSig = ''; render(); }; });
         $$('a.ch-card[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
         $$('[data-work]', box).forEach((b) => { b.onclick = () => { const m = msgs[+b.dataset.work]; m.workOpen = !m.workOpen; lastRenderSig = ''; render(); }; });
@@ -1383,6 +1403,8 @@
       const s = [...tool.steps].reverse().find((x) => x.kind === d.kind && x.detail === d.detail) || [...tool.steps].reverse().find((x) => x.kind === d.kind);
       if (s) { s.sources = d.sources; syncThink(); return; }
     }
+    // A new tool step started after any preamble text: clear live text so the UI stays in active working state.
+    if (tool.live) tool.live = null;
     tool.steps.push({ kind: d.kind, detail: d.detail || '', fresh: true });
     syncThink();
   });
@@ -1425,9 +1447,14 @@
     api.svc('agent', 'result', t.call, res).catch(() => {});
   });
 
-  // for Pony ask_user cards and notch integration
+  // for Pony ask_user cards, notch and floating chat integration
   N.chat = {
-    send, markdown, actionChips, answerAsk, dismissAsk,
+    send, markdown, actionChips, answerAsk, dismissAsk, newChat,
+    provider,
+    toggleHistory: () => { history = !history; changed(); },
+    isHistory: () => history,
+    hasHistory: () => chats.list.length > 0,
+    hasMessages: () => msgs.length > 0,
     activeAsk: () => activeAsk,
     answer: answerHtml, // the text with its sources and what it did
     ready: () => provider().ready,
@@ -1451,7 +1478,7 @@
     const bubbleText = (lastAsst && lastAsst.content ? lastAsst.content.replace(/\s+/g, ' ').trim() : '') || _t('Ask anything about your day, tasks, or notes.');
     el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">${ico}<span style="font-size:9.5px;color:var(--mute);font-weight:700">⌘K</span></div>`
       + `<div style="flex:1;min-width:0;display:flex;flex-direction:column">`
-      + `<div class="t1" style="align-self:flex-start;max-width:100%;padding:6px 10px;border-radius:12px 12px 12px 4px;background:#1d1d24;font-size:12px" dir="auto">${esc(bubbleText)}</div>`
+      + `<div class="t1" style="align-self:flex-start;max-width:100%;padding:6px 10px;border-radius:12px 12px 12px 4px;background:var(--pill-hi);font-size:12px" dir="auto">${esc(bubbleText)}</div>`
       + `<div class="row" style="margin-top:auto;height:30px;padding:0 4px 0 11px;border-radius:15px;background:var(--pill);color:var(--mute);font-size:12px">`
       + `<span style="flex:1">${esc(_t('Ask anything…'))}</span>`
       + `<span class="mini-btn w" style="width:22px;height:22px">${N.ic('up', 'width:11px;height:11px;stroke-width:3')}</span></div></div>`;
@@ -1495,13 +1522,14 @@
     init(p) {
       page = p;
       const prov = provider();
-      page.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%;position:relative">`
+      page.innerHTML = `<div class="ch-shell" style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%;position:relative">`
         + `<div class="ch-msgs sc-y" style="flex:1;display:flex;flex-direction:column;gap:7px"></div>`
         + `<div class="ch-drop" id="chDrop" hidden><span class="ic">${fa('paperclip')}</span><span><b>${esc(_t('Drop to attach'))}</b><span>${esc(_t('Pictures or text files, up to {n}', { n: MAX_ATT }))}</span></span></div>`
         + `<div class="ch-tray" id="chTray" hidden></div>`
-        + `<div class="row" style="gap:6px;flex:none">`
-        + `<button type="button" class="mini-btn" id="chNew" title="${esc(_t('New chat (this one stays in History)'))}" style="width:34px;height:34px;border-radius:17px">${N.ic('plus', 'width:13px;height:13px')}</button>`
-        + `<button type="button" class="mini-btn" id="chHist" title="${esc(_t('History'))}" style="width:34px;height:34px;border-radius:17px">${fa('clock-rotate-left')}</button>`
+        + `<div class="row ch-foot" style="gap:6px;flex:none">`
+        + (N.isFloatingChat ? '' : `<button type="button" class="mini-btn" id="chNew" title="${esc(_t('New chat (this one stays in History)'))}" style="width:34px;height:34px;border-radius:17px">${N.ic('plus', 'width:13px;height:13px')}</button>`
+          + `<button type="button" class="mini-btn" id="chHist" title="${esc(_t('History'))}" style="width:34px;height:34px;border-radius:17px">${fa('clock-rotate-left')}</button>`
+          + `<button type="button" class="mini-btn" id="chFloat" title="${esc(_t('Pop out floating chat'))}" style="width:34px;height:34px;border-radius:17px">${fa('up-right-from-square')}</button>`)
         + `<div class="ch-bar"><span class="ch-who" title="${esc(((st.settings && st.settings.ponyName) || 'Pony') + (prov.label ? ' · ' + prov.label : ''))}"><canvas class="ch-pony-canvas" id="chPony" width="34" height="58"></canvas></span>`
         + `<input id="chIn" type="text" placeholder="${esc(_t('Ask anything…'))}" spellcheck="false">`
         + `<button type="button" id="chClip" class="ch-clip" title="${esc(_t('Attach a picture or a file (⌘V pastes a screenshot)'))}">${fa('paperclip')}</button>`
@@ -1535,8 +1563,17 @@
         e.preventDefault();
         files.forEach(addFile);
       });
-      $('#chNew', page).onclick = () => { newChat(); N.focusField(input); };
-      $('#chHist', page).onclick = () => { history = !history; render(); };
+      const newBtn = $('#chNew', page);
+      if (newBtn) newBtn.onclick = () => { newChat(); N.focusField(input); };
+      const histBtn = $('#chHist', page);
+      if (histBtn) histBtn.onclick = () => { history = !history; render(); };
+      const floatBtn = $('#chFloat', page);
+      if (floatBtn) {
+        floatBtn.onclick = () => {
+          if (api.openFloatingChat) api.openFloatingChat();
+          if (N.closeNotch) N.closeNotch();
+        };
+      }
       render();
     },
     show() { if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },

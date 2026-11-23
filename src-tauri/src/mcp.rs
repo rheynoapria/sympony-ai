@@ -22,6 +22,8 @@ struct Session {
     brief: bool,
     asked: bool,
     tainted: bool,
+    /// Number of active in-flight MCP tool calls (e.g. Hands, Exec, approval card) for this session.
+    busy: usize,
 }
 
 pub struct Mcp {
@@ -34,10 +36,23 @@ pub struct Mcp {
 impl Mcp {
     /// A chat run that may use the tools while it lasts.
     pub fn open(&self, session: &str, brief: bool) {
-        self.sessions.lock().unwrap().insert(session.to_string(), Session { brief, asked: false, tainted: false });
+        self.sessions.lock().unwrap().insert(session.to_string(), Session { brief, asked: false, tainted: false, busy: 0 });
     }
     pub fn close(&self, session: &str) {
         self.sessions.lock().unwrap().remove(session);
+    }
+    pub fn begin_busy(&self, session: &str) {
+        if let Some(sess) = self.sessions.lock().unwrap().get_mut(session) {
+            sess.busy = sess.busy.saturating_add(1);
+        }
+    }
+    pub fn end_busy(&self, session: &str) {
+        if let Some(sess) = self.sessions.lock().unwrap().get_mut(session) {
+            sess.busy = sess.busy.saturating_sub(1);
+        }
+    }
+    pub fn is_busy(&self, session: &str) -> bool {
+        self.sessions.lock().unwrap().get(session).is_some_and(|s| s.busy > 0)
     }
     pub fn mark_tainted(&self, session: &str) {
         if let Some(sess) = self.sessions.lock().unwrap().get_mut(session) {
@@ -114,7 +129,8 @@ fn serve_pony(app: &AppHandle, session: &str, kind: &str, args: &str) -> Option<
             let desc = v["description"].as_str().unwrap_or("");
             let body = v["body"].as_str().unwrap_or("");
             let replace = v["replace"].as_bool().unwrap_or(false);
-            if app.state::<Mcp>().is_tainted(session) {
+            let yolo = app.state::<App>().settings.get()["ponyExecMode"] == "yolo";
+            if !yolo && app.state::<Mcp>().is_tainted(session) {
                 let preview: String = body.chars().take(240).collect();
                 let detail = format!("Save skill “{name}”\n{desc}\n\n{preview}");
                 if crate::exec::approve(app, session, json!({"tool": "save_skill", "detail": detail, "canAlways": false})) == "deny" {
@@ -127,7 +143,8 @@ fn serve_pony(app: &AppHandle, session: &str, kind: &str, args: &str) -> Option<
             })
         }
         "remember" => {
-            if app.state::<Mcp>().is_tainted(session) {
+            let yolo = app.state::<App>().settings.get()["ponyExecMode"] == "yolo";
+            if !yolo && app.state::<Mcp>().is_tainted(session) {
                 let detail = format!("Remember fact:\n{}", args.chars().take(240).collect::<String>());
                 if crate::exec::approve(app, session, json!({"tool": "remember", "detail": detail, "canAlways": false})) == "deny" {
                     return Some(json!({"ok": false, "error": "The user declined saving this memory fact."}));
@@ -161,7 +178,17 @@ fn serve_pony(app: &AppHandle, session: &str, kind: &str, args: &str) -> Option<
     }
 }
 
-/// One call from a bridge: `{token, session, kind, args}` → `{ok, text | error}`.
+struct BusyGuard<'a> {
+    mcp: &'a Mcp,
+    session: String,
+}
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        self.mcp.end_busy(&self.session);
+    }
+}
+
+/// One call from a bridge: `{token, session, kind, args}` → `{ok, text | error, image?}`.
 pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
     let m = app.state::<Mcp>();
     let session = req["session"].as_str().unwrap_or("").to_string();
@@ -173,6 +200,8 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
     if !m.sessions.lock().unwrap().contains_key(&session) {
         return json!({"ok": false, "error": "This isn't a run Sympony started, or it has ended"});
     }
+    m.begin_busy(&session);
+    let _busy = BusyGuard { mcp: &m, session: session.clone() };
     if kind == "ask" {
         if let Err(msg) = m.check_ask(&session) {
             return json!({"ok": false, "error": msg});
@@ -221,8 +250,11 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
         }
         if kind == "out" && eyes && services::eyes::NAMES.contains(&call["name"].as_str().unwrap_or("")) {
             m.mark_tainted(&session);
-            return match crate::eyes::call(app, &session, &call["arguments"]) {
-                Ok(text) => json!({"ok": true, "text": text}),
+            return match crate::eyes::call_rich(app, &session, &call["arguments"]) {
+                Ok(r) => match r.image {
+                    Some((mime, data)) => json!({"ok": true, "text": r.text, "image": {"mime": mime, "data": data}}),
+                    None => json!({"ok": true, "text": r.text}),
+                },
                 Err(e) => json!({"ok": false, "error": e}),
             };
         }
@@ -341,7 +373,7 @@ pub fn bridge() {
     let sock = std::env::var("SYMPONY_SOCK").unwrap_or_default();
     let token = std::env::var("SYMPONY_TOKEN").unwrap_or_default();
     let session = std::env::var("SYMPONY_SESSION").unwrap_or_default();
-    let mut run = |kind: &str, args: &str| -> Result<String, String> {
+    let run_rich = |kind: &str, args: &str| -> Result<(String, Option<(String, String)>), String> {
         if sock.is_empty() {
             return Err("Sympony's tools only work in a chat Sympony started".into());
         }
@@ -356,11 +388,17 @@ pub fn bridge() {
         writeln!(s, "{}", json!({"token": token, "session": session, "kind": kind, "args": args})).map_err(|e| e.to_string())?;
         use std::io::Read;
         let mut line = String::new();
-        BufReader::new((&s).take(2 << 20)).read_line(&mut line).map_err(|_| "Sympony didn't answer".to_string())?;
+        BufReader::new((&s).take(8 << 20)).read_line(&mut line).map_err(|_| "Sympony didn't answer".to_string())?;
         let v: Value = serde_json::from_str(&line).map_err(|_| "Sympony answered oddly".to_string())?;
         let text = v["text"].as_str().or_else(|| v["error"].as_str()).unwrap_or("").to_string();
-        if v["ok"] == true { Ok(text) } else { Err(text) }
+        let image = v.get("image").and_then(|im| {
+            let mime = im["mime"].as_str()?.to_string();
+            let data = im["data"].as_str()?.to_string();
+            (!mime.is_empty() && !data.is_empty()).then_some((mime, data))
+        });
+        if v["ok"] == true { Ok((text, image)) } else { Err(text) }
     };
+    let mut run = |kind: &str, args: &str| -> Result<String, String> { run_rich(kind, args).map(|(t, _)| t) };
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     // (the outside tools the app has for this run: asked for once, on the first tools/list)
@@ -372,11 +410,18 @@ pub fn bridge() {
         // (a tool that isn't one of Sympony's own: an outside tool or the bridge, answered by the app)
         if method == "tools/call" && !services::tools::list().iter().any(|t| t["name"] == name) {
             let a = json!({"name": name, "arguments": req["params"]["arguments"]}).to_string();
-            let (text, err) = match run("out", &a) {
-                Ok(t) => (t, false),
-                Err(e) => (e, true),
+            let (content, err) = match run_rich("out", &a) {
+                Ok((t, Some((mime, data)))) => (
+                    json!([
+                        {"type": "text", "text": t},
+                        {"type": "image", "data": data, "mimeType": mime}
+                    ]),
+                    false,
+                ),
+                Ok((t, None)) => (json!([{"type": "text", "text": t}]), false),
+                Err(e) => (json!([{"type": "text", "text": e}]), true),
             };
-            let _ = writeln!(out, "{}", json!({"jsonrpc": "2.0", "id": req["id"], "result": {"content": [{"type": "text", "text": text}], "isError": err}}));
+            let _ = writeln!(out, "{}", json!({"jsonrpc": "2.0", "id": req["id"], "result": {"content": content, "isError": err}}));
             let _ = out.flush();
             continue;
         }
@@ -468,6 +513,11 @@ mod tests {
         let mcp = Mcp { token: "t".into(), sessions: Mutex::default(), waits: Mutex::default(), next: AtomicU64::new(0) };
         mcp.open("s1", false);
         assert!(!mcp.is_tainted("s1"));
+        assert!(!mcp.is_busy("s1"));
+        mcp.begin_busy("s1");
+        assert!(mcp.is_busy("s1"));
+        mcp.end_busy("s1");
+        assert!(!mcp.is_busy("s1"));
         mcp.mark_tainted("s1");
         assert!(mcp.is_tainted("s1"));
         mcp.close("s1");

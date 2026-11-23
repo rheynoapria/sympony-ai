@@ -399,6 +399,132 @@
       return;
     }
 
+    if (style === 'pill') {
+      const coreTogs = [
+        { attr: 'data-tgl="wifi"', ico: 'wifi', on: wifiOn, col: '#4361ff', tip: `Wi‑Fi · ${wifiSub()}` },
+        { attr: 'data-tgl="bluetooth"', ico: 'bt', on: btOn, col: '#4361ff', tip: `Bluetooth · ${btSub()}` },
+        { attr: 'data-tgl="focus"', ico: 'moonz', on: dndOn, col: '#8fa2ff', tip: `${_t('Focus')} · ${dndOn ? _t('On') : _t('Off')}` },
+        { attr: 'data-tgl="keepAwake"', ico: 'cup', on: awakeOn, col: '#fbbf24', fg: '#000', tip: `${_t('Keep awake')} · ${awakeOn ? _t('On') : _t('Off')}` },
+      ];
+      page.innerHTML = `<div class="ctl-pill-wrap sl-pane">`
+        + `<div class="ctl-pill-togs">`
+        + coreTogs.map((t) => `<button type="button" class="ctl-ico-btn${t.on ? ' on' : ''}" ${t.attr} title="${esc(t.tip)}" aria-label="${esc(t.tip)}" aria-pressed="${t.on}" style="${t.on ? `--a:${t.col};--afg:${t.fg || '#fff'}` : ''}">${N.ic(t.ico, 'width:14px;height:14px')}</button>`).join('')
+        + `</div>`
+        + `<div class="ctl-pill-sliders">`
+        + `<div class="hsl sm${briOk ? '' : ' na'}${briFrac < 0.18 ? ' low' : ''}${briFrac >= 0.84 ? ' hi' : ''}" id="ctlBriHsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
+        + `<i></i><span>${N.ic('sun', 'width:14px;height:14px')}</span><b>${briOk ? briPct + '%' : '–'}</b></div>`
+        + `<div class="hsl sm${volFrac < 0.18 ? ' low' : ''}${volFrac >= 0.84 ? ' hi' : ''}" id="ctlVolHsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
+        + `<i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:14px;height:14px')}</span><b>${volPct}%</b></div>`
+        + `</div>`
+        + `<div class="ctl-pill-end">`
+        + `<button type="button" class="ctl-ico-btn${!micMuted ? ' on' : ''}" data-chip="mic" title="${esc(micMuted ? _t('Mic muted') : _t('Microphone'))}" style="${!micMuted ? '--a:#34d399;--afg:#000' : ''}">${N.ic(micMuted ? 'micOff' : 'mic', 'width:14px;height:14px')}</button>`
+        + `<button type="button" class="ctl-ico-btn" id="ctlSoundBtn" title="${esc(`${_t('Sound output')}: ${curOutName}`)}">${N.ic(curOut ? devSvg(curOut.name) : 'vol', 'width:14px;height:14px')}</button>`
+        + `<button type="button" class="ctl-ico-btn" id="ctlMoreBtn" title="${esc(_t('Quick actions'))}">${N.ic('sliders', 'width:14px;height:14px')}</button>`
+        + `</div></div>`;
+
+      bindCommonToggles();
+      bindHorizSlider($('#ctlBriHsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
+      bindHorizSlider($('#ctlVolHsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
+      return;
+    }
+
+    if (style === 'macos') {
+      const connRows = [
+        ['wifi', 'wifi', 'Wi‑Fi', wifiSub(), wifiOn ? '#4361ff' : '', '#fff'],
+        ['bluetooth', 'bt', 'Bluetooth', btSub(), btOn ? '#3b82f6' : '', '#fff'],
+        ['focus', 'moonz', _t('Focus'), dndOn ? _t('On') : _t('Off'), dndOn ? '#8b5cf6' : '', '#fff'],
+      ];
+      const miniTiles = [
+        { attr: 'data-tgl="keepAwake"', ico: 'cup', lbl: _t('Keep awake|short'), on: awakeOn, col: '#fbbf24', fg: '#000' },
+        { attr: 'data-chip="dark"', ico: 'contrast', lbl: _t('Dark mode'), on: darkOn, col: '#e4e4ec', fg: '#000' },
+        { attr: 'data-chip="warm"', ico: 'sun', lbl: _t('Night Shift'), on: warmOn, col: '#fb923c', fg: '#000' },
+        { attr: 'data-chip="mic"', ico: micMuted ? 'micOff' : 'mic', lbl: _t('Mic'), on: !micMuted, col: '#34d399', fg: '#000' },
+      ];
+      const batTag = curOutBat != null
+        ? `<span class="ctl-out-bat n" style="color:${N.meter(curOutBat, true)}">${curOutBat}%</span>`
+        : '';
+      page.innerHTML = `<div class="ctl-mac-wrap">`
+        + `<div class="ctl-mac-card ctl-mac-conn sl-pane">`
+        + connRows.map(([id, ico, name, sub, col, fg]) => `<button type="button" class="ctl-mac-row${col ? ' on' : ''}" data-tgl="${id}" style="${col ? `--a:${col};--afg:${fg}` : ''}">`
+          + `<span class="dot">${N.ic(ico, 'width:13px;height:13px')}</span>`
+          + `<span class="meta"><b class="t1">${esc(name)}</b><small class="t1">${esc(sub)}</small></span></button>`).join('')
+        + `</div>`
+        + `<div class="ctl-mac-mid">`
+        + `<div class="ctl-mac-card ctl-mac-sl sl-pane">`
+        + `<div class="ctl-mac-hd"><span>${esc(_t('Display'))}</span><b class="n">${briOk ? briPct + '%' : '–'}</b></div>`
+        + `<div class="hsl sm${briOk ? '' : ' na'}${briFrac < 0.18 ? ' low' : ''}${briFrac >= 0.84 ? ' hi' : ''}" id="ctlBriHsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
+        + `<i></i><span>${N.ic('sun', 'width:13px;height:13px')}</span><b>${briOk ? briPct + '%' : '–'}</b></div>`
+        + `</div>`
+        + `<div class="ctl-mac-card ctl-mac-sl sl-pane">`
+        + `<div class="ctl-mac-hd"><span>${esc(_t('Sound'))}</span><button type="button" class="ctl-mac-out" id="ctlSoundBtn" title="${esc(_t('Sound output'))}">${N.ic(curOut ? devSvg(curOut.name) : 'vol', 'width:11px;height:11px;flex:none')}<span class="t1">${esc(curOutName)}</span>${batTag}</button></div>`
+        + `<div class="hsl sm${volFrac < 0.18 ? ' low' : ''}${volFrac >= 0.84 ? ' hi' : ''}" id="ctlVolHsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
+        + `<i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:13px;height:13px')}</span><b>${volPct}%</b></div>`
+        + `</div>`
+        + `</div>`
+        + `<div class="ctl-mac-right">`
+        + `<div class="ctl-mac-tiles">`
+        + miniTiles.map((t) => `<button type="button" class="ctl-mac-tile sl-pane${t.on ? ' on' : ''}" ${t.attr} title="${esc(t.lbl)}" style="${t.on ? `--a:${t.col};--afg:${t.fg || '#fff'}` : ''}">`
+          + `<span class="dot">${N.ic(t.ico, 'width:13px;height:13px')}</span><span class="t1">${esc(t.lbl)}</span></button>`).join('')
+        + `</div>`
+        + `<button type="button" class="ctl-mac-more sl-pane" id="ctlMoreBtn">${N.ic('sliders', 'width:12px;height:12px')}<span>${esc(_t('Quick actions'))}</span></button>`
+        + `</div></div>`;
+
+      bindCommonToggles();
+      bindHorizSlider($('#ctlBriHsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
+      bindHorizSlider($('#ctlVolHsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
+      return;
+    }
+
+    if (style === 'mixer') {
+      const topOuts = outs.slice(0, 4);
+      const outChips = topOuts.length
+        ? topOuts.map((d) => {
+          const [kind] = split(d.name);
+          const bat = devBattery(d.name);
+          return `<button type="button" class="ctl-mix-dev${d.default ? ' on' : ''}" data-out="${esc(d.id)}" title="${esc(d.name)}">`
+            + `${N.ic(devSvg(d.name), 'width:12px;height:12px;flex:none')}`
+            + `<span class="t1">${esc(kind)}</span>`
+            + `${bat != null ? `<em class="n" style="color:${N.meter(bat, true)}">${bat}%</em>` : ''}</button>`;
+        }).join('')
+        : `<span class="sub" style="padding:0 6px">${esc(_t('No sound output'))}</span>`;
+      const stripTogs = [
+        { attr: 'data-tgl="wifi"', ico: 'wifi', lbl: 'Wi‑Fi', on: wifiOn, col: '#4361ff' },
+        { attr: 'data-tgl="bluetooth"', ico: 'bt', lbl: 'BT', on: btOn, col: '#4361ff' },
+        { attr: 'data-tgl="focus"', ico: 'moonz', lbl: _t('Focus'), on: dndOn, col: '#8fa2ff' },
+        { attr: 'data-tgl="keepAwake"', ico: 'cup', lbl: _t('Keep awake|short'), on: awakeOn, col: '#fbbf24', fg: '#000' },
+        { attr: 'data-chip="dark"', ico: 'contrast', lbl: _t('Dark'), on: darkOn, col: '#e4e4ec', fg: '#000' },
+        { attr: 'data-chip="warm"', ico: 'sun', lbl: _t('Warm'), on: warmOn, col: '#fb923c', fg: '#000' },
+        { attr: 'data-chip="mic"', ico: micMuted ? 'micOff' : 'mic', lbl: _t('Mic'), on: !micMuted, col: '#34d399', fg: '#000' },
+      ];
+      page.innerHTML = `<div class="ctl-mix-wrap">`
+        + `<div class="ctl-mix-top">`
+        + `<div class="ctl-mix-sliders sl-pane">`
+        + `<div class="hsl${volFrac < 0.18 ? ' low' : ''}${volFrac >= 0.84 ? ' hi' : ''}" id="ctlVolHsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
+        + `<i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:15px;height:15px')}<em>${esc(_t('Volume'))}</em></span><b>${volPct}%</b></div>`
+        + `<div class="hsl${briOk ? '' : ' na'}${briFrac < 0.18 ? ' low' : ''}${briFrac >= 0.84 ? ' hi' : ''}" id="ctlBriHsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
+        + `<i></i><span>${N.ic('sun', 'width:15px;height:15px')}<em>${esc(_t('Display'))}</em></span><b>${briOk ? briPct + '%' : '–'}</b></div>`
+        + `</div>`
+        + `<div class="ctl-mix-outs sl-pane">`
+        + `<div class="ctl-mac-hd"><span>${esc(_t('Sound output'))}</span><button type="button" class="ctl-mix-all" id="ctlSoundBtn" title="${esc(_t('All devices'))}">${N.ic('pods', 'width:11px;height:11px')}</button></div>`
+        + `<div class="ctl-mix-list">${outChips}</div>`
+        + `</div></div>`
+        + `<div class="ctl-mix-foot">`
+        + stripTogs.map((t) => `<button type="button" class="ctl-mix-chip${t.on ? ' on' : ''}" ${t.attr} style="${t.on ? `--a:${t.col};--afg:${t.fg || '#fff'}` : ''}">${N.ic(t.ico, 'width:12px;height:12px')}<span class="t1">${esc(t.lbl)}</span></button>`).join('')
+        + `<button type="button" class="ctl-mix-chip more" id="ctlMoreBtn" title="${esc(_t('Quick actions'))}">${N.ic('sliders', 'width:12px;height:12px')}</button>`
+        + `</div></div>`;
+
+      bindCommonToggles();
+      bindHorizSlider($('#ctlBriHsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
+      bindHorizSlider($('#ctlVolHsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
+      $$('[data-out]', page).forEach((btn) => {
+        btn.onclick = async () => {
+          await api.svc('audio', 'setDefault', btn.dataset.out).catch(() => false);
+          setTimeout(loadDevices, 250);
+        };
+      });
+      return;
+    }
+
     if (style === 'compact') {
       const pills = [
         ['wifi', 'wifi', 'Wi‑Fi', wifiSub(), wifiOn ? '#4361ff' : '', '#fff'],
@@ -451,7 +577,7 @@
         const batHtml = bat != null
           ? `<span class="n" style="font-size:11px;color:${N.meter(bat, true)};flex:none">${bat}%</span>`
           : '';
-        return `<button type="button" class="row" data-out="${esc(d.id)}" style="gap:9px;padding:5px 6px;border-radius:10px;width:100%;text-align:start;cursor:pointer;${d.default ? 'background:#1d1d24' : ''}">`
+        return `<button type="button" class="row ctl-out-row${d.default ? ' on' : ''}" data-out="${esc(d.id)}" style="gap:9px;padding:5px 7px;border-radius:10px;width:100%;text-align:start;cursor:pointer">`
           + `<span style="color:${d.default ? '#fff' : 'var(--dim)'};flex:none">${N.ic(devSvg(d.name), 'width:14px;height:14px')}</span>`
           + `<span class="t1" style="flex:1;font-size:12px;font-weight:${d.default ? 700 : 500};color:${d.default ? '#fff' : 'var(--dim)'}">${esc(kind)}</span>`
           + `${batHtml}`
@@ -461,8 +587,8 @@
 
     page.innerHTML = `<div style="display:grid;grid-template-columns:200px 132px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
       + `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-width:0;min-height:0">`
-      + tiles.map(([id, ico, name, sub, col]) => `<button type="button" class="tg2${col ? ' on' : ''}" data-tgl="${id}" style="--a:${col || '#1d1d24'}">`
-        + `<span class="dot2" style="background:${col || '#1d1d24'};color:${col === '#fbbf24' ? '#000' : col ? '#fff' : 'var(--dim)'}">${N.ic(ico, 'width:17px;height:17px')}</span>`
+      + tiles.map(([id, ico, name, sub, col]) => `<button type="button" class="tg2${col ? ' on' : ''}" data-tgl="${id}" style="--a:${col || 'var(--pill-hi)'}">`
+        + `<span class="dot2" style="background:${col || 'var(--pill-hi)'};color:${col === '#fbbf24' ? '#000' : col ? '#fff' : 'var(--dim)'}">${N.ic(ico, 'width:17px;height:17px')}</span>`
         + `<b class="t1">${esc(name)}</b><span class="t1">${esc(sub)}</span></button>`).join('')
       + `</div>`
       + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0;min-height:0">`
@@ -536,11 +662,11 @@
     ];
 
     el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(2,36px);grid-template-rows:repeat(2,36px);gap:8px;align-content:center;flex:none">`
-      + togs.map(([id, ico, lbl, col]) => `<button type="button" data-ctgl="${id}" title="${esc(lbl)}" style="width:36px;height:36px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:${col || '#1d1d24'};color:${col === '#fbbf24' ? '#000' : col ? '#fff' : 'var(--dim)'};cursor:pointer">${N.ic(ico, 'width:15px;height:15px')}</button>`).join('')
+      + togs.map(([id, ico, lbl, col]) => `<button type="button" data-ctgl="${id}" title="${esc(lbl)}" style="width:36px;height:36px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:${col || 'var(--pill-hi)'};color:${col === '#fbbf24' ? '#000' : col ? '#fff' : 'var(--dim)'};cursor:pointer">${N.ic(ico, 'width:15px;height:15px')}</button>`).join('')
       + `</div>`
       + `<div class="vsl${briOk ? '' : ' na'}${briFrac < 0.22 ? ' low' : ''}" data-csl="bri" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}"><i></i><span>${N.ic('sun', 'width:15px;height:15px')}</span></div>`
       + `<div class="vsl${volFrac < 0.22 ? ' low' : ''}" data-csl="vol" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}"><i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:15px;height:15px')}</span></div>`
-      + `<button type="button" data-cout="1" style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;padding:0 10px;border-radius:16px;background:#16161c;text-align:start;cursor:pointer">`
+      + `<button type="button" data-cout="1" style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;padding:0 10px;border-radius:16px;background:var(--pill);text-align:start;cursor:pointer">`
       + `<span style="color:#fff">${N.ic(curOut ? devSvg(curOut.name) : 'pods', 'width:16px;height:16px')}</span>`
       + `<b class="t1" style="font-size:12px;margin-top:4px;max-width:100%">${esc(outName)}</b>`
       + `<span class="sub t1" style="font-size:10.5px;max-width:100%">${esc(_t('Output'))}</span></button>`;

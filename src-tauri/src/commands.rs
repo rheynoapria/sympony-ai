@@ -87,6 +87,41 @@ pub fn update_page(handle: tauri::AppHandle) -> Value {
     crate::updater::open_release_page(&handle)
 }
 
+#[tauri::command]
+pub fn floating_chat_open(handle: tauri::AppHandle) {
+    crate::floating_chat::open(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_close(handle: tauri::AppHandle) {
+    crate::floating_chat::close(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_toggle(handle: tauri::AppHandle) {
+    crate::floating_chat::toggle(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_pin(handle: tauri::AppHandle, pinned: bool) -> Value {
+    crate::floating_chat::set_pin(&handle, pinned)
+}
+
+#[tauri::command]
+pub fn floating_chat_state(handle: tauri::AppHandle) -> Value {
+    crate::floating_chat::state_json(&handle)
+}
+
+#[tauri::command]
+pub fn floating_chat_dock(handle: tauri::AppHandle) {
+    crate::floating_chat::dock_to_notch(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_open_module(handle: tauri::AppHandle, module: String) {
+    crate::floating_chat::open_notch_module(&handle, &module);
+}
+
 #[macro_export]
 macro_rules! all_commands {
     () => {
@@ -98,6 +133,9 @@ macro_rules! all_commands {
             commands::notch_drag, commands::notch_hud, commands::calendar_get,
             commands::calendar_refresh, commands::open_calendar_app, commands::share_files, commands::shelf_start_drag,
             commands::update_state, commands::update_check, commands::update_page,
+            commands::floating_chat_open, commands::floating_chat_close, commands::floating_chat_toggle,
+            commands::floating_chat_pin, commands::floating_chat_state, commands::floating_chat_dock,
+            commands::floating_chat_open_module,
             onboarding::onboarding_state, onboarding::onboarding_phase, onboarding::onboarding_lower,
             onboarding::onboarding_cancel_wait, onboarding::onboarding_hint, onboarding::onboarding_finish,
             onboarding::onboarding_skip, onboarding::onboarding_open, media::app_icon

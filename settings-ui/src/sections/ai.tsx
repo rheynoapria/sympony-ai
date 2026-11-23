@@ -614,6 +614,7 @@ function AiSection({ settings, set, part }: CustomPartProps) {
   const chatHelp = chat ? renderHelp(chat) : null;
   const mode: BrainMode = settings.ponyBrain === "sympony" || settings.ponyBrain === "api" ? settings.ponyBrain : "agent";
   const api = mode !== "agent";
+  const hasTools = api || Boolean(chat?.tools);
   const { name: ponyName, persona: ponyPersona, personaText: ponyPersonaText } = ponyDefaults(settings);
 
   const tabBody: Record<PonyTab, ReactNode> = {
@@ -782,15 +783,17 @@ function AiSection({ settings, set, part }: CustomPartProps) {
               <div className="py-3" data-k="agentModels">
                 <SettingsRow
                   label={t("Model for {name}", { name: chat.name })}
-                  description={t(
-                    "Empty: the agent’s own default. Any model name it knows (e.g. opus, gpt-5, gemini-3-pro)."
-                  )}
+                  description={
+                    chat.id === "claude"
+                      ? t("Empty: defaults to sonnet. Enter any Claude alias or model ID (e.g. sonnet, opus, haiku).")
+                      : t("Empty: the agent’s own default. Any model name it knows (e.g. opus, gpt-5, gemini-3-pro).")
+                  }
                 >
                   <input
                     key={chat.id}
                     type="text"
                     defaultValue={models[chat.id] || ""}
-                    placeholder={t("default")}
+                    placeholder={chat.id === "claude" ? "sonnet" : t("default")}
                     aria-label={t("Model for {name}", { name: chat.name })}
                     onBlur={(e) =>
                       void set({
@@ -854,20 +857,32 @@ function AiSection({ settings, set, part }: CustomPartProps) {
         />
       </AbilityGroup>
       <AbilityGroup title={t("On your screen")} hint={t("the window you're looking at")}>
-        <PonyEyes settings={settings} set={set} />
-        <PonyAskAi settings={settings} set={set} />
+        {!hasTools && (
+          <div className="flex items-start gap-2 bg-muted/40 px-4 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0 text-foreground/70" aria-hidden="true" />
+            <span>{t("Eyes, Hands, Ask other AIs, Commands & files, and Outside MCP tools require Sympony AI, your own server, or Claude Code (Brain tab).")}</span>
+          </div>
+        )}
+        <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+          <PonyEyes settings={settings} set={set} />
+          <PonyAskAi settings={settings} set={set} />
+        </div>
       </AbilityGroup>
       <AbilityGroup title={t("On your Mac")} hint={t("work Pony does or hands off")}>
-        {api || chat?.tools ? (
+        {hasTools ? (
           <PonyHands settings={settings} set={set} />
         ) : (
           <p className="px-4 py-3.5 text-[12px] leading-relaxed text-muted-foreground">
             {t("Commands & files work with Sympony AI, your own server, or Claude Code (Brain tab).")}
           </p>
         )}
-        <OtherAgents />
+        <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+          <OtherAgents />
+        </div>
       </AbilityGroup>
-      <McpServers settings={settings} set={set} api={api} />
+      <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+        <McpServers settings={settings} set={set} api={api} />
+      </div>
       </>
     ),
     persona: (
@@ -975,7 +990,11 @@ function AiSection({ settings, set, part }: CustomPartProps) {
         <div className="mb-3 border-b border-border/80 pb-3" data-k="ponyLearn">
           <SettingsRow
             label={t("Learn from chats")}
-            description={t("After a few messages Pony notes lasting things you said, like how you like answers. They show here marked Learned; edit or forget any.")}
+            description={
+              api
+                ? t("After a few messages Pony notes lasting things you said, like how you like answers. They show here marked Learned; edit or forget any.")
+                : t("Automatic background learning runs with Sympony AI or your own server. With Claude Code you can still ask Pony to remember or forget facts directly.")
+            }
           >
             <Switch
               checked={settings.ponyLearn !== false}

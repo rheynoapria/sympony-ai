@@ -33,6 +33,7 @@ pub enum Perm {
     FullDisk,
     Accessibility,
     Microphone,
+    ScreenRecording,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +77,7 @@ pub fn action(perm: Perm, status: &str) -> Action {
                 Action::OpenPane("Privacy_Microphone")
             }
         }
+        Perm::ScreenRecording => Action::OpenPane("Privacy_ScreenCapture"),
     }
 }
 

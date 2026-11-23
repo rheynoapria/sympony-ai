@@ -373,19 +373,26 @@
     }, ms);
   }
 
+  function uniformOpenHeight(s) {
+    const raw = Number((s || st.settings || {}).expandedHeightTall);
+    return Number.isFinite(raw) && raw >= 116 ? Math.min(320, raw) : 268;
+  }
+
   function frameForModule(modId, maxW, maxH) {
     const s = st.settings || {};
     const expW = Number(s.expandedWidth) || 660;
+    const defH = uniformOpenHeight(s);
     const capW = Number.isFinite(maxW) ? maxW : 780;
     const capH = Number.isFinite(maxH) ? maxH : 340;
     if (!modId || !window.StyleLib || !window.NotchKit || !NotchKit.resolveModuleFrame) {
-      const h = Math.min(capH, 272);
+      const h = Math.min(capH, defH);
       return { styleId: 'bento', surface: 'oled', width: Math.min(expW, capW), height: h, stageH: Math.max(96, h - 54) };
     }
     return NotchKit.resolveModuleFrame({
       styleDef: StyleLib.styleDefFor(s, modId),
       pref: StyleLib.prefFor(s, modId),
       expandedWidth: expW,
+      defaultHeight: defH,
       maxW: capW,
       maxH: capH,
     });
@@ -930,7 +937,7 @@
 
   function height(maxH) {
     const modId = activeStyledModule();
-    if (!modId) return Math.min(maxH, 272);
+    if (!modId) return Math.min(maxH, uniformOpenHeight(st.settings));
     let h = frameForModule(modId, 780, maxH).height;
     if (modId === 'home' && N.homeNeedsTall && N.homeNeedsTall()) h = Math.max(h, 236);
     else if (modId === 'control' && N.controlNeedsTall && N.controlNeedsTall()) h = Math.max(h, 232);

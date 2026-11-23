@@ -634,16 +634,38 @@ pub fn drag(x1: f64, y1: f64, x2: f64, y2: f64) {
     }
 }
 
-/// Scrolls what's under a point by `dy` pixels (negative: down).
-pub fn scroll_at(x: f64, y: f64, dy: i32) {
+/// A right click at a point on screen (context menus).
+pub fn right_click_at(x: f64, y: f64) {
+    mouse_move(x, y);
+    std::thread::sleep(std::time::Duration::from_millis(35));
+    for kind in [3u32, 4] {
+        // kCGEventRightMouseDown = 3, kCGEventRightMouseUp = 4, kCGMouseButtonRight = 1
+        unsafe {
+            let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), kind, Pt { x, y }, 1);
+            if !ev.is_null() {
+                CGEventPost(0, ev);
+                CFRelease(ev);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    }
+}
+
+/// Scrolls what's under a point by `(dx, dy)` pixels (negative `dy`: down, negative `dx`: right).
+pub fn scroll_xy(x: f64, y: f64, dx: i32, dy: i32) {
     unsafe {
-        let ev = CGEventCreateScrollWheelEvent(std::ptr::null_mut(), 0, 1, dy);
+        let ev = CGEventCreateScrollWheelEvent(std::ptr::null_mut(), 0, 2, dy, dx);
         if !ev.is_null() {
             CGEventSetLocation(ev, Pt { x, y });
             CGEventPost(0, ev);
             CFRelease(ev);
         }
     }
+}
+
+/// Scrolls what's under a point by `dy` pixels (negative: down).
+pub fn scroll_at(x: f64, y: f64, dy: i32) {
+    scroll_xy(x, y, 0, dy);
 }
 
 /// Opens a popup / menu button and picks the item called `option` (case-insensitive, whole or start of its title).
@@ -746,8 +768,9 @@ pub fn screen_access(ask: bool) -> bool {
     unsafe { CGPreflightScreenCaptureAccess() || (ask && CGRequestScreenCaptureAccess()) }
 }
 
-/// The id of `pid`'s frontmost ordinary window on screen (for `screencapture -l`).
-pub fn window_id(pid: i32) -> Option<u32> {
+/// The id of `pid`'s ordinary window closest to `frame` on screen (for `screencapture -l`),
+/// falling back to the frontmost ordinary window of `pid`.
+pub fn window_id_matching(pid: i32, frame: (f64, f64, f64, f64)) -> Option<u32> {
     objc2::rc::autoreleasepool(|_| {
         let list = unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) };
         if list.is_null() {
@@ -757,10 +780,41 @@ pub fn window_id(pid: i32) -> Option<u32> {
         let k_layer = ns("kCGWindowLayer");
         let k_pid = ns("kCGWindowOwnerPID");
         let k_num = ns("kCGWindowNumber");
-        arr.iter().find_map(|w| {
-            let d = w.downcast::<objc2_foundation::NSDictionary>().ok()?;
+        let k_bounds = ns("kCGWindowBounds");
+        let k_x = ns("X");
+        let k_y = ns("Y");
+        let k_w = ns("Width");
+        let k_h = ns("Height");
+        let has_frame = frame.2 > 1.0 && frame.3 > 1.0;
+        let mut first: Option<u32> = None;
+        let mut best: Option<(f64, u32)> = None;
+        for w in arr.iter() {
+            let Ok(d) = w.downcast::<objc2_foundation::NSDictionary>() else { continue };
             let num = |k: &NSString| d.objectForKey(k).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.as_i64());
-            (num(&k_layer) == Some(0) && num(&k_pid) == Some(pid as i64)).then(|| num(&k_num).map(|n| n as u32)).flatten()
-        })
+            if num(&k_layer) != Some(0) || num(&k_pid) != Some(pid as i64) {
+                continue;
+            }
+            let Some(id) = num(&k_num).map(|n| n as u32) else { continue };
+            if first.is_none() {
+                first = Some(id);
+            }
+            if has_frame {
+                if let Some(b) = d.objectForKey(&k_bounds).and_then(|v| v.downcast::<objc2_foundation::NSDictionary>().ok()) {
+                    let f = |k: &NSString| b.objectForKey(k).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.as_f64());
+                    if let (Some(x), Some(y), Some(bw), Some(bh)) = (f(&k_x), f(&k_y), f(&k_w), f(&k_h)) {
+                        let dist = (x - frame.0).abs() + (y - frame.1).abs() + (bw - frame.2).abs() + (bh - frame.3).abs();
+                        if best.is_none_or(|(bd, _)| dist < bd) {
+                            best = Some((dist, id));
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|(_, id)| id).or(first)
     })
+}
+
+/// The id of `pid`'s frontmost ordinary window on screen (for `screencapture -l`).
+pub fn window_id(pid: i32) -> Option<u32> {
+    window_id_matching(pid, (0.0, 0.0, 0.0, 0.0))
 }

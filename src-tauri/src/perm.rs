@@ -27,6 +27,14 @@ fn accessibility_status() -> &'static str {
     }
 }
 
+fn screen_recording_status() -> &'static str {
+    if platform::ax::screen_access(false) {
+        "granted"
+    } else {
+        "denied"
+    }
+}
+
 /// Summary status for Automation across Apple Music and Spotify.
 fn automation_summary(music: &str, spotify: &str) -> &'static str {
     if music == "notAsked" || spotify == "notAsked" {
@@ -52,6 +60,7 @@ pub fn status_value() -> Value {
         },
         "fullDisk": full_disk_status(),
         "accessibility": accessibility_status(),
+        "screenRecording": screen_recording_status(),
         "microphone": voice::mic_status(),
     })
 }
@@ -63,6 +72,7 @@ fn parse_perm(kind: &str) -> Option<Perm> {
         "automation" => Some(Perm::Automation),
         "fulldisk" => Some(Perm::FullDisk),
         "accessibility" => Some(Perm::Accessibility),
+        "screenrecording" | "screen_recording" => Some(Perm::ScreenRecording),
         "microphone" => Some(Perm::Microphone),
         _ => None,
     }
@@ -75,6 +85,7 @@ fn pane_for(perm: Perm) -> &'static str {
         Perm::Automation => "Privacy_Automation",
         Perm::FullDisk => "Privacy_AllFiles",
         Perm::Accessibility => "Privacy_Accessibility",
+        Perm::ScreenRecording => "Privacy_ScreenCapture",
         Perm::Microphone => "Privacy_Microphone",
     }
 }
@@ -90,6 +101,8 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
         if force_pane {
             if perm == Perm::Accessibility {
                 let _ = banners::trusted(true);
+            } else if perm == Perm::ScreenRecording {
+                let _ = platform::ax::screen_access(true);
             }
             open_pane(pane_for(perm));
             return Ok(json!({ "action": "pane" }));
@@ -111,6 +124,7 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
             }
             Perm::FullDisk => (full_disk_status(), vec![]),
             Perm::Accessibility => (accessibility_status(), vec![]),
+            Perm::ScreenRecording => (screen_recording_status(), vec![]),
             Perm::Microphone => (voice::mic_status(), vec![]),
         };
 
@@ -130,13 +144,15 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
                         });
                     }
                     Perm::Microphone => voice::mic_request(),
-                    Perm::FullDisk | Perm::Accessibility => {}
+                    Perm::FullDisk | Perm::Accessibility | Perm::ScreenRecording => {}
                 }
                 "dialog"
             }
             Action::OpenPane(pane) => {
                 if perm == Perm::Accessibility {
                     let _ = banners::trusted(true);
+                } else if perm == Perm::ScreenRecording {
+                    let _ = platform::ax::screen_access(true);
                 }
                 open_pane(pane);
                 "pane"

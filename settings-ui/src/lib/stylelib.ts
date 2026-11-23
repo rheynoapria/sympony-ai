@@ -3,7 +3,7 @@ import type { Settings } from "./notch";
 export type CardSurface = "oled" | "borderless" | "outline" | "glass" | "tinted";
 export type CardRadius = "sharp" | "rounded" | "soft";
 export type CardDensity = "compact" | "balanced" | "airy";
-export type ModuleSizeMode = "auto" | "compact" | "standard" | "tall" | "custom";
+export type ModuleSizeMode = "auto" | "fit" | "compact" | "standard" | "tall" | "custom";
 export type ModuleSurfaceOverride = "auto" | "oled" | "borderless" | "outline" | "glass";
 export type GridSize = "1x1" | "2x1" | "1x2" | "2x2" | "4x2";
 
@@ -200,12 +200,36 @@ export const MODULE_STYLES: Readonly<Record<string, readonly StyleOption[]>> = {
       pack: "minimal",
     },
     {
+      id: "pill",
+      title: "Ultra-Slim Dock",
+      sub: "Single-row bar with core toggles, inline sliders and output switcher",
+      height: 118,
+      surface: "borderless",
+      pack: "minimal",
+    },
+    {
       id: "compact",
       title: "Compact Split",
       sub: "2×2 quick toggles left with horizontal sliders and output strip right",
       height: 168,
       surface: "borderless",
       pack: "compact",
+    },
+    {
+      id: "macos",
+      title: "macOS Glass Deck",
+      sub: "Connectivity stack, labeled Display & Sound sliders and 2×2 quick tiles",
+      height: 196,
+      surface: "glass",
+      pack: "compact",
+    },
+    {
+      id: "mixer",
+      title: "Studio Mixer",
+      sub: "Audio-first dual sliders with live output switcher chips and bottom toggles",
+      height: 184,
+      surface: "oled",
+      pack: "bento",
     },
     {
       id: "bento",
@@ -224,7 +248,7 @@ export const MODULE_TO_SETTINGS_SECTION: Readonly<Record<string, string>> = {
   weather: "weather",
   calendar: "calendar",
   pomodoro: "pomodoro",
-  control: "hud",
+  control: "control",
 };
 
 export const QUICK_PACKS: readonly {

@@ -12,11 +12,14 @@ pub const MAX_ACTIONS: usize = 40;
 pub const RULES: &str = "How to act here: screen_do(steps) acts on the numbers above, several steps in one call when you know them \
 (fill a form, then press its button): click {n, at?} (optional at: 0..100 clicks that horizontal % across a bar/timeline), \
 double_click {n} or double_click {spot: \"t3\"} (opens a file/folder in Finder or list item), \
-fill {n, text} (no click needed first), choose {n, option}, \
+right_click {n} or right_click {spot: \"t3\"} (opens a context menu), \
+hover {n} or hover {spot: \"t3\"} (moves the pointer there to reveal hover-only controls/tooltips), \
+fill {n, text} (no click needed first; pass \"\" to clear), choose {n, option}, \
 slide {n, value} or slide {n, percent} (sets a slider/video timeline/scrubber to an exact value inside its range or 0..100%), \
 drag {n, to_n | percent | dx, dy} (drags a slider/handle/control smoothly across the screen), \
 key {keys: \"cmd+s\", repeat?} (e.g. space, right, left, enter, cmd+o, cmd+f; optional repeat 1..20), \
-scroll {direction, n?}, click {spot: \"t3\"} for an ocr text spot, \
+scroll {direction: \"up\"|\"down\"|\"left\"|\"right\", n?}, wait {ms: 100..5000} (brief pause for animations or loading), \
+click {spot: \"t3\"} for an ocr text spot, \
 menu {path: [\"File\", \"Save\"]} (the menu bar: often the quickest and surest way), \
 point {n, say} (only shows the user where). It stops at a step that fails and answers with what changed and the new numbers: use \
 those. When that answer shows the request is done, it is: don't read the screen again to check. If nothing changed, don't repeat \
@@ -30,11 +33,11 @@ Do NOT claim you cannot read or automate an app, slider, timeline, or website wh
 pub fn tools() -> Vec<Value> {
     json!([{"name": "screen_do", "description": "Acts on the window the user is looking at, using the numbers from the last screen_read: one or more steps, in order.",
         "inputSchema": {"type": "object", "properties": {"routine": {"type": "string", "description": "instead of steps: replay a routine that worked (its id, like r3)"}, "texts": {"type": "array", "items": {"type": "string"}, "description": "with routine: new text for its fill steps, in order (else last time's text)"}, "steps": {"type": "array", "maxItems": MAX_STEPS, "items": {"type": "object", "required": ["do"], "properties": {
-            "do": {"type": "string", "enum": ["click", "double_click", "fill", "choose", "slide", "drag", "key", "scroll", "menu", "point"]},
+            "do": {"type": "string", "enum": ["click", "double_click", "right_click", "hover", "fill", "choose", "slide", "drag", "key", "scroll", "wait", "menu", "point"]},
             "n": {"type": "integer", "description": "element number"},
             "at": {"type": "number", "description": "click: optional horizontal position 0..100 (%) across element n (useful for timelines/progress bars)"},
-            "spot": {"type": "string", "description": "click/double_click: a text spot from screen_read mode ocr, like t3 (instead of n)"},
-            "text": {"type": "string", "description": "fill: the field's new text"},
+            "spot": {"type": "string", "description": "click/double_click/right_click/hover: a text spot from screen_read mode ocr, like t3 (instead of n)"},
+            "text": {"type": "string", "description": "fill: the field's new text (empty string clears it)"},
             "option": {"type": "string", "description": "choose: the option's name"},
             "value": {"type": "number", "description": "slide: exact numeric value inside the slider's (range min..max), e.g. 10 for second 10"},
             "percent": {"type": "number", "description": "slide or drag: target position 0..100 (%) along the slider/element"},
@@ -43,7 +46,8 @@ pub fn tools() -> Vec<Value> {
             "dy": {"type": "number", "description": "drag: vertical pixel offset from element n"},
             "keys": {"type": "string", "description": "key: like cmd+s, space, enter, tab, esc, left, right, up, down"},
             "repeat": {"type": "integer", "description": "key: optional repeat count (1..20)"},
-            "direction": {"type": "string", "enum": ["up", "down"]},
+            "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+            "ms": {"type": "integer", "description": "wait: milliseconds to pause (100..5000)"},
             "path": {"type": "array", "items": {"type": "string"}, "description": "menu: menu bar path, like [\"File\", \"Export…\"]"},
             "say": {"type": "string", "description": "point: a short instruction for the user"}}}}}}}])
     .as_array().cloned().unwrap_or_default()
@@ -123,6 +127,17 @@ pub fn risky(label: &str) -> bool {
         "delete", "hapus", "remove", "buang", "transfer", "confirm", "konfirmasi", "place order", "purchase", "unsubscribe", "sign out", "keluar", "trash",
     ];
     // (whole words: "Sender" isn't "send")
+    let padded = format!(" {} ", l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
+    WORDS.iter().any(|w| padded.contains(&format!(" {w} ")))
+}
+
+/// Narrower guard used in YOLO mode: only truly irreversible financial or destructive labels ask for confirmation.
+pub fn destructive_or_financial(label: &str) -> bool {
+    let l = label.to_lowercase();
+    const WORDS: [&str; 14] = [
+        "buy", "beli", "pay", "bayar", "checkout", "pesan sekarang", "place order", "purchase",
+        "transfer", "delete", "hapus", "buang", "trash", "sign out",
+    ];
     let padded = format!(" {} ", l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" "));
     WORDS.iter().any(|w| padded.contains(&format!(" {w} ")))
 }
@@ -211,6 +226,8 @@ mod tests {
         assert_eq!(keys("cmd+?"), None);
         assert!(risky("Send message") && risky("Kirim") && risky("Hapus pesan") && risky("Place order") && risky("Bayar sekarang"));
         assert!(!risky("New chat") && !risky("Search") && !risky("Sender name"));
+        assert!(destructive_or_financial("Bayar sekarang") && destructive_or_financial("Hapus pesan") && destructive_or_financial("Checkout"));
+        assert!(!destructive_or_financial("Send") && !destructive_or_financial("Confirm") && !destructive_or_financial("Search"));
         let fns = functions();
         assert_eq!(fns.len(), 1);
         let actions = fns[0]["function"]["parameters"]["properties"]["steps"]["items"]["properties"]["do"]["enum"]
@@ -218,6 +235,9 @@ mod tests {
             .unwrap();
         assert!(actions.iter().any(|v| v == "slide"));
         assert!(actions.iter().any(|v| v == "drag"));
+        assert!(actions.iter().any(|v| v == "right_click"));
+        assert!(actions.iter().any(|v| v == "hover"));
+        assert!(actions.iter().any(|v| v == "wait"));
     }
 }
 

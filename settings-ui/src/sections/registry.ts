@@ -323,6 +323,15 @@ export const SECTIONS: readonly SectionMeta[] = [
     words: ["window", "tiling", "layouts", "halves", "thirds"],
   },
   {
+    id: "control",
+    group: "system",
+    title: "Control",
+    subtitle: "Control center layout styles, quick toggles, brightness, volume, and sound output.",
+    icon: "LayoutDashboard",
+    tint: "#3b82f6",
+    words: ["control", "control center", "quick settings", "wifi", "bluetooth", "focus", "brightness", "volume", "sound", "output", "sliders", "style", "layout", "minimal", "compact", "macos", "mixer", "bento"],
+  },
+  {
     id: "hud",
     group: "system",
     title: "HUD",
@@ -380,7 +389,8 @@ export const SEARCH_WORDS: Readonly<Record<string, string>> = {
   prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk style layout timeline bento focus",
   dropactions: "drop actions shelf files convert compress image pdf share clipboard copy copied paste history pin remember salin tempel riwayat phone mobile qr code wi-fi wifi send receive hp ponsel kirim terima app launcher apps",
   snap: "snap zones window layouts drag halves thirds",
-  hud: "volume brightness hud style panel caps num scroll lock keyboard indicator airplane microphone mic mute touchpad windows pop-up osd input language layout fullscreen full screen game games video control minimal compact sliders layout",
+  control: "control center quick settings toggles wifi bluetooth focus keep awake brightness volume sliders sound output audio style layout minimal oled dock compact split macos glass deck studio mixer bento classic",
+  hud: "volume brightness hud style panel caps num scroll lock keyboard indicator airplane microphone mic mute touchpad windows pop-up osd input language layout fullscreen full screen game games video",
   dock: "search button find magnifier magnifying glass windows+s cari pencarian calendar date today day icon tanggal hari ini",
   effects: "animation animations effects motion glow light outline border timer genie popup window minimize restore confetti celebrate karaoke lyrics swipe stack notifications bounce volume slide tabs shelf fly",
   wallpaper: "wallpaper background desktop live moving animated video mp4 mkv webm picture image photo lively wallpaper engine fit fill stretch center pause fullscreen game battery latar belakang bergerak",
@@ -472,6 +482,7 @@ export const SYNONYMS: Readonly<Record<string, string>> = {
   ingatan: "memory",
   keahlian: "skills skill",
   kepribadian: "persona",
+  kontrol: "control",
 };
 
 export type RowsFor = readonly Row[] | ((os: OS) => readonly Row[]);

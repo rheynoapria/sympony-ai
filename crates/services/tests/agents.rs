@@ -7,7 +7,9 @@ fn args_per_agent() {
     // the prompt right after -p: Claude's --tools takes every word after it (it ate the prompt at the end)
     assert_eq!(a, ["-p", "Hi there", "--output-format", "json", "--system-prompt", "RULES", "--safe-mode", "--strict-mcp-config",
                    "--no-session-persistence", "--disable-slash-commands", "--model", "opus", "--tools", ""]);
+    // Default model for Claude Code is explicitly pinned to sonnet
     let a = args("claude", "Hi", "R", None, true);
+    assert!(a.windows(2).any(|w| w == ["--model", "sonnet"]));
     assert!(a.windows(2).any(|w| w == ["--allowedTools", "WebSearch,WebFetch"]));
     assert_eq!(&a[a.len() - 2..], ["--tools", "WebSearch,WebFetch"]);
     // no system-prompt option: the rules lead the prompt
@@ -131,8 +133,8 @@ fn agents_run_without_their_own_tools() {
     assert!(args("qwen", "x", "RULES", None, false).last().unwrap().starts_with("RULES"));
     // OpenCode: every tool off through its config
     assert!(env("opencode").iter().any(|(k, v)| *k == "OPENCODE_CONFIG_CONTENT" && v.contains("\"*\":false")));
-    // Hermes has no read-only mode: listed, not used
-    assert!(!supported("hermes") && supported("claude"));
+    // Hermes and Cursor Agent have no read-only mode: listed, not used
+    assert!(!supported("hermes") && !supported("cursor") && supported("claude"));
 }
 
 #[test]

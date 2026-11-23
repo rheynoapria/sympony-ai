@@ -13,6 +13,7 @@ import {
   activeStyleOption,
   ALLOWED_GRID_SIZES,
   defaultGridSize,
+  MODULE_STYLES,
   MODULE_TO_SETTINGS_SECTION,
   QUICK_PACKS,
   readCardStyle,
@@ -22,6 +23,7 @@ import {
   type CardRadius,
   type CardSurface,
   type GridSize,
+  type ModuleSizeMode,
 } from "@/lib/stylelib";
 import { LeadText } from "@/rows/Rows";
 import { offTabs } from "@/rows/os";
@@ -188,6 +190,17 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
       [modId]: {
         ...(allModStyles[modId] ?? {}),
         gridSize,
+      },
+    };
+    void set({ moduleStyles: nextStyles });
+  };
+
+  const setNotchSize = (modId: string, size: ModuleSizeMode) => {
+    const nextStyles = {
+      ...allModStyles,
+      [modId]: {
+        ...(allModStyles[modId] ?? {}),
+        size,
       },
     };
     void set({ moduleStyles: nextStyles });
@@ -407,6 +420,27 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                       ))}
                     </select>
                   )}
+                  {notchView === "modules" && (() => {
+                    const pref = readModulePref(settings, m.id);
+                    const curSz: ModuleSizeMode = pref.size ?? "auto";
+                    const hasStyles = (MODULE_STYLES[m.id]?.length ?? 0) > 0;
+                    return (
+                      <select
+                        aria-label={`${t(meta.title)} ${t("Notch size")}`}
+                        title={t("Notch size")}
+                        value={curSz}
+                        onChange={(e) => setNotchSize(m.id, e.target.value as ModuleSizeMode)}
+                        className="me-1 h-7 rounded-[7px] border border-input bg-background px-1.5 text-[11px] text-foreground outline-none focus:border-ring"
+                      >
+                        <option value="auto">{t("Default")}</option>
+                        {hasStyles && <option value="fit">{t("Fit")}</option>}
+                        <option value="compact">{t("Compact")}</option>
+                        <option value="standard">{t("Standard")}</option>
+                        <option value="tall">{t("Tall")}</option>
+                        {curSz === "custom" && <option value="custom">{t("Custom")}</option>}
+                      </select>
+                    );
+                  })()}
                   <Button
                     size="xs"
                     variant="ghost"

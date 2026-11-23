@@ -126,7 +126,7 @@ fn conn(app: &AppHandle) -> Result<(String, &'static str, &'static str), String>
     if services::http::safe_endpoint_url(&url) {
         Ok((url, OWN_KEY, "brainModel"))
     } else {
-        Err("Set your AI server (an https address) in Settings → Pony Assistant".into())
+        Err("Set your AI server (https://… or http://localhost:…) in Settings → Pony Assistant".into())
     }
 }
 
@@ -134,14 +134,20 @@ fn call(app: &AppHandle, method: &str, path: &str, body: Option<&Value>, secs: u
     call_try(app, method, path, body, secs).map_err(|e| e.1)
 }
 
-/// The key for the server Pony uses now. Err: what to show.
+/// The key for the server Pony uses now. Local loopback servers (`localhost` / `127.0.0.1` / `[::1]`) work keyless.
 fn key(app: &AppHandle) -> Result<(String, &'static str, String), String> {
     let (base, key_name, _) = conn(app)?;
-    let key = app.state::<App>().settings.secret_value(key_name).ok_or(if key_name == SYMPONY_KEY {
-        "Sign in to Sympony AI in Settings → Pony Assistant"
-    } else {
-        "Add your server’s key in Settings → Pony Assistant"
-    })?;
+    let key = match app.state::<App>().settings.secret_value(key_name) {
+        Some(k) if !k.trim().is_empty() => k,
+        _ if key_name == OWN_KEY && services::brain::is_local_url(&base) => String::new(),
+        _ => {
+            return Err(if key_name == SYMPONY_KEY {
+                "Sign in to Sympony AI in Settings → Pony Assistant".into()
+            } else {
+                "Add your server’s key in Settings → Pony Assistant".into()
+            });
+        }
+    };
     Ok((base, key_name, key))
 }
 
@@ -195,11 +201,14 @@ fn call_stream(app: &AppHandle, body: &Value, session: &str, round: u32) -> Resu
     let (base, key_name, key) = key(app).map_err(|e| (false, e))?;
     let mut b = body.clone();
     b["stream"] = json!(true);
-    b["stream_options"] = json!({"include_usage": true});
+    // Some local OpenAI-compatible servers (older llama.cpp / Ollama / MLX) reject `stream_options`.
+    if !services::brain::is_local_url(&base) {
+        b["stream_options"] = json!({"include_usage": true});
+    }
     let mut st = services::brain::Stream::default();
     let mut shown = std::time::Instant::now() - std::time::Duration::from_secs(1);
     let delta = |text: &str| {
-        let _ = tauri::Emitter::emit_to(app, crate::notch::LABEL, "agent:delta", json!({"session": session, "round": round, "text": text}));
+        let _ = tauri::Emitter::emit(app, "agent:delta", json!({"session": session, "round": round, "text": text}));
     };
     let r = services::http::bearer_stream(&format!("{base}/v1/chat/completions"), &key, &b, LIMIT * 3, &mut |d| {
         if st.feed(d) && shown.elapsed() >= std::time::Duration::from_millis(50) {
@@ -387,7 +396,10 @@ pub fn ask(app: &AppHandle, turns: &[Value], images: &[String], system: &str, se
             if eyes && services::eyes::NAMES.contains(&name) {
                 // (the screen is like a web page: after it, every command, file change, memory write or outside call asks)
                 mark_taint(&mut after_web);
-                return crate::eyes::call(app, session.unwrap_or(""), args);
+                return crate::eyes::call_rich(app, session.unwrap_or(""), args).map(|r| match r.image {
+                    Some((mime, data)) => format!("{}{}data:{mime};base64,{data}", r.text, services::brain::TOOL_IMAGE_MARKER),
+                    None => r.text,
+                });
             }
             if hands && (services::hands::NAMES.contains(&name) || services::routines::NAMES.contains(&name)) {
                 let r = if name == "routine_save" {

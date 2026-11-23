@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { Rows } from "@/rows/Rows";
 import type { CustomPart, CustomPartProps, SectionBody } from "@/rows/types";
-import { ModuleStyleCard } from "./parts/ModuleStyleCard";
 import { TryVolumePart } from "./parts/TryVolume";
 import { hudRows } from "./system.rows";
 
@@ -12,19 +11,16 @@ const CUSTOMS: Record<string, CustomPart> = {
 function HudSection(props: CustomPartProps) {
   const rows = useMemo(() => hudRows(props.os), [props.os]);
   return (
-    <div className="flex flex-col gap-4">
-      <ModuleStyleCard moduleId="control" settings={props.settings} set={props.set} />
-      <Rows
-        sectionId="hud"
-        rows={rows}
-        customs={CUSTOMS}
-        settings={props.settings}
-        set={props.set}
-        os={props.os}
-        part={props.part}
-        onNavigate={props.onNavigate}
-      />
-    </div>
+    <Rows
+      sectionId="hud"
+      rows={rows}
+      customs={CUSTOMS}
+      settings={props.settings}
+      set={props.set}
+      os={props.os}
+      part={props.part}
+      onNavigate={props.onNavigate}
+    />
   );
 }
 

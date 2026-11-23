@@ -253,6 +253,80 @@
 }
 #dockTip[hidden] { display: none; }
 
+/* Matching Glass & Color styling for floating dock (#pill) and tooltip (#dockTip) */
+#pill[data-look="glass"] {
+  background:
+    radial-gradient(120% 80% at 50% -25%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.025) 54%, transparent 82%),
+    radial-gradient(85% 60% at 50% 125%, rgba(168, 198, 255, 0.08) 0%, transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.03) 100%),
+    rgba(13, 16, 25, 0.74);
+  -webkit-backdrop-filter: blur(44px) saturate(210%);
+  backdrop-filter: blur(44px) saturate(210%);
+  box-shadow:
+    0 18px 44px -8px rgba(0, 0, 10, 0.52),
+    0 5px 16px -4px rgba(0, 0, 12, 0.28);
+}
+#pill[data-look="glass"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(255, 255, 255, 0.11) 46%,
+    rgba(208, 224, 255, 0.24) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+#pill[data-look="glass"] #dock button {
+  color: rgba(232, 237, 250, 0.74);
+  transition: background 0.2s ease, color 0.18s ease, box-shadow 0.22s ease, transform 0.2s var(--spring);
+}
+#pill[data-look="glass"] #dock button:hover:not(.on) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.085));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+#pill[data-look="glass"] #dock button:active { transform: scale(0.93); }
+#pill[data-look="glass"] #dock button.on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(235, 240, 252, 0.92) 100%);
+  color: #090c14;
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.24), 0 1px 3px rgba(0, 0, 0, 0.24);
+}
+#pill[data-look="color"] {
+  background: var(--notch-color, #1c2b4d);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15), 0 12px 34px rgba(0, 0, 0, 0.45);
+}
+#pill.look-light {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+#pill.look-light #dock button { color: rgba(17, 17, 22, 0.62); }
+#pill.look-light #dock button:hover:not(.on) { background: rgba(0, 0, 0, 0.08); color: #111116; }
+#pill.look-light #dock button.on { background: #111116; color: #fff; }
+#dockTip[data-look="glass"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03)),
+    rgba(15, 18, 28, 0.86);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  backdrop-filter: blur(28px) saturate(200%);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 10px 26px rgba(0, 0, 10, 0.48);
+}
+#dockTip[data-look="color"] {
+  background: var(--notch-color, #1c2b4d);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+#dockTip.look-light {
+  color: #111116;
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
 /* ------------------------------------------------------------ Card & Section primitives (from modules.html) */
 /* Strictly flat #0f0f12 background on cards; colour lives ONLY in the content */
 .c {
@@ -751,6 +825,148 @@
   border-radius: 12px; background: rgba(255, 255, 255, 0.035); min-width: 0; overflow: hidden;
 }
 .sys-card-it .sys-ill svg { height: 24px; }
+
+/* ------------------------------------------------------------ Glass theme surface, hover & selection polish */
+#notch[data-look="glass"]:not([data-card-surface="borderless"]) .c:not(.bare) {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+  transition: background 0.24s var(--smooth), box-shadow 0.24s var(--smooth), transform 0.24s var(--smooth);
+}
+#notch[data-look="glass"]:not([data-card-surface="borderless"]) .c:not(.bare):hover {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"]:not([data-card-surface="borderless"]) #sec .c:not(.bare):hover,
+#notch[data-look="glass"]:not([data-card-surface="borderless"]) .page.mod-page .c:not(.bare):hover {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
+#notch[data-look="glass"] .arrow {
+  background: var(--glass-pop);
+  color: rgba(242, 245, 253, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 6px 16px rgba(0, 0, 10, 0.36);
+}
+#notch[data-look="glass"] .arrow:hover {
+  background: var(--glass-btn-hi);
+  box-shadow: var(--glass-rim-hi);
+  color: #fff;
+}
+#notch[data-look="glass"] .ib { transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+#notch[data-look="glass"] .ib:hover {
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+#notch[data-look="glass"] #top #headerFloat {
+  background: var(--glass-pop);
+  box-shadow: var(--glass-pop-shadow);
+}
+#notch[data-look="glass"] .mini-btn:not(.w),
+#notch[data-look="glass"] .sbtn:not(.p) {
+  background: var(--glass-btn);
+  box-shadow: var(--glass-rim);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s var(--spring);
+}
+#notch[data-look="glass"] .mini-btn:not(.w):hover,
+#notch[data-look="glass"] .sbtn:not(.p):hover {
+  background: var(--glass-btn-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .seg2 {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+}
+#notch[data-look="glass"] .seg2 button { transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+#notch[data-look="glass"] .seg2 button.on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.14) 100%);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 1px 5px rgba(0, 0, 10, 0.28);
+}
+#notch[data-look="glass"] .seg2 button:hover:not(.on) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+#notch[data-look="glass"] .nrow,
+#notch[data-look="glass"] .trow { transition: background 0.18s ease, box-shadow 0.18s ease; }
+#notch[data-look="glass"] .nrow:hover:not(.on),
+#notch[data-look="glass"] .trow:hover {
+  background: rgba(255, 255, 255, 0.095);
+}
+#notch[data-look="glass"] .nrow.on {
+  background: var(--glass-sel);
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .nrow.on span { color: rgba(226, 236, 255, 0.84); }
+#notch[data-look="glass"] .sw:not(.on) {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+}
+#notch[data-look="glass"] .bar {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+}
+#notch[data-look="glass"] .tg,
+#notch[data-look="glass"] .tg2,
+#notch[data-look="glass"] .sh-card,
+#notch[data-look="glass"] .sh-clip-item {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+  transition: background 0.22s var(--smooth), box-shadow 0.22s var(--smooth), transform 0.2s var(--spring);
+}
+#notch[data-look="glass"] .tg:hover,
+#notch[data-look="glass"] .tg2:hover,
+#notch[data-look="glass"] .sh-card:hover,
+#notch[data-look="glass"] .sh-clip-item:hover {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .tg.on {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--a, #4361ff) 42%, rgba(255, 255, 255, 0.08)),
+    color-mix(in srgb, var(--a, #4361ff) 26%, rgba(8, 12, 22, 0.28))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--a, #4361ff) 42%, rgba(255, 255, 255, 0.38)),
+    inset 0 0 0 1px color-mix(in srgb, var(--a, #4361ff) 58%, rgba(255, 255, 255, 0.18)),
+    0 4px 14px color-mix(in srgb, var(--a, #4361ff) 22%, transparent);
+}
+#notch[data-look="glass"] .sh-card.sel {
+  background: var(--glass-sel);
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .sh-drop { border-color: rgba(255, 255, 255, 0.20); background: rgba(255, 255, 255, 0.03); }
+#notch[data-look="glass"] .sh-drop:hover,
+#notch[data-look="glass"] .sh-drop.over { background: rgba(96, 165, 250, 0.16); border-color: rgba(147, 197, 253, 0.68); }
+#notch[data-look="glass"] .chip2 {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+#notch[data-look="glass"] .chip2:hover { background: var(--glass-card-hi); box-shadow: var(--glass-rim-hi); color: #fff; }
+#notch[data-look="glass"] .chip2.on {
+  background: var(--glass-sel);
+  color: #fff;
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .vsl,
+#notch[data-look="glass"] .mc-sl-bar {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+}
+#notch[data-look="glass"] .sinp {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+#notch[data-look="glass"] .sinp:focus-within {
+  background: var(--glass-well-hi);
+  box-shadow: var(--glass-well-focus);
+}
+#notch[data-look="glass"] .sys-card-it {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
 
 /* Reduced motion: instant slides */
 @media (prefers-reduced-motion: reduce) {

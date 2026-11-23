@@ -304,25 +304,45 @@ describe('closed notch sizing (13-inch MacBook camera + non-camera)', () => {
 });
 
 describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid sizes)', () => {
-  test('auto size uses style natural height and global expandedWidth', () => {
-    const f = K.resolveModuleFrame({
-      styleDef: { id: 'timeline', height: 188, surface: 'borderless' },
+  test('default (auto) size keeps every notch card the exact same uniform size regardless of style height', () => {
+    const timeline = K.resolveModuleFrame({
+      styleDef: { id: 'timeline', height: 160, surface: 'borderless' },
       pref: { style: 'timeline', size: 'auto' },
       expandedWidth: 660,
+      defaultHeight: 268,
       maxW: 780,
       maxH: 340,
     });
-    expect(f).toEqual({
+    const minimalCtl = K.resolveModuleFrame({
+      styleDef: { id: 'minimal', height: 140, surface: 'borderless' },
+      pref: { style: 'minimal' },
+      expandedWidth: 660,
+      defaultHeight: 268,
+      maxW: 780,
+      maxH: 340,
+    });
+    expect(timeline).toEqual({
       styleId: 'timeline',
       sizeMode: 'auto',
       width: 660,
-      height: 188,
-      stageH: 134,
+      height: 268,
+      stageH: 214,
       surface: 'borderless',
     });
+    expect(minimalCtl.width).toBe(timeline.width);
+    expect(minimalCtl.height).toBe(timeline.height);
   });
 
-  test('size presets and custom W×H clamp safely to screen bounds', () => {
+  test('fit mode, size presets, and custom W×H let users customize any module size and clamp safely', () => {
+    const fitSlim = K.resolveModuleFrame({
+      styleDef: { id: 'strip', height: 124, surface: 'borderless' },
+      pref: { style: 'strip', size: 'fit' },
+      expandedWidth: 660,
+      defaultHeight: 268,
+    });
+    expect(fitSlim.height).toBe(124);
+    expect(fitSlim.stageH).toBe(74);
+
     const compact = K.resolveModuleFrame({
       styleDef: { id: 'bento', height: 272, surface: 'oled' },
       pref: { size: 'compact', surface: 'outline' },
@@ -331,14 +351,6 @@ describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid siz
     expect(compact.height).toBe(148);
     expect(compact.stageH).toBe(98);
     expect(compact.surface).toBe('outline');
-
-    const slim = K.resolveModuleFrame({
-      styleDef: { id: 'strip', height: 124, surface: 'borderless' },
-      pref: { style: 'strip', size: 'auto' },
-      expandedWidth: 660,
-    });
-    expect(slim.height).toBe(124);
-    expect(slim.stageH).toBe(74);
 
     const custom = K.resolveModuleFrame({
       styleDef: { id: 'timeline', height: 160, surface: 'borderless' },
@@ -371,5 +383,86 @@ describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid siz
     expect(K.closedStateKey({ actKey: 'music', ponyMood: '' })).toBe('music');
     expect(K.closedStateKey({ actKey: '', claude: true })).toBe('|cc');
     expect(K.closedStateKey({ actKey: '', notif: true })).toBe('|nf');
+  });
+});
+
+describe('renderMarkdown (GFM chat & live stream rendering)', () => {
+  test('renders GFM tables with column alignment, inline formatting, escaped pipes, and citations', () => {
+    const md = [
+      'Harga emas hari ini [1]:',
+      '',
+      '| Jenis | Harga / gr | Perubahan |',
+      '| :--- | ---: | :---: |',
+      '| **Antam** | `Rp 1.920.000` | +0.5% |',
+      '| UBS \\| 24K | Rp 1.890.000 | ~~-0.1%~~ [2] |',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<div class="md-table-wrap"><table class="md-table">');
+    expect(html).toContain('<th style="text-align:left">Jenis</th>');
+    expect(html).toContain('<th style="text-align:right">Harga / gr</th>');
+    expect(html).toContain('<th style="text-align:center">Perubahan</th>');
+    expect(html).toContain('<td style="text-align:left"><strong>Antam</strong></td>');
+    expect(html).toContain('<td style="text-align:right"><code>Rp 1.920.000</code></td>');
+    expect(html).toContain('<td style="text-align:left">UBS | 24K</td>');
+    expect(html).toContain('<td style="text-align:center"><del>-0.1%</del> [2]</td>');
+  });
+
+  test('renders headings, blockquotes, horizontal rules, nested lists, and GFM task lists', () => {
+    const md = [
+      '# Ringkasan',
+      '## Detail',
+      '> Catatan **penting**',
+      '> - Item dalam kutipan',
+      '',
+      '---',
+      '',
+      '- Induk satu',
+      '  - Anak satu',
+      '  - Anak dua',
+      '- [x] Selesai',
+      '- [ ] Belum',
+      '',
+      '3. Mulai dari tiga',
+      '4. Empat',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<h1 class="md-h md-h1">Ringkasan</h1>');
+    expect(html).toContain('<h2 class="md-h md-h2">Detail</h2>');
+    expect(html).toContain('<blockquote class="md-bq"><p>Catatan <strong>penting</strong></p><ul><li>Item dalam kutipan</li></ul></blockquote>');
+    expect(html).toContain('<hr class="md-hr">');
+    expect(html).toContain('<li>Induk satu<ul><li>Anak satu</li><li>Anak dua</li></ul></li>');
+    expect(html).toContain('<li class="md-task done"><span class="md-chk on" aria-hidden="true">✓</span><span class="md-task-body">Selesai</span></li>');
+    expect(html).toContain('<li class="md-task"><span class="md-chk" aria-hidden="true"></span><span class="md-task-body">Belum</span></li>');
+    expect(html).toContain('<ol start="3"><li>Mulai dari tiga</li><li>Empat</li></ol>');
+  });
+
+  test('renders fenced code blocks with language header, tolerates streaming unclosed fences, and protects code from formatting', () => {
+    const closed = '```python\ndef gold_price():\n  return "<b>ok</b>"\n```';
+    const htmlClosed = K.renderMarkdown(closed, { copyTitle: 'Copy', copyIcon: 'CP' });
+    expect(htmlClosed).toContain('<div class="md-code"><div class="md-code-hd"><span class="md-code-lang">python</span><button type="button" class="ch-copy" title="Copy">CP</button></div><pre><code>def gold_price():\n  return &quot;&lt;b&gt;ok&lt;/b&gt;&quot;</code></pre></div>');
+
+    const streaming = '```js\nconst x = 1 * 2 * 3;';
+    const htmlStreaming = K.renderMarkdown(streaming, { copyTitle: 'Copy', copyIcon: 'CP' });
+    expect(htmlStreaming).toContain('<span class="md-code-lang">js</span>');
+    expect(htmlStreaming).toContain('<pre><code>const x = 1 * 2 * 3;</code></pre>');
+  });
+
+  test('handles inline emphasis safely without mangling snake_case, math, or URLs and blocks XSS', () => {
+    const md = [
+      'Use `my_func(*a*, **b**)` with snake_case_var and 2 * 3 * 4.',
+      'See [**Antam**](https://logammulia.com/id/harga_emas_(2026)) and https://example.com/a_b_c.',
+      'Evil: <script>alert(1)</script> [click](javascript:alert(1)) <img src=x onerror=alert(1)>',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<code>my_func(*a*, **b**)</code>');
+    expect(html).toContain('snake_case_var');
+    expect(html).not.toContain('<em>case</em>');
+    expect(html).toContain('2 * 3 * 4');
+    expect(html).toContain('<a data-href="https://logammulia.com/id/harga_emas_(2026)"><strong>Antam</strong></a>');
+    expect(html).toContain('<a data-href="https://example.com/a_b_c">https://example.com/a_b_c</a>.');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('data-href="javascript:');
+    expect(html).not.toContain('<img ');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 });

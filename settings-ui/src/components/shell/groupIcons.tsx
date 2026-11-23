@@ -24,6 +24,7 @@ const ICONS: Record<string, () => ReactNode> = {
   Memory: () => tint("Brain", "#6366f1"),
   Appearance: () => tint("Palette", "#f472b6"),
   "Style & Layout": () => tint("Palette", "#ec4899"),
+  "Control behavior": () => tint("SlidersHorizontal", "#3b82f6"),
   "Module Style Library": () => tint("LayoutGrid", "#8b5cf6"),
   "Scheduled briefs": () => tint("CalendarClock", "#0ea5e9"),
   // voice

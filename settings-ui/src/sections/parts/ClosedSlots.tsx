@@ -236,8 +236,10 @@ export function ClosedSlotsPart({ settings, set, row, os, part }: CustomPartProp
       ? {
           height: `${h + 8}px`,
           background:
-            "linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06)), rgba(22,24,32,0.72)",
-          backdropFilter: "blur(14px)",
+            "radial-gradient(120% 70% at 50% -15%, rgba(255,255,255,0.12), transparent 72%), linear-gradient(180deg, rgba(255,255,255,0.055), rgba(0,0,0,0.03)), rgba(13,16,25,0.74)",
+          backdropFilter: "blur(24px) saturate(200%)",
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.28), inset 0 0 0 1px rgba(255,255,255,0.14), 0 10px 24px -6px rgba(0,0,12,0.42)",
         }
       : notchLook === "color"
         ? { height: `${h + 8}px`, background: notchColor }

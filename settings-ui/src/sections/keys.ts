@@ -86,6 +86,7 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   weather: rowKeys(WEATHER_ROWS, WEATHER_KEYS),
   prayer: rowKeys(PRAYER_ROWS, PRAYER_KEYS),
   dropactions: rowKeys(dropActionsRows, DROPACTIONS_KEYS),
+  control: ["moduleStyles", "modules", "keepAwake"],
   hud: rowKeys(hudRows),
   battery: rowKeys(BATTERY_ROWS),
   mirror: rowKeys(MIRROR_ROWS),

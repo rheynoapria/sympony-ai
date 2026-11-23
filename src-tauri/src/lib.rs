@@ -16,6 +16,7 @@ mod eyes;
 mod askai;
 mod hands;
 mod files;
+mod floating_chat;
 mod github;
 mod hooks;
 mod extras;
@@ -149,6 +150,7 @@ pub fn run() {
             youtube::register(&mut reg, app.handle());
             app.manage(App { settings: deps.settings.clone(), deps, log, data_dir, reg, ctx, warned: Mutex::new(Default::default()) });
             app.manage(updater::UpdaterState::new());
+            app.manage(floating_chat::FloatingChat::default());
             voice::start(app.handle());
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

@@ -336,19 +336,23 @@
     return width;
   }
 
-  // Open-notch frame dimensions for a module's chosen Style & Size override (Phase 1 Module Styling Library).
-  // Auto follows the style's natural height + global expandedWidth; presets & custom W×H are clamped safely.
+  // Open-notch frame dimensions for a module's chosen Style & Size override.
+  // Default ('auto') uses one uniform size across every notch card (expandedWidth × defaultHeight);
+  // 'fit' adopts the style's compact tailored height; presets & custom W×H are clamped safely.
   const FRAME_SIZE_HEIGHTS = { compact: 148, standard: 204, tall: 272 };
-  function resolveModuleFrame({ styleDef, pref, expandedWidth = 660, maxW = 780, maxH = 340 }) {
+  function resolveModuleFrame({ styleDef, pref, expandedWidth = 660, defaultHeight = 268, maxW = 780, maxH = 340 }) {
     const def = styleDef && typeof styleDef === 'object' ? styleDef : { id: 'bento', height: 272, surface: 'oled' };
     const p = pref && typeof pref === 'object' ? pref : {};
-    const sizeMode = ['auto', 'compact', 'standard', 'tall', 'custom'].includes(p.size) ? p.size : 'auto';
+    const sizeMode = ['auto', 'fit', 'compact', 'standard', 'tall', 'custom'].includes(p.size) ? p.size : 'auto';
     const baseW = Number.isFinite(Number(expandedWidth)) ? Number(expandedWidth) : 660;
-    const styleH = Number.isFinite(Number(def.height)) ? Number(def.height) : 272;
+    const baseH = Number.isFinite(Number(defaultHeight)) && Number(defaultHeight) > 0 ? Number(defaultHeight) : 268;
+    const styleH = Number.isFinite(Number(def.height)) ? Number(def.height) : baseH;
 
     let wantW = baseW;
-    let wantH = styleH;
-    if (sizeMode === 'custom') {
+    let wantH = baseH;
+    if (sizeMode === 'fit') {
+      wantH = styleH;
+    } else if (sizeMode === 'custom') {
       if (Number.isFinite(Number(p.width)) && Number(p.width) > 0) wantW = Number(p.width);
       if (Number.isFinite(Number(p.height)) && Number(p.height) > 0) wantH = Number(p.height);
     } else if (sizeMode !== 'auto' && FRAME_SIZE_HEIGHTS[sizeMode]) {
@@ -384,6 +388,368 @@
       + (ponyMood ? `|pony:${ponyMood}` : '');
   }
 
+  // ---- Pure, XSS-safe GitHub-Flavored Markdown renderer for Pony AI chat & live streams
+  function escMdHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function isSafeHttpUrl(url) {
+    return /^https?:\/\/[^\s<>"]+$/i.test(String(url || '').trim());
+  }
+
+  function trimTrailingUrlPunct(raw) {
+    let url = raw;
+    let tail = '';
+    while (url.length) {
+      const last = url[url.length - 1];
+      if (/[.,!?:;'"]/.test(last)) {
+        tail = last + tail;
+        url = url.slice(0, -1);
+        continue;
+      }
+      if (last === ')') {
+        const opens = (url.match(/\(/g) || []).length;
+        const closes = (url.match(/\)/g) || []).length;
+        if (closes > opens) {
+          tail = last + tail;
+          url = url.slice(0, -1);
+          continue;
+        }
+      }
+      if (last === ']') {
+        const opens = (url.match(/\[/g) || []).length;
+        const closes = (url.match(/\]/g) || []).length;
+        if (closes > opens) {
+          tail = last + tail;
+          url = url.slice(0, -1);
+          continue;
+        }
+      }
+      break;
+    }
+    return [url, tail];
+  }
+
+  function renderMdInline(raw) {
+    const slots = [];
+    const hold = (html) => {
+      const idx = slots.length;
+      slots.push(html);
+      return `\u0000MD${idx}\u0000`;
+    };
+
+    let s = String(raw == null ? '' : raw);
+
+    // 1. Protect inline code spans first (`code` or ``code with ` inside``) so emphasis/links never touch code.
+    s = s.replace(/(`+)([^\n]+?)\1/g, (m, ticks, inner) => {
+      const trimmed = ticks.length > 1 && inner.startsWith(' ') && inner.endsWith(' ') && inner.trim()
+        ? inner.slice(1, -1)
+        : inner;
+      return hold(`<code>${escMdHtml(trimmed)}</code>`);
+    });
+
+    // 2. Protect backslash-escaped punctuation (\*, \_, \~, \`, \|, \[, \])
+    s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|~>])/g, (m, ch) => hold(escMdHtml(ch)));
+
+    // 3. Markdown links [label](https://...) — only allow http/https URLs (supports balanced parens in URLs)
+    s = s.replace(/\[([^\]\n]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)(?:\s+"([^"\n]*)")?\)/g, (m, label, url, title) => {
+      if (!isSafeHttpUrl(url)) return m;
+      const tAttr = title ? ` title="${escMdHtml(title)}"` : '';
+      return hold(`<a data-href="${escMdHtml(url)}"${tAttr}>${renderMdInline(label)}</a>`);
+    });
+
+    // 4. Bare auto-links https://... or http://...
+    s = s.replace(/(^|[\s(>])(https?:\/\/[^\s<]+)/g, (m, pre, rawUrl) => {
+      const [url, tail] = trimTrailingUrlPunct(rawUrl);
+      if (!isSafeHttpUrl(url)) return m;
+      return pre + hold(`<a data-href="${escMdHtml(url)}">${escMdHtml(url)}</a>`) + tail;
+    });
+
+    // 5. Escape all remaining raw HTML before applying text emphasis tags
+    s = escMdHtml(s);
+
+    // 6. Emphasis & strikethrough (word-boundary safe for underscores so snake_case_ids stay intact)
+    s = s.replace(/\*\*\*([^*\n]+?)\*\*\*/g, (m, inner) => (
+      inner.startsWith(' ') || inner.endsWith(' ') ? m : `<strong><em>${inner}</em></strong>`
+    ));
+    s = s.replace(/(^|[\s(\[—–“‘;>\-])___([^_\n]+?)___(?=[\s).,!?:;\]—–”’<&\-]|$)/g, '$1<strong><em>$2</em></strong>');
+    s = s.replace(/\*\*((?:[^*\n]|\*(?!\*))+?)\*\*/g, (m, inner) => (
+      inner.startsWith(' ') || inner.endsWith(' ') ? m : `<strong>${inner}</strong>`
+    ));
+    s = s.replace(/(^|[\s(\[—–“‘;>\-])__([^_\n]+?)__(?=[\s).,!?:;\]—–”’<&\-]|$)/g, '$1<strong>$2</strong>');
+    s = s.replace(/~~([^~\n]+?)~~/g, '<del>$1</del>');
+    s = s.replace(/(^|[\s(\[—–“‘;>\-])\*([^*\n]+?)\*(?=[\s).,!?:;\]—–”’<&\-]|$)/g, (m, pre, inner) => (
+      inner.startsWith(' ') || inner.endsWith(' ') ? m : `${pre}<em>${inner}</em>`
+    ));
+    s = s.replace(/(^|[\s(\[—–“‘;>\-])_([^_\n]+?)_(?=[\s).,!?:;\]—–”’<&\-]|$)/g, (m, pre, inner) => (
+      inner.startsWith(' ') || inner.endsWith(' ') ? m : `${pre}<em>${inner}</em>`
+    ));
+
+    // 7. Restore protected HTML fragments (iteratively in case links contained nested spans)
+    let guard = 0;
+    while (s.includes('\u0000MD') && guard++ < 6) {
+      s = s.replace(/\u0000MD(\d+)\u0000/g, (_, idx) => slots[Number(idx)] ?? '');
+    }
+    return s;
+  }
+
+  function splitMdTableRow(line) {
+    let trimmed = String(line || '').trim();
+    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith('|') && !trimmed.endsWith('\\|')) trimmed = trimmed.slice(0, -1);
+    const cells = [];
+    let cur = '';
+    let inCode = false;
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === '\\' && trimmed[i + 1] === '|') {
+        cur += '|';
+        i++;
+        continue;
+      }
+      if (ch === '`') {
+        inCode = !inCode;
+        cur += ch;
+        continue;
+      }
+      if (ch === '|' && !inCode) {
+        cells.push(cur.trim());
+        cur = '';
+        continue;
+      }
+      cur += ch;
+    }
+    cells.push(cur.trim());
+    return cells;
+  }
+
+  function parseMdTableAlign(line) {
+    if (!line || !line.includes('|')) return null;
+    const cells = splitMdTableRow(line);
+    if (!cells.length) return null;
+    const aligns = [];
+    for (const c of cells) {
+      if (!/^:?-{2,}:?$/.test(c)) return null;
+      const left = c.startsWith(':');
+      const right = c.endsWith(':');
+      aligns.push(left && right ? 'center' : right ? 'right' : left ? 'left' : '');
+    }
+    return aligns;
+  }
+
+  function isMdHr(line) {
+    const t = line.trim();
+    return /^(?:-\s*){3,}$/.test(t) || /^(?:\*\s*){3,}$/.test(t) || /^(?:_\s*){3,}$/.test(t);
+  }
+
+  function parseMdListLine(line) {
+    const expanded = line.replace(/\t/g, '  ');
+    const ul = /^(\s*)([-*+•])\s+(.*)$/.exec(expanded);
+    if (ul) {
+      let text = ul[3];
+      let task = null;
+      const tm = /^\[([ xX])\]\s+(.*)$/.exec(text);
+      if (tm) {
+        task = tm[1].toLowerCase() === 'x';
+        text = tm[2];
+      }
+      return { indent: ul[1].length, tag: 'ul', start: 1, text, task };
+    }
+    const ol = /^(\s*)(\d+)[.)]\s+(.*)$/.exec(expanded);
+    if (ol) {
+      return { indent: ol[1].length, tag: 'ol', start: Number(ol[2]) || 1, text: ol[3], task: null };
+    }
+    return null;
+  }
+
+  function isMdBlockStart(lines, idx) {
+    const line = lines[idx];
+    if (line == null) return false;
+    if (/^\s{0,3}(`{3,}|~{3,})/.test(line)) return true;
+    if (/^\s{0,3}#{1,6}\s+/.test(line)) return true;
+    if (/^\s{0,3}>\s?/.test(line)) return true;
+    if (isMdHr(line)) return true;
+    if (parseMdListLine(line)) return true;
+    if (line.includes('|') && idx + 1 < lines.length && parseMdTableAlign(lines[idx + 1])) return true;
+    return false;
+  }
+
+  function renderMdListNodes(items) {
+    if (!items.length) return '';
+    const renderItems = (list, baseIndent) => {
+      let html = '';
+      let i = 0;
+      while (i < list.length) {
+        const tag = list[i].tag;
+        const start = list[i].start;
+        const startAttr = tag === 'ol' && start !== 1 ? ` start="${start}"` : '';
+        const hasTasks = list[i].task !== null;
+        html += `<${tag}${startAttr}${hasTasks ? ' class="md-tasks"' : ''}>`;
+        while (i < list.length && list[i].tag === tag && list[i].indent === baseIndent) {
+          const cur = list[i];
+          i++;
+          const children = [];
+          while (i < list.length && list[i].indent > baseIndent) {
+            children.push(list[i]);
+            i++;
+          }
+          const bodyHtml = cur.lines.map(renderMdInline).join('<br>');
+          const childHtml = children.length ? renderItems(children, children[0].indent) : '';
+          if (cur.task !== null) {
+            html += `<li class="md-task${cur.task ? ' done' : ''}"><span class="md-chk${cur.task ? ' on' : ''}" aria-hidden="true">${cur.task ? '✓' : ''}</span><span class="md-task-body">${bodyHtml}${childHtml}</span></li>`;
+          } else {
+            html += `<li>${bodyHtml}${childHtml}</li>`;
+          }
+        }
+        html += `</${tag}>`;
+      }
+      return html;
+    };
+    return renderItems(items, items[0].indent);
+  }
+
+  function renderMarkdown(src, opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const copyTitle = escMdHtml(o.copyTitle || 'Copy code');
+    const copyIcon = o.copyIcon || 'Copy';
+    const text = String(src == null ? '' : src).replace(/\r\n?/g, '\n');
+    if (!text.trim()) return '';
+
+    const lines = text.split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Blank line
+      if (!line.trim()) {
+        i++;
+        continue;
+      }
+
+      // 1. Fenced code block (```lang or ~~~lang, tolerates unclosed fence during live streaming)
+      const fence = /^\s{0,3}(`{3,}|~{3,})([^\n]*)$/.exec(line);
+      if (fence) {
+        const marker = fence[1];
+        const ch = marker[0];
+        const minLen = marker.length;
+        const lang = fence[2].trim().split(/\s+/)[0] || '';
+        const closeRe = new RegExp(`^\\s{0,3}${ch}{${minLen},}\\s*$`);
+        i++;
+        const body = [];
+        while (i < lines.length && !closeRe.test(lines[i])) {
+          body.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && closeRe.test(lines[i])) i++;
+        const codeHtml = escMdHtml(body.join('\n'));
+        if (lang) {
+          out.push(`<div class="md-code"><div class="md-code-hd"><span class="md-code-lang">${escMdHtml(lang)}</span><button type="button" class="ch-copy" title="${copyTitle}">${copyIcon}</button></div><pre><code>${codeHtml}</code></pre></div>`);
+        } else {
+          out.push(`<div class="md-code plain"><pre><button type="button" class="ch-copy" title="${copyTitle}">${copyIcon}</button><code>${codeHtml}</code></pre></div>`);
+        }
+        continue;
+      }
+
+      // 2. GFM Table (header row + delimiter row + 0..N body rows)
+      if (line.includes('|') && i + 1 < lines.length) {
+        const aligns = parseMdTableAlign(lines[i + 1]);
+        if (aligns) {
+          const headers = splitMdTableRow(line);
+          const colCount = Math.max(headers.length, aligns.length);
+          i += 2;
+          const rows = [];
+          while (i < lines.length && lines[i].trim() && lines[i].includes('|')) {
+            if (/^\s{0,3}(`{3,}|~{3,}|#{1,6}\s+|>\s?)/.test(lines[i]) || isMdHr(lines[i])) break;
+            rows.push(splitMdTableRow(lines[i]));
+            i++;
+          }
+          const cellStyle = (c) => (aligns[c] ? ` style="text-align:${aligns[c]}"` : '');
+          const ths = Array.from({ length: colCount }, (_, c) => `<th${cellStyle(c)}>${renderMdInline(headers[c] || '')}</th>`).join('');
+          const trs = rows.map((r) => `<tr>${Array.from({ length: colCount }, (_, c) => `<td${cellStyle(c)}>${renderMdInline(r[c] || '')}</td>`).join('')}</tr>`).join('');
+          out.push(`<div class="md-table-wrap"><table class="md-table"><thead><tr>${ths}</tr></thead>${trs ? `<tbody>${trs}</tbody>` : ''}</table></div>`);
+          continue;
+        }
+      }
+
+      // 3. ATX Heading (# through ######)
+      const heading = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/.exec(line);
+      if (heading) {
+        const level = heading[1].length;
+        const clsLevel = Math.min(4, level);
+        out.push(`<h${level} class="md-h md-h${clsLevel}">${renderMdInline(heading[2])}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      // 4. Horizontal rule (---, ***, ___)
+      if (isMdHr(line)) {
+        out.push('<hr class="md-hr">');
+        i++;
+        continue;
+      }
+
+      // 5. Blockquote (> ...)
+      if (/^\s{0,3}>\s?/.test(line)) {
+        const bq = [];
+        while (i < lines.length && /^\s{0,3}>\s?/.test(lines[i])) {
+          bq.push(lines[i].replace(/^\s{0,3}>\s?/, ''));
+          i++;
+        }
+        out.push(`<blockquote class="md-bq">${renderMarkdown(bq.join('\n'), o)}</blockquote>`);
+        continue;
+      }
+
+      // 6. Lists (ul, ol, nested, task lists)
+      const firstList = parseMdListLine(line);
+      if (firstList) {
+        const items = [];
+        while (i < lines.length) {
+          if (!lines[i].trim()) {
+            // Look ahead: stay in same list only if next non-blank line continues a list
+            let peek = i + 1;
+            while (peek < lines.length && !lines[peek].trim()) peek++;
+            if (peek < lines.length && parseMdListLine(lines[peek])) {
+              i = peek;
+              continue;
+            }
+            break;
+          }
+          const li = parseMdListLine(lines[i]);
+          if (li) {
+            items.push({ indent: li.indent, tag: li.tag, start: li.start, task: li.task, lines: [li.text] });
+            i++;
+          } else if (items.length && /^\s{2,}\S/.test(lines[i]) && !isMdBlockStart(lines, i)) {
+            items[items.length - 1].lines.push(lines[i].trim());
+            i++;
+          } else {
+            break;
+          }
+        }
+        out.push(renderMdListNodes(items));
+        continue;
+      }
+
+      // 7. Paragraph (collect until blank line or next block starter)
+      const para = [];
+      while (i < lines.length && lines[i].trim() && (para.length === 0 || !isMdBlockStart(lines, i))) {
+        para.push(lines[i]);
+        i++;
+      }
+      if (para.length) {
+        out.push(`<p>${para.map(renderMdInline).join('<br>')}</p>`);
+      }
+    }
+
+    return out.join('');
+  }
+
   const api = {
     meterLevel,
     meter,
@@ -408,6 +774,7 @@
     closedWidthNoCam,
     resolveModuleFrame,
     closedStateKey,
+    renderMarkdown,
   };
 
   if (typeof window !== 'undefined') window.NotchKit = api;

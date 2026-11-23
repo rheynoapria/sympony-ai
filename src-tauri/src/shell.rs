@@ -27,6 +27,16 @@ impl Drop for Driving {
     }
 }
 
+/// Folds the expanded notch out of the way when Hands needs to click/drag near the top of the screen.
+/// Returns `true` if the notch was open (caller may pause briefly for the close animation).
+pub fn yield_notch(app: &AppHandle) -> bool {
+    let was_open = app.try_state::<Shell>().is_some_and(|s| s.open.lock().unwrap().0);
+    if was_open {
+        let _ = app.emit_to(LABEL, "notch:yield", ());
+    }
+    was_open
+}
+
 #[derive(Default)]
 pub struct Shell {
     pub open: Mutex<(bool, u64)>,
@@ -69,7 +79,11 @@ pub fn focus(app: &AppHandle, want: bool) {
             // (the notch closing right after it opened Settings: Settings keeps the front, the app before doesn't
             // come back over it)
             let other = a.webview_windows().into_iter().any(|(label, ww)| label != LABEL && ww.is_visible().unwrap_or(false) && ww.is_focused().unwrap_or(false));
-            if let Some(pid) = back.filter(|_| !other && !crate::settings_window::opened_just_now()) {
+            if let Some(pid) = back.filter(|_| {
+                !other
+                    && !crate::settings_window::opened_just_now()
+                    && !crate::floating_chat::opened_just_now()
+            }) {
                 apps::activate_pid(pid);
             }
         }
@@ -189,9 +203,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         });
     }
     let open = MenuItem::with_id(app, "open", "Open Sympony", true, None::<&str>)?;
+    let float_chat = MenuItem::with_id(app, "floating_chat", "Floating Pony Chat", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Sympony", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &settings, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &float_chat, &settings, &quit])?;
     // macOS: Pony's silhouette in black, a template the menu bar tints light or dark; Windows/Linux trays don't
     // tint, so they get the colour app icon
     #[cfg(target_os = "macos")]
@@ -207,6 +222,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "open" => {
                 let _ = app.emit_to(LABEL, "notch:toggle", ());
             }
+            "floating_chat" => crate::floating_chat::toggle(app),
             "settings" => crate::settings_window::open(app, None),
             "quit" => app.exit(0),
             _ => {}

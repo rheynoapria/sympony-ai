@@ -12,8 +12,14 @@ pub fn available(app: &AppHandle) -> bool {
     app.state::<App>().settings.get()["ponyEyes"] == true
 }
 
-/// One `screen_read`. Err: what the model reads.
-pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, String> {
+/// Result of `screen_read`: text for the model plus an optional resized screenshot `(mime, base64)` for `mode: "vision"`.
+pub struct ReadResult {
+    pub text: String,
+    pub image: Option<(String, String)>,
+}
+
+/// One `screen_read` returning text plus optional screenshot image (for `mode: "vision"`).
+pub fn call_rich(app: &AppHandle, session: &str, args: &Value) -> Result<ReadResult, String> {
     if !available(app) {
         return Err("Eyes are off (Settings → Pony Assistant → Abilities → Eyes)".into());
     }
@@ -92,7 +98,20 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
         return Err("That page is a password manager or vault, so nothing was read.".into());
     }
     let count = nodes.len();
+    let mut image: Option<(String, String)> = None;
     let body = match mode {
+        "vision" => {
+            image = Some(capture_jpeg(app, pid, &win)?);
+            let (list, map) = services::eyes::list(&nodes);
+            crate::hands::remember(app, session, pid, &name, &bundle, win.clone(), nodes, els, map);
+            let known = if crate::hands::available(app) { crate::hands::routines_for(&bundle) } else { String::new() };
+            let elems = if known.is_empty() { list } else { format!("{list}\n{known}") };
+            if elems.trim().is_empty() {
+                "(Screenshot image attached; this window exposes no Accessibility elements.)".into()
+            } else {
+                elems
+            }
+        }
         "ocr" => {
             let spots = ocr(app, pid, &win)?;
             let (text, at) = services::eyes::spots(&spots, win.frame());
@@ -114,16 +133,20 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
         }
     };
     // (the log says which app and how much, never what)
-    app.state::<App>().log.line(&format!("eyes: read {name} ({mode}, {count} elements, {} chars)", body.len()));
-    if body.trim().is_empty() {
-        return Ok(format!("{name}'s window \"{title}\" shows nothing readable{}.", if mode == "selection" { " selected" } else { "" }));
+    app.state::<App>().log.line(&format!("eyes: read {name} ({mode}, {count} elements, {} chars{})", body.len(), if image.is_some() { ", +image" } else { "" }));
+    if body.trim().is_empty() && image.is_none() {
+        return Ok(ReadResult {
+            text: format!("{name}'s window \"{title}\" shows nothing readable{}.", if mode == "selection" { " selected" } else { "" }),
+            image: None,
+        });
     }
     let read = services::eyes::wrap(&name, &title, &url, &body);
     // (how to act comes with the first view Hands can act on: Sympony's own words, outside the screen's)
-    Ok(match (mode, crate::hands::how_to_act(app, session)) {
-        ("elements" | "ocr", Some(how)) => format!("{read}\n\n(Sympony, not the screen:) {how}"),
+    let text = match (mode, crate::hands::how_to_act(app, session)) {
+        ("elements" | "ocr" | "vision", Some(how)) => format!("{read}\n\n(Sympony, not the screen:) {how}"),
         _ => read,
-    })
+    };
+    Ok(ReadResult { text, image })
 }
 
 pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
@@ -159,9 +182,50 @@ impl Drop for TempFile {
     }
 }
 
+/// Captures `win` as a resized JPEG (<= 1280 px) in Sympony's private 0700 tmp folder and returns `("image/jpeg", base64)`.
+fn capture_jpeg(app: &AppHandle, pid: i32, win: &ax::El) -> Result<(String, String), String> {
+    use base64::Engine;
+    use std::process::Command;
+
+    if !ax::screen_access(false) {
+        let _ = ax::screen_access(true);
+        return Err("Capturing a screenshot of the window needs the Screen Recording permission. Tell the user to turn it on for Sympony in System Settings → Privacy & Security → Screen Recording.".into());
+    }
+    let id = ax::window_id_matching(pid, win.frame()).ok_or("The window isn't on screen")?;
+    let tmp_dir = app.state::<App>().data_dir.join("tmp");
+    services::paths::ensure_private_dir(&tmp_dir).map_err(|e| e.to_string())?;
+    let nonce: String = services::oauth::random().chars().filter(|c| c.is_ascii_alphanumeric()).take(16).collect();
+    let png = TempFile(tmp_dir.join(format!("eyes-vis-{nonce}.png")));
+    let jpg = TempFile(tmp_dir.join(format!("eyes-vis-{nonce}.jpg")));
+    services::paths::write_private(&png.0, &[]).map_err(|e| e.to_string())?;
+    services::paths::write_private(&jpg.0, &[]).map_err(|e| e.to_string())?;
+    let shot = Command::new("/usr/sbin/screencapture").args(["-x", "-o", "-l", &id.to_string()]).arg(&png.0).status();
+    if !shot.is_ok_and(|s| s.success()) {
+        return Err("Couldn't take a picture of the window".into());
+    }
+    let resized = Command::new("/usr/bin/sips")
+        .args(["-Z", "1280", "-s", "format", "jpeg", "-s", "formatOptions", "78"])
+        .arg(&png.0)
+        .args(["--out"])
+        .arg(&jpg.0)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let (mime, bytes) = if resized.is_ok_and(|s| s.success()) {
+        let b = std::fs::read(&jpg.0).map_err(|_| "Couldn't read screenshot".to_string())?;
+        if !b.is_empty() { ("image/jpeg".to_string(), b) } else { ("image/png".to_string(), std::fs::read(&png.0).map_err(|_| "Couldn't read screenshot".to_string())?) }
+    } else {
+        ("image/png".to_string(), std::fs::read(&png.0).map_err(|_| "Couldn't read screenshot".to_string())?)
+    };
+    if bytes.is_empty() {
+        return Err("Couldn't take a picture of the window".into());
+    }
+    Ok((mime, base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 /// The text in a picture of `pid`'s window, read on this Mac by Vision (`helper/ocr.js`). The picture is a private
 /// temporary file inside Sympony's 0700 data folder, removed automatically on drop; it never leaves the Mac.
-fn ocr(app: &AppHandle, pid: i32, _win: &ax::El) -> Result<Vec<Value>, String> {
+fn ocr(app: &AppHandle, pid: i32, win: &ax::El) -> Result<Vec<Value>, String> {
     use std::io::Read;
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
@@ -170,7 +234,7 @@ fn ocr(app: &AppHandle, pid: i32, _win: &ax::El) -> Result<Vec<Value>, String> {
         let _ = ax::screen_access(true);
         return Err("Reading a picture of the window needs the Screen Recording permission. Tell the user to turn it on for Sympony in System Settings → Privacy & Security → Screen Recording.".into());
     }
-    let id = ax::window_id(pid).ok_or("The window isn't on screen")?;
+    let id = ax::window_id_matching(pid, win.frame()).ok_or("The window isn't on screen")?;
     let data_dir = &app.state::<App>().data_dir;
     let script = ensure_ocr_script(data_dir);
     let tmp_dir = data_dir.join("tmp");

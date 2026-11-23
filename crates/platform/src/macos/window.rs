@@ -75,6 +75,38 @@ pub unsafe fn set_click_through(ns_window: *mut std::ffi::c_void, through: bool)
     win.setIgnoresMouseEvents(through);
 }
 
+/// The floating Pony chat window: transparent rounded panel, native macOS shadow, focusable,
+/// optionally pinned above normal apps (level 3) across Spaces and fullscreen apps. Main thread.
+///
+/// # Safety
+/// `ns_window` must be a live NSWindow. Null is ignored.
+pub unsafe fn style_floating_chat_window(ns_window: *mut std::ffi::c_void, always_on_top: bool) {
+    let Some(win) = (unsafe { (ns_window as *const NSWindow).as_ref() }) else { return };
+    win.setOpaque(false);
+    win.setBackgroundColor(Some(&objc2_app_kit::NSColor::clearColor()));
+    win.setHasShadow(true);
+    unsafe { set_floating_chat_pin(ns_window, always_on_top) };
+}
+
+/// Switches the floating Pony chat window between pinned floating (level 3, all Spaces)
+/// and standard window level (level 0, active Space). Main thread.
+///
+/// # Safety
+/// `ns_window` must be a live NSWindow. Null is ignored.
+pub unsafe fn set_floating_chat_pin(ns_window: *mut std::ffi::c_void, always_on_top: bool) {
+    let Some(win) = (unsafe { (ns_window as *const NSWindow).as_ref() }) else { return };
+    if always_on_top {
+        win.setLevel(3);
+        win.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        );
+    } else {
+        win.setLevel(0);
+        win.setCollectionBehavior(NSWindowCollectionBehavior::MoveToActiveSpace);
+    }
+}
+
 /// Puts one of Sympony's own windows in front of every app now and gives it the keyboard: a window shown while
 /// another app is active stays behind it otherwise (macOS no longer lets a background app's plain activate through).
 /// Main thread.

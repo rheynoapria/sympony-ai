@@ -29,6 +29,16 @@ pub fn find(id: &str) -> Option<&'static Agent> {
     AGENTS.iter().find(|a| a.id == id)
 }
 
+/// Default model pinned by Sympony when the user left `agentModels[id]` empty.
+/// Claude Code runs with `--setting-sources ""` (so `~/.claude/settings.json` isn't read) and defaults explicitly
+/// to `sonnet` for fast, reliable tool use and consistent behavior across CLI updates.
+pub fn default_model(id: &str) -> Option<&'static str> {
+    match id {
+        "claude" => Some("sonnet"),
+        _ => None,
+    }
+}
+
 /// The command line (after the executable) for one answer, read-only. `system` goes in an option where the agent has
 /// one, else at the top of the prompt; the prompt is always the last word and never reads as an option.
 pub fn args(id: &str, prompt: &str, system: &str, model: Option<&str>, web: bool) -> Vec<String> {
@@ -37,7 +47,7 @@ pub fn args(id: &str, prompt: &str, system: &str, model: Option<&str>, web: bool
     if p.starts_with('-') {
         p.insert_str(0, "Message: ");
     }
-    let model = model.filter(|m| !m.trim().is_empty());
+    let model = model.filter(|m| !m.trim().is_empty()).or_else(|| default_model(id));
     let mut a: Vec<String> = match id {
         "claude" => {
             // (the prompt right after -p, and --tools last: it takes every word after it)
@@ -94,10 +104,10 @@ pub fn env(id: &str) -> Vec<(&'static str, String)> {
     }
 }
 
-/// Whether Sympony may answer through it: an agent without a read-only mode (Hermes runs its terminal and file tools
-/// as it sees fit) is listed but not used until one is checked.
+/// Whether Sympony may answer through it: agents without a read-only mode (Hermes runs terminal/file tools freely,
+/// Cursor Agent `-p` enables write and bash with no read-only flag) are listed but not used until one is checked.
 pub fn supported(id: &str) -> bool {
-    id != "hermes"
+    !matches!(id, "hermes" | "cursor")
 }
 
 fn opt(base: Vec<&str>, flag: &str, model: Option<&str>) -> Vec<String> {
@@ -481,6 +491,10 @@ impl ClaudeStream {
                 match ev["type"].as_str().unwrap_or("") {
                     "message_start" => {
                         self.round += 1;
+                        self.current_text.clear();
+                    }
+                    "content_block_start" if ev["content_block"]["type"] == "tool_use" => {
+                        // A tool call started after any lead-up text in this turn: keep current_text clean for the next text round.
                         self.current_text.clear();
                     }
                     "content_block_delta" if ev["delta"]["type"] == "text_delta" => {

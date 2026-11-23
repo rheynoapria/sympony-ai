@@ -629,24 +629,23 @@ function applyLook(s) {
   const cfg = s || st.settings || {};
   const look = lookOf(cfg);
   if (window.Tint) Tint.wall(false);
-  notchEl.dataset.look = look;
-  if (bubbleEl) bubbleEl.dataset.look = look;
+  document.documentElement.dataset.look = look;
+  const targets = [notchEl, bubbleEl, $('#pill'), $('#dockTip'), $('#catBubble')].filter(Boolean);
+  for (const el of targets) el.dataset.look = look;
   if (look === 'color') {
     const col = /^#[0-9a-f]{6}$/i.test(cfg.notchColor || '') ? cfg.notchColor.toLowerCase() : '#1c2b4d';
-    notchEl.style.setProperty('--notch-color', col);
-    if (bubbleEl) bubbleEl.style.setProperty('--notch-color', col);
     const rgb = hexToRgb(col);
     const light = window.Tint && typeof Tint.darkInk === 'function'
       ? Tint.darkInk(rgb)
       : (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.65;
-    notchEl.classList.toggle('look-light', light);
-    if (bubbleEl) bubbleEl.classList.toggle('look-light', light);
+    for (const el of targets) {
+      el.style.setProperty('--notch-color', col);
+      el.classList.toggle('look-light', light);
+    }
   } else {
-    notchEl.style.removeProperty('--notch-color');
-    notchEl.classList.remove('look-light');
-    if (bubbleEl) {
-      bubbleEl.style.removeProperty('--notch-color');
-      bubbleEl.classList.remove('look-light');
+    for (const el of targets) {
+      el.style.removeProperty('--notch-color');
+      el.classList.remove('look-light');
     }
   }
   notchEl.style.removeProperty('--bg');
@@ -993,6 +992,22 @@ api.on('notch:reset', () => {
   hideCtx();
   endTyping();
   if (st.open) closeNotch(); else { renderClosed(); layout(); }
+});
+// Hands needs to click/drag near the top of the screen: fold the expanded notch cleanly out of the way.
+api.on('notch:yield', () => {
+  cancel('open');
+  st.hover = false;
+  if (st.open) closeNotch();
+});
+// Floating Pony Chat requested docking back to the notch (or opening a module from an action chip).
+api.on('notch:openMod', (mod) => {
+  const target = typeof mod === 'string' && mod ? mod : 'chat';
+  openNotch(target);
+  if (N.openModule) N.openModule(target);
+  if (target === 'chat') {
+    const inp = $('#chIn');
+    if (inp) N.focusField(inp);
+  }
 });
 
 // Leaving (wm.rs update_visibility): a fullscreen app came up on this display (Settings → General → Hide when an app

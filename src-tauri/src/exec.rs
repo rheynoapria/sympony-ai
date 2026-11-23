@@ -154,7 +154,9 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
                 .unwrap_or_default();
             let deletes = exec::deletes(&command);
             let touches_protected = exec::modifies_protected_config_at(&command, Some(&canon_cwd), Some(&home));
-            if deletes || touches_protected || after_web || (!yolo && !exec::auto_ok_at(&command, &allowed, after_web, Some(&canon_cwd), Some(&home))) {
+            // In YOLO mode, only file deletions and protected configs (shell profiles / LaunchAgents) ask;
+            // in Ask mode, taint (`after_web`) or non-read-only commands ask.
+            if deletes || touches_protected || (!yolo && (after_web || !exec::auto_ok_at(&command, &allowed, after_web, Some(&canon_cwd), Some(&home)))) {
                 let prefix = exec::prefix(&command);
                 // (deleting, shell profiles / LaunchAgents, shells/interpreters, and collapsed flag prefixes never offer "always allow")
                 let can_always = exec::can_always_at(&command, Some(&canon_cwd), Some(&home));
@@ -178,7 +180,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
         }
         "read_file" => {
             let (p, _) = path()?;
-            if after_web && approve(app, session, json!({"tool": "read_file", "detail": p})) == "deny" {
+            if !yolo && after_web && approve(app, session, json!({"tool": "read_file", "detail": p})) == "deny" {
                 return declined();
             }
             step("read", p.rsplit('/').next().unwrap_or(&p));
@@ -189,7 +191,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
         }
         "list_dir" => {
             let (p, _) = path()?;
-            if after_web && approve(app, session, json!({"tool": "list_dir", "detail": p})) == "deny" {
+            if !yolo && after_web && approve(app, session, json!({"tool": "list_dir", "detail": p})) == "deny" {
                 return declined();
             }
             step("list", p.rsplit('/').next().unwrap_or(&p));
@@ -217,7 +219,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             let detail = format!("{p}\n\n{preview}{}", if content.lines().count() > 30 { "\n…" } else { "" });
             let touches_protected = exec::protected_config_path_at(&p, None, Some(&home))
                 || exec::protected_config_path_at(&canon, None, Some(&home));
-            if (!yolo || after_web || touches_protected) && approve(app, session, json!({"tool": if exists { "overwrite_file" } else { "write_file" }, "detail": detail})) == "deny" {
+            if (!yolo || touches_protected) && approve(app, session, json!({"tool": if exists { "overwrite_file" } else { "write_file" }, "detail": detail})) == "deny" {
                 return declined();
             }
             step("write", p.rsplit('/').next().unwrap_or(&p));
@@ -237,7 +239,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             let detail = format!("{p}{}\n\n{}\n{}", if n > 1 { format!(" ({n}×)") } else { String::new() }, clip(old, '-'), clip(new, '+'));
             let touches_protected = exec::protected_config_path_at(&p, None, Some(&home))
                 || exec::protected_config_path_at(&canon, None, Some(&home));
-            if (!yolo || after_web || touches_protected) && approve(app, session, json!({"tool": "edit_file", "detail": detail})) == "deny" {
+            if (!yolo || touches_protected) && approve(app, session, json!({"tool": "edit_file", "detail": detail})) == "deny" {
                 return declined();
             }
             step("edit", p.rsplit('/').next().unwrap_or(&p));

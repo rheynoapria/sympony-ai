@@ -243,6 +243,23 @@ function StyleSchematic({ modId, styleId }: { modId: string; styleId: string }) 
         </svg>
       );
     }
+    if (styleId === "pill") {
+      return (
+        <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+          <rect width="180" height="68" rx="8" fill={bg} />
+          <rect x="6" y="21" width="168" height="26" rx="13" fill={tile} opacity="0.5" />
+          {[16, 29, 42, 55].map((cx, idx) => (
+            <circle key={cx} cx={cx} cy="34" r="5" fill={idx < 2 ? "#4361ff" : idx === 3 ? amber : dim} />
+          ))}
+          <rect x="66" y="28" width="38" height="12" rx="5" fill={tile} />
+          <rect x="66" y="28" width="25" height="12" rx="5" fill={fg} />
+          <rect x="108" y="28" width="38" height="12" rx="5" fill={tile} />
+          <rect x="108" y="28" width="22" height="12" rx="5" fill={fg} />
+          <circle cx="155" cy="34" r="4.5" fill={green} />
+          <circle cx="166" cy="34" r="4.5" fill={dim} />
+        </svg>
+      );
+    }
     if (styleId === "compact") {
       return (
         <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
@@ -263,6 +280,58 @@ function StyleSchematic({ modId, styleId }: { modId: string; styleId: string }) 
           <circle cx="144" cy="50.5" r="5" fill={fg} />
           <circle cx="157" cy="50.5" r="5" fill={tile} />
           <circle cx="168" cy="50.5" r="4" fill={tile} />
+        </svg>
+      );
+    }
+    if (styleId === "macos") {
+      return (
+        <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+          <rect width="180" height="68" rx="8" fill={bg} />
+          <rect x="6" y="6" width="56" height="56" rx="8" fill={tile} stroke={dim} strokeWidth="0.7" />
+          {[16, 34, 52].map((cy, idx) => (
+            <g key={cy}>
+              <circle cx="17" cy={cy} r="5" fill={idx === 0 ? "#4361ff" : idx === 1 ? sky : "#8b5cf6"} />
+              <rect x="26" y={cy - 3.5} width="26" height="3.2" rx="1.5" fill={fg} />
+              <rect x="26" y={cy + 1.5} width="18" height="2.4" rx="1.2" fill={dim} />
+            </g>
+          ))}
+          <rect x="67" y="6" width="60" height="26" rx="7" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <rect x="72" y="11" width="22" height="3" rx="1.5" fill={dim} />
+          <rect x="72" y="18" width="50" height="9" rx="4" fill={bg} />
+          <rect x="72" y="18" width="34" height="9" rx="4" fill={fg} />
+          <rect x="67" y="36" width="60" height="26" rx="7" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <rect x="72" y="41" width="20" height="3" rx="1.5" fill={dim} />
+          <rect x="72" y="48" width="50" height="9" rx="4" fill={bg} />
+          <rect x="72" y="48" width="28" height="9" rx="4" fill={fg} />
+          <rect x="132" y="6" width="20" height="20" rx="5.5" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <circle cx="142" cy="14" r="3.5" fill={amber} />
+          <rect x="154" y="6" width="20" height="20" rx="5.5" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <circle cx="164" cy="14" r="3.5" fill={fg} />
+          <rect x="132" y="29" width="20" height="20" rx="5.5" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <circle cx="142" cy="37" r="3.5" fill={dim} />
+          <rect x="154" y="29" width="20" height="20" rx="5.5" fill={tile} stroke={dim} strokeWidth="0.7" />
+          <circle cx="164" cy="37" r="3.5" fill={green} />
+          <rect x="132" y="52" width="42" height="10" rx="4" fill={tile} />
+        </svg>
+      );
+    }
+    if (styleId === "mixer") {
+      return (
+        <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+          <rect width="180" height="68" rx="8" fill={bg} />
+          <rect x="6" y="6" width="88" height="38" rx="7" fill={tile} />
+          <rect x="11" y="12" width="78" height="11" rx="4.5" fill={bg} />
+          <rect x="11" y="12" width="54" height="11" rx="4.5" fill={fg} />
+          <rect x="11" y="27" width="78" height="11" rx="4.5" fill={bg} />
+          <rect x="11" y="27" width="44" height="11" rx="4.5" fill={fg} />
+          <rect x="98" y="6" width="76" height="38" rx="7" fill={tile} />
+          <rect x="103" y="15" width="31" height="11" rx="4" fill="rgba(96,165,250,0.34)" />
+          <rect x="138" y="15" width="31" height="11" rx="4" fill={bg} />
+          <rect x="103" y="29" width="31" height="11" rx="4" fill={bg} />
+          <rect x="138" y="29" width="31" height="11" rx="4" fill={bg} />
+          {[6, 30, 54, 78, 102, 126, 150].map((x, idx) => (
+            <rect key={x} x={x} y="49" width="21" height="12" rx="4.5" fill={idx < 2 ? "#4361ff" : idx === 6 ? green : tile} />
+          ))}
         </svg>
       );
     }
@@ -349,9 +418,9 @@ export function ModuleStyleCard({
   const [customOpen, setCustomOpen] = useState<boolean>(sizeMode === "custom");
 
   const defaultW = Number(settings.expandedWidth) || 660;
-  const defaultH = active?.height ?? 272;
+  const defaultH = Number(settings.expandedHeightTall) || 268;
   const curW = typeof pref.width === "number" && pref.width > 0 ? pref.width : defaultW;
-  const curH = typeof pref.height === "number" && pref.height > 0 ? pref.height : defaultH;
+  const curH = typeof pref.height === "number" && pref.height > 0 ? pref.height : (sizeMode === "fit" ? (active?.height ?? defaultH) : defaultH);
 
   const hasCustom =
     Boolean(pref.style && options[0] && pref.style !== options[0].id) ||
@@ -448,7 +517,7 @@ export function ModuleStyleCard({
         <div className="py-3">
           <SettingsRow
             label={t("Notch size")}
-            description={t("Auto follows the selected style’s ideal height; pick a preset or set custom dimensions.")}
+            description={t("Default keeps every notch card the same size. Pick Fit, a preset, or Custom to resize this module.")}
           >
             <div className="flex flex-wrap items-center justify-end gap-2">
               <SegmentedControl
@@ -457,7 +526,8 @@ export function ModuleStyleCard({
                 aria-label={t("Notch size")}
                 value={sizeMode === "custom" ? "auto" : sizeMode}
                 options={[
-                  { value: "auto", label: t("Auto") },
+                  { value: "auto", label: t("Default") },
+                  ...(options.length > 0 ? [{ value: "fit", label: t("Fit") }] : []),
                   { value: "compact", label: t("Compact") },
                   { value: "standard", label: t("Standard") },
                   { value: "tall", label: t("Tall") },

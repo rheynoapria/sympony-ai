@@ -89,6 +89,25 @@ fn center(n: &Node) -> (f64, f64) {
     (n.frame.0 + n.frame.2 / 2.0, n.frame.1 + n.frame.3 / 2.0)
 }
 
+/// Whether point `(x, y)` lies inside `win_frame` (with a small 4 pt margin) so pointer clicks never miss into another app.
+fn inside_window(win_frame: (f64, f64, f64, f64), x: f64, y: f64) -> bool {
+    if win_frame.2 <= 1.0 || win_frame.3 <= 1.0 {
+        return true;
+    }
+    x >= win_frame.0 - 4.0
+        && x <= win_frame.0 + win_frame.2 + 4.0
+        && y >= win_frame.1 - 4.0
+        && y <= win_frame.1 + win_frame.3 + 4.0
+}
+
+/// Folds the expanded Sympony notch if a pointer action targets the top-center band where the notch sits.
+fn yield_for_point(app: &AppHandle, _x: f64, y: f64) {
+    let (_, oy) = *app.state::<Hands>().origin.lock().unwrap();
+    if y - oy < 380.0 && crate::shell::yield_notch(app) {
+        std::thread::sleep(Duration::from_millis(180));
+    }
+}
+
 /// Computes a horizontal point along `frame` for `frac` in `0.0..=1.0`, inset slightly from the edges.
 fn point_on_bar(frame: (f64, f64, f64, f64), frac: f64) -> (f64, f64) {
     let f = frac.clamp(0.0, 1.0);
@@ -401,11 +420,12 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
             }
         }
     }
-    // (the window as it is now: the changes, and the new numbers for the next call)
-    let (nodes, els) = ax::read(&win, 6000);
+    // (the window as it is now — re-query focused window in case a step opened a dialog/sheet/new window)
+    let cur_win = ax::window(pid).unwrap_or_else(|| win.clone());
+    let (nodes, els) = ax::read(&cur_win, 6000);
     let (list, map) = services::eyes::list(&nodes);
     let what = h::changes(&old_nodes, &old_map, &nodes, &map, &list);
-    remember(app, session, pid, &app_name, &bundle, win, nodes, els, map);
+    remember(app, session, pid, &app_name, &bundle, cur_win, nodes, els, map);
     if let Some(t) = app.state::<Hands>().trail.lock().unwrap().get_mut(session) {
         t.1 = what.chars().take(400).collect();
     }
@@ -490,7 +510,7 @@ pub fn save_routine(app: &AppHandle, session: &str, args: &Value) -> Result<Stri
         changed,
         lesson: args["lesson"].as_str().unwrap_or("").trim().chars().take(300).collect(),
         app_version: ax::app_version(&bundle).unwrap_or_default(),
-        model: crate::brain::model_name(app).unwrap_or_default(),
+        model: crate::agents::active_model_name(app).unwrap_or_default(),
     };
     let worked = attempt.worked;
     let id = services::routines::record(&routines_file(), &bundle, &name, intent, attempt).map_err(|e| e.to_string())?;
@@ -510,18 +530,55 @@ fn ask(app: &AppHandle, session: &str, detail: String) -> Result<(), String> {
     }
 }
 
-/// Whether the current remembered view contains a risky button/link (Send, Pay, Buy, Delete…) so pressing Enter/Cmd+Enter asks first.
+fn yolo(app: &AppHandle) -> bool {
+    app.state::<App>().settings.get()["ponyExecMode"] == "yolo"
+}
+
+fn label_needs_ok(label: &str, is_yolo: bool) -> bool {
+    if is_yolo {
+        h::destructive_or_financial(label)
+    } else {
+        h::risky(label)
+    }
+}
+
+/// Whether the currently focused element is a search box or browser address bar (where pressing Enter searches/navigates, not buys/deletes).
+fn focused_is_search_or_address(v: &View) -> bool {
+    v.map.iter().any(|&i| {
+        let n = &v.nodes[i];
+        if !n.focused {
+            return false;
+        }
+        if n.subrole == "AXSearchField" {
+            return true;
+        }
+        if matches!(n.role.as_str(), "AXTextField" | "AXComboBox") {
+            let l = n.label.to_lowercase();
+            return ["search", "cari", "telusuri", "address", "url", "location", "omnibox", "find"]
+                .iter()
+                .any(|w| l.contains(w));
+        }
+        false
+    })
+}
+
+/// Whether the current remembered view has an enabled risky submit button (`AXButton` only, never random page `AXLink`s)
+/// while focus is NOT in a search/address field, so pressing Enter/Cmd+Enter asks first in Ask mode.
 fn has_risky_button(app: &AppHandle, session: &str) -> bool {
     let st = app.state::<Hands>();
     let views = st.views.lock().unwrap();
     let Some(v) = views.get(session) else { return false };
+    if focused_is_search_or_address(v) {
+        return false;
+    }
     v.map.iter().any(|&i| {
         let n = &v.nodes[i];
-        matches!(n.role.as_str(), "AXButton" | "AXLink" | "AXMenuItem") && h::risky(&n.label)
+        n.enabled && n.role == "AXButton" && h::risky(&n.label)
     })
 }
 
 fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, step: &Value) -> Result<String, String> {
+    let is_yolo = yolo(app);
     let kind = step["do"].as_str().unwrap_or("");
     let n = step["n"].as_u64().map(|n| n as usize);
     let target = match n {
@@ -539,15 +596,15 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         }
     };
     let need = |what: &str| target.clone().ok_or(format!("{what} needs n"));
-    // (sending, buying, paying, deleting: the user's OK first)
+    // (sending, buying, paying, deleting: the user's OK first; YOLO only prompts on destructive/financial actions)
     let risky = match kind {
-        "click" | "double_click" | "choose" | "slide" | "drag" => h::risky(&label),
-        "menu" => step["path"].as_array().and_then(|p| p.last()).and_then(Value::as_str).is_some_and(h::risky),
+        "click" | "double_click" | "right_click" | "choose" | "slide" | "drag" => label_needs_ok(&label, is_yolo),
+        "menu" => step["path"].as_array().and_then(|p| p.last()).and_then(Value::as_str).is_some_and(|l| label_needs_ok(l, is_yolo)),
         "key" => {
             let k = step["keys"].as_str().unwrap_or("").to_lowercase();
             let is_del = k.contains("delete") || k.contains("backspace");
             let is_submit = k == "enter" || k == "return" || ((k.contains("enter") || k.contains("return")) && k.contains("cmd"));
-            (is_del && k.contains("cmd")) || (is_submit && has_risky_button(app, session))
+            (is_del && k.contains("cmd")) || (!is_yolo && is_submit && has_risky_button(app, session))
         }
         _ => false,
     };
@@ -559,46 +616,90 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         };
         ask(app, session, format!("{app_name}\n{} {what}", kind))?;
     }
-    if kind != "menu" && kind != "key" && kind != "slide" && kind != "drag" {
+    if kind != "menu" && kind != "key" && kind != "slide" && kind != "drag" && kind != "wait" {
         let shown = if kind == "point" { step["say"].as_str().unwrap_or(&label).to_string() } else { label.chars().take(40).collect() };
         let (ox, oy) = to_overlay(app, at.0, at.1);
         show(app, json!({"do": if kind == "point" { "point" } else { "move" }, "x": ox, "y": oy, "kind": kind, "label": shown}));
         std::thread::sleep(Duration::from_millis(if kind == "point" { 900 } else { 320 }));
     }
+    let wf = win.frame();
+    let check_visible = |pt: (f64, f64)| -> Result<(), String> {
+        if !inside_window(wf, pt.0, pt.1) {
+            return Err(format!("element [{}] is scrolled out of view; scroll first before acting on it", n.unwrap_or(0)));
+        }
+        Ok(())
+    };
     let ok = match kind {
+        "wait" => {
+            let ms = step["ms"].as_u64().unwrap_or(600).clamp(100, 5000);
+            let started = std::time::Instant::now();
+            while started.elapsed().as_millis() < ms as u128 {
+                if crate::brain::stopped(app, session) {
+                    return Err("the user stopped Pony".into());
+                }
+                std::thread::sleep(Duration::from_millis(80));
+            }
+            return Ok(format!("wait {ms}ms"));
+        }
         "point" => {
             need("point")?;
             return Ok(format!("pointed at [{}]", n.unwrap_or(0)));
         }
-        "click" | "double_click" if step["spot"].is_string() => {
-            // (a text spot from an OCR read: check risky label, then a real click or double-click there)
-            let is_double = kind == "double_click";
+        "click" | "double_click" | "right_click" | "hover" if step["spot"].is_string() => {
+            // (a text spot from an OCR read: check risky label, then a real pointer action there)
             let k: usize = step["spot"].as_str().unwrap_or("").trim_start_matches('t').parse().map_err(|_| "spot is like t3".to_string())?;
             let (spot_label, px, py) = {
                 let st = app.state::<Hands>();
                 let views = st.views.lock().unwrap();
                 views.get(session).and_then(|v| v.spots.get(k.wrapping_sub(1)).cloned()).ok_or(format!("There's no spot t{k}: read the screen with mode ocr again"))?
             };
-            if h::risky(&spot_label) {
+            if kind != "hover" && label_needs_ok(&spot_label, is_yolo) {
                 ask(app, session, format!("{app_name}\n{kind} “{spot_label}”"))?;
             }
             let (ox, oy) = to_overlay(app, px, py);
             show(app, json!({"do": "move", "x": ox, "y": oy, "kind": kind, "label": spot_label.chars().take(40).collect::<String>()}));
             std::thread::sleep(Duration::from_millis(320));
+            yield_for_point(app, px, py);
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
-            if is_double {
-                ax::double_click_at(px, py);
-            } else {
-                ax::click_at(px, py);
+            match kind {
+                "double_click" => ax::double_click_at(px, py),
+                "right_click" => ax::right_click_at(px, py),
+                "hover" => ax::mouse_move(px, py),
+                _ => ax::click_at(px, py),
             }
-            show(app, json!({"do": "tap", "x": ox, "y": oy}));
-            ax::settle(pid, win, 1500);
+            if kind != "hover" {
+                show(app, json!({"do": "tap", "x": ox, "y": oy}));
+            }
+            ax::settle(pid, win, if kind == "hover" { 600 } else { 1500 });
             return Ok(format!("{kind} t{k}"));
+        }
+        "hover" => {
+            let _ = need("hover")?;
+            check_visible(at)?;
+            yield_for_point(app, at.0, at.1);
+            if !ax::bring(pid, win) {
+                return Err("the app couldn't come to the front".into());
+            }
+            ax::mouse_move(at.0, at.1);
+            ax::settle(pid, win, 600);
+            return Ok(format!("hover [{}]", n.unwrap_or(0)));
+        }
+        "right_click" => {
+            let _ = need("right_click")?;
+            check_visible(at)?;
+            yield_for_point(app, at.0, at.1);
+            if !ax::bring(pid, win) {
+                return Err("the app couldn't come to the front".into());
+            }
+            ax::right_click_at(at.0, at.1);
+            true
         }
         "double_click" => {
             let _ = need("double_click")?;
+            check_visible(at)?;
+            yield_for_point(app, at.0, at.1);
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
@@ -608,6 +709,8 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         "click" => {
             let (el, ..) = need("click")?;
             if click_at_pct.is_some() {
+                check_visible(at)?;
+                yield_for_point(app, at.0, at.1);
                 if !ax::bring(pid, win) {
                     return Err("the app couldn't come to the front".into());
                 }
@@ -616,6 +719,8 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             } else {
                 // (pressing through Accessibility needs no pointer and no focus; a click where there's no press action)
                 el.act("AXPress") || {
+                    check_visible(at)?;
+                    yield_for_point(app, at.0, at.1);
                     if !ax::bring(pid, win) {
                         return Err("the app couldn't come to the front".into());
                     }
@@ -672,6 +777,7 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
                 true
             } else {
                 // 2. Fallback: bring app forward and click/scrub directly on the bar at the target position
+                yield_for_point(app, tx, ty);
                 if !ax::bring(pid, win) {
                     return Err("the app couldn't come to the front".into());
                 }
@@ -709,6 +815,7 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             } else {
                 return Err("drag needs to_n, percent, or dx/dy".into());
             };
+            yield_for_point(app, sx.min(ex), sy.min(ey));
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
@@ -735,11 +842,17 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
                     return Err("the app couldn't come to the front".into());
                 }
                 if web || !el.set_flag("AXFocused", true) {
+                    check_visible(at)?;
+                    yield_for_point(app, at.0, at.1);
                     ax::click_at(at.0, at.1);
                 }
                 std::thread::sleep(Duration::from_millis(140));
                 ax::press_combo(0, 0x0010_0000); // cmd+a: the old text goes
-                ax::type_all(text);
+                if text.is_empty() {
+                    ax::press_key(51, false); // Backspace/Delete actually clears the field
+                } else {
+                    ax::type_all(text);
+                }
                 true
             }
         }
@@ -762,9 +875,20 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             true
         }
         "scroll" => {
-            let h = win.frame().3.max(300.0);
-            let dy = (h * 0.8) as i32 * if step["direction"] == "up" { 1 } else { -1 };
-            ax::scroll_at(at.0, at.1, dy);
+            let dir = step["direction"].as_str().unwrap_or("down");
+            yield_for_point(app, at.0, at.1);
+            match dir {
+                "left" | "right" => {
+                    let w = wf.2.max(300.0);
+                    let dx = (w * 0.6) as i32 * if dir == "left" { 1 } else { -1 };
+                    ax::scroll_xy(at.0, at.1, dx, 0);
+                }
+                _ => {
+                    let h = wf.3.max(300.0);
+                    let dy = (h * 0.8) as i32 * if dir == "up" { 1 } else { -1 };
+                    ax::scroll_at(at.0, at.1, dy);
+                }
+            }
             true
         }
         "menu" => {

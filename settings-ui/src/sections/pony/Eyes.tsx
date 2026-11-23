@@ -15,10 +15,19 @@ export function PonyEyes({ settings, set }: Props) {
   const on = settings.ponyEyes === true;
   const skip = Array.isArray(settings.ponyEyesSkip) ? (settings.ponyEyesSkip as string[]) : [];
   const [perm, setPerm] = useState<string | null>(null);
+  const [screenPerm, setScreenPerm] = useState<string | null>(null);
   const [apps, setApps] = useState<{ open: AppItem[]; never: AppItem[] }>({ open: [], never: [] });
 
   const check = () =>
-    void (notch.svc("perm", "status") as Promise<Record<string, string>>).then((s) => setPerm(s?.accessibility ?? null)).catch(() => setPerm(null));
+    void (notch.svc("perm", "status") as Promise<Record<string, string>>)
+      .then((s) => {
+        setPerm(s?.accessibility ?? null);
+        setScreenPerm(s?.screenRecording ?? null);
+      })
+      .catch(() => {
+        setPerm(null);
+        setScreenPerm(null);
+      });
   useEffect(() => {
     if (!on) return;
     check();
@@ -31,6 +40,7 @@ export function PonyEyes({ settings, set }: Props) {
 
   const nameOf = (id: string) => apps.open.find((a) => a.id === id)?.name ?? id.split(".").pop() ?? id;
   const allowed = perm === "granted" || perm === "authorized";
+  const screenAllowed = screenPerm === "granted" || screenPerm === "authorized";
 
   return (
     <Ability
@@ -49,6 +59,14 @@ export function PonyEyes({ settings, set }: Props) {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] bg-amber-500/10 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-300">
               <span>{t("Pony needs Accessibility to read other apps’ windows.")}</span>
               <Button size="xs" variant="secondary" onClick={() => void notch.svc("perm", "request", "accessibility", true).catch(() => {})}>
+                {t("Allow")}
+              </Button>
+            </div>
+          )}
+          {allowed && screenPerm !== null && !screenAllowed && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground">
+              <span>{t("Optional: allow Screen Recording for OCR and visual screenshots (canvases, charts, unlabeled icons).")}</span>
+              <Button size="xs" variant="secondary" onClick={() => void notch.svc("perm", "request", "screenRecording", true).catch(() => {})}>
                 {t("Allow")}
               </Button>
             </div>
