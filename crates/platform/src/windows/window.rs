@@ -211,3 +211,31 @@ pub unsafe fn foreground_state(handle: *mut c_void) -> &'static str {
         if r.left <= s.left && r.top <= s.top && r.right >= s.right && r.bottom >= s.bottom { "full" } else { "normal" }
     }
 }
+
+/// Keeps maximised windows below a strip `height` points tall across the top of the display Sympony's window
+/// `handle` is on (Settings → General → Keep windows below Sympony: `appbar.rs`); 0 gives the space back.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process, or null when `height` is 0.
+pub unsafe fn reserve_top(handle: *mut c_void, height: f64) {
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    let h = handle as HWND;
+    if height <= 0.0 || h.is_null() {
+        super::appbar::set(None);
+        return;
+    }
+    unsafe {
+        let monitor = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return;
+        }
+        let (mut dpi, mut unused) = (96u32, 0u32);
+        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut unused);
+        let px = (height * dpi.max(96) as f64 / 96.0).round() as i32;
+        let r = info.rcMonitor;
+        super::appbar::set(Some((r.left, r.top, r.right, px)));
+    }
+}

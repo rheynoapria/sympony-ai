@@ -131,3 +131,9 @@ pub unsafe fn bring_front(ns_window: *mut std::ffi::c_void) {
 pub unsafe fn foreground_state(_ns_window: *mut std::ffi::c_void) -> &'static str {
     "normal"
 }
+
+/// Keep windows below Sympony is Windows' (a Mac's menu bar already keeps windows below the notch): nothing to do.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn reserve_top(_ns_window: *mut std::ffi::c_void, _height: f64) {}

@@ -194,6 +194,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(all_commands!())
-        .run(tauri::generate_context!())
-        .expect("error while running Sympony");
+        .build(tauri::generate_context!())
+        .expect("error while running Sympony")
+        .run(|_, event| {
+            // (the space Keep windows below Sympony took goes back to the other windows)
+            if let tauri::RunEvent::Exit = event {
+                wm::release();
+            }
+        });
 }

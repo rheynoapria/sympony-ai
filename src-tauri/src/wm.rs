@@ -4,7 +4,9 @@
 //!   is fullscreen): the frontend slides it away (`notch:leaving`), then the window is hidden (`notch:visible`);
 //! - a HUD meanwhile brings it in for its moment (Settings → HUD → Show over fullscreen apps, `notch_hud`): the
 //!   closed notch shows that HUD alone (`notch:hudOnly`), nothing opens it and clicks go through to the app;
-//! - the app in front being fullscreen is told to the frontend (`shell:fg`), which then draws nothing.
+//! - the app in front being fullscreen is told to the frontend (`shell:fg`), which then draws nothing;
+//! - Settings → General → Keep windows below Sympony reserves a strip as tall as the notch across the top of its
+//!   display, so maximised windows start below it (`platform::os::window::reserve_top`); given back on quit.
 use crate::commands::App;
 use crate::notch::LABEL;
 use serde_json::json;
@@ -27,6 +29,12 @@ static WAKE: OnceLock<Mutex<Sender<()>>> = OnceLock::new();
 
 /// How long the frontend's slide away takes (notch.js `leaveTo`), before the window is hidden.
 const SLIDE_AWAY: Duration = Duration::from_millis(260);
+
+/// Gives the strip's space back (Sympony quitting).
+pub fn release() {
+    // SAFETY: no window is touched when giving it back
+    unsafe { platform::os::window::reserve_top(std::ptr::null_mut(), 0.0) };
+}
 
 /// Out of sight, or in only for a HUD: no hover, nothing opens it.
 pub fn away() -> bool {
@@ -62,14 +70,19 @@ pub fn start(app: &AppHandle) {
             let Some(handle) = crate::native::window(&w) else { continue };
             // SAFETY: the notch window's own handle, alive while `w` is
             let front = unsafe { platform::os::window::foreground_state(handle) };
-            // ("max" would tuck the notch away over every maximised window: it stays "normal" until Settings' other
-            // way, Keep windows below Sympony (a reserved strip at the top), is there to choose instead)
+            // ("max" would tuck the notch away over every maximised window: it's sent as "normal", so the notch stays
+            // as it is; Keep windows below Sympony is the way to keep it off their tabs and title bars)
             let front = if front == "max" { "normal" } else { front };
             if front != last {
                 last = front;
                 let _ = app.emit_to(LABEL, "shell:fg", json!({ "state": front }));
             }
             let s = app.state::<App>().settings.get();
+            // (the strip: only under a notch on the top edge, and not while it auto-hides)
+            let reserve = s["reserveTop"] == true && s["autoHide"] != true && s["shellForm"].as_str().unwrap_or("notch") == "notch";
+            let height = s["notchHeight"].as_f64().unwrap_or(32.0) + s["notchTopGap"].as_f64().unwrap_or(0.0);
+            // SAFETY: as above
+            unsafe { platform::os::window::reserve_top(handle, if reserve { height } else { 0.0 }) };
             let hide = front == "full" && s["hideInFullscreen"] != false && s["shellForm"] != "drawer";
             let hud = HUD_UNTIL.lock().unwrap().is_some_and(|t| Instant::now() < t);
             match (PLACE.load(Ordering::Relaxed), hide, hud) {
