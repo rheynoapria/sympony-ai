@@ -81,6 +81,18 @@ pub fn search_url(title: &str) -> String {
     format!("https://www.youtube.com/results?search_query={}", crate::http::q(title))
 }
 
+/// YouTube's answer is a page of search results at all (not a consent page, a redirect's end, a "try later"): only
+/// then does finding nothing in it mean the video isn't there.
+pub fn has_results(html: &str) -> bool {
+    html.contains("\"videoRenderer\":")
+}
+
+/// Whether to search again for the song after `tries` searches that brought no page of results, the last
+/// `since_last` ago: up to 3 a song, 5 s apart.
+pub fn search_due(tries: u32, since_last: Option<std::time::Duration>) -> bool {
+    tries < 3 && since_last.is_none_or(|d| d >= std::time::Duration::from_secs(5))
+}
+
 /// From YouTube's search page: the video with exactly that title (letters and digits compared) from that channel
 /// (when it's known); none when no result is it. For a video playing in a tab behind another, whose address can't be
 /// read.

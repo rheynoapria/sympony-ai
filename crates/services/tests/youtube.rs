@@ -111,6 +111,20 @@ fn search_finds_the_video_with_that_title_from_that_channel() {
 }
 
 #[test]
+fn a_page_without_results_is_tried_again_not_taken_for_no_video() {
+    use services::youtube::{has_results, search_due};
+    use std::time::Duration;
+    assert!(has_results(SEARCH));
+    // a consent page, the end of a redirect loop, an error page: not "the video isn't there"
+    assert!(!has_results("<html><form action=\"https://consent.youtube.com/save\"></form></html>"));
+    // first try at once; then 5 s apart; 3 tries a song
+    assert!(search_due(0, None));
+    assert!(!search_due(1, Some(Duration::from_secs(2))));
+    assert!(search_due(1, Some(Duration::from_secs(5))));
+    assert!(!search_due(3, Some(Duration::from_secs(60))));
+}
+
+#[test]
 fn key_has_app_title_artist_album() {
     let m = json!({"app": "com.brave.Browser", "title": "Pulung", "artist": "Denny Caknan", "album": ""});
     assert_eq!(lookup_key(&m), "com.brave.Browser|Pulung|Denny Caknan|");

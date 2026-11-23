@@ -177,7 +177,8 @@ fn tabs(app: &AppHandle, bid: &str, _title: &str, _artist: &str) -> Option<Vec<(
 /// Windows: the address bar of each of the browser's windows whose title names what plays (only those are read),
 /// with that title. A window shows its current tab only, so a video in a tab behind another (watched in the floating
 /// video while working elsewhere) is found another way: its tab's name in the tab strip says YouTube plays it there,
-/// and YouTube's search for that exact title from that channel gives the video, once per song.
+/// and YouTube's search for that exact title from that channel gives the video: once per song when it answers with
+/// results, up to 3 times (5 s apart) when its answer had none (a consent page, a redirect loop, a "try later").
 #[cfg(windows)]
 fn tabs(app: &AppHandle, bid: &str, title: &str, artist: &str) -> Option<Vec<(String, String)>> {
     let exe = services::youtube::windows_browser(bid)?;
@@ -186,32 +187,41 @@ fn tabs(app: &AppHandle, bid: &str, title: &str, artist: &str) -> Option<Vec<(St
         return Some(front);
     }
     let song = format!("{title}|{artist}");
-    if *SEARCHED.lock().unwrap() == song || !platform::os::browser::has_tab(exe, &|t| services::youtube::youtube_tab(t, title)) {
+    let tries = {
+        let s = SEARCHED.lock().unwrap();
+        if s.0 == song { s.1 } else { 0 }
+    };
+    let since = SEARCHED.lock().unwrap().2.filter(|_| tries > 0).map(|t| t.elapsed());
+    if !services::youtube::search_due(tries, since) || !platform::os::browser::has_tab(exe, &|t| services::youtube::youtube_tab(t, title)) {
         return Some(front);
     }
+    *SEARCHED.lock().unwrap() = (song.clone(), tries + 1, Some(Instant::now()));
     let log = |m: String| app.state::<App>().log.line(&m);
     let id = match services::http::get_text(&services::youtube::search_url(title)) {
-        Ok(html) => {
-            // (searched: not again for this song)
-            *SEARCHED.lock().unwrap() = song;
+        Ok(html) if services::youtube::has_results(&html) => {
             let id = services::youtube::id_from_search(&html, title, artist);
             if id.is_none() {
+                // (results, none of them it: not again for this song)
+                SEARCHED.lock().unwrap().1 = u32::MAX;
                 log(format!("youtube: no search result is \"{title}\" by {artist}"));
             }
             id
         }
+        Ok(html) => {
+            log(format!("youtube: search for \"{title}\" came back without results ({} bytes), try {} of 3", html.len(), tries + 1));
+            None
+        }
         Err(e) => {
-            // (the network failed: tried again with the next lookup)
-            log(format!("youtube: search for \"{title}\": {e:#}"));
+            log(format!("youtube: search for \"{title}\": {e:#}, try {} of 3", tries + 1));
             None
         }
     };
     Some(id.map(|id| vec![(format!("https://www.youtube.com/watch?v={id}"), title.to_string())]).unwrap_or(front))
 }
 
-/// The song last looked up on YouTube's search (Windows, a video in a tab behind another): once per song.
+/// The song last looked up on YouTube's search (Windows, a video in a tab behind another), how many times, and when.
 #[cfg(windows)]
-static SEARCHED: Mutex<String> = Mutex::new(String::new());
+static SEARCHED: Mutex<(String, u32, Option<Instant>)> = Mutex::new((String::new(), 0, None));
 
 /// The floating video (picture in picture): its window, frontend/ytfloat.html.
 pub const FLOAT: &str = "ytfloat";
