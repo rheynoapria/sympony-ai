@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-11-23
+
 ### Added
 - **Dual-Channel In-App Auto-Updater (Stable & Beta):** Automatically checks GitHub Releases manifests (`latest.json` for Stable, floating `beta-channel/latest.json` for Beta), downloads signed binaries in-place with live progress (`0–100%`), verifies cryptographic signatures via `tauri-plugin-updater`, and restarts cleanly without manual `.dmg` re-installs.
 - **Distinct Stable & Beta Update UX:** Global Settings update banner (Sky/Blue **New Release** vs Amber **Beta · Early preview**), sidebar `BETA` build chip & update dot, full **Updates** card in *Settings → About & Updates* (auto-check, auto-download, **Watch Beta updates** with non-downgrade protection), plus subtle notch gear badge dot and one-time toast.
@@ -33,5 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Voice V1:** On-device Indonesian-first hybrid STT (`Zipformer2-id` live partials + `Qwen3-ASR` Metal final pass) with deterministic KBBI/phonetic post-processing and custom user dictionary.
 - **Security Hardening:** Per-turn taint tracking (including YOLO mode), home-anchored secret & shell-profile protection, `0600`/`0700` data permissions, Hardened Runtime, backup disarming, SSRF-safe redirects, and scrubbed stdio MCP environments.
 
-[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.1...HEAD
+[0.2.0-beta.1]: https://github.com/rheynoapria/sympony-ai/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/rheynoapria/sympony-ai/releases/tag/v0.1.0
