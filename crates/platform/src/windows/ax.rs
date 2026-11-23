@@ -24,6 +24,9 @@ impl El {
     pub fn flag(&self, _name: &str) -> Option<bool> {
         None
     }
+    pub fn number(&self, _name: &str) -> Option<f64> {
+        None
+    }
     pub fn url(&self) -> String {
         String::new()
     }
@@ -43,6 +46,9 @@ impl El {
         false
     }
     pub fn set_text(&self, _name: &str, _value: &str) -> bool {
+        false
+    }
+    pub fn set_number(&self, _name: &str, _value: f64) -> bool {
         false
     }
     pub fn act(&self, _action: &str) -> bool {
@@ -123,6 +129,17 @@ pub fn open_with(_app: &str, _args: &[String]) {}
 pub fn press_combo(_code: u16, _flags: u64) {}
 
 pub fn click_at(_x: f64, _y: f64) {}
+
+pub fn double_click_at(_x: f64, _y: f64) {}
+
+pub fn drag(_x1: f64, _y1: f64, _x2: f64, _y2: f64) {}
+
+pub fn mouse_move(_x: f64, _y: f64) {}
+
+/// (pid, app name, app id) of a running app found by name or id, never `me`.
+pub fn find_running_app(_query: &str, _me: i32) -> Option<(i32, String, String)> {
+    None
+}
 
 pub fn scroll_at(_x: f64, _y: f64, _dy: i32) {}
 
