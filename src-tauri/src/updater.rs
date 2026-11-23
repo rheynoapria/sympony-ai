@@ -97,12 +97,45 @@ pub fn endpoints_for(watch_beta: bool, override_url: Option<&str>) -> Vec<String
     }
 }
 
-/// Returns true when an updater error indicates a missing/unpublished manifest (HTTP 404 or empty release),
+/// Compares two SemVer 2.0.0 version strings (`0.2.0 > 0.2.0-beta.4 > 0.2.0-beta.3 > 0.1.0`).
+pub fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
+    fn parse(raw: &str) -> ((u64, u64, u64), bool, Vec<(bool, u64, String)>) {
+        let clean = raw.trim().trim_start_matches('v').split('+').next().unwrap_or("");
+        let (core_s, pre_s) = match clean.split_once('-') {
+            Some((c, p)) => (c, Some(p)),
+            None => (clean, None),
+        };
+        let mut nums = core_s.split('.').map(|s| s.parse::<u64>().unwrap_or(0));
+        let core = (
+            nums.next().unwrap_or(0),
+            nums.next().unwrap_or(0),
+            nums.next().unwrap_or(0),
+        );
+        let is_stable = pre_s.is_none();
+        let pre = pre_s
+            .map(|p| {
+                p.split('.')
+                    .map(|part| match part.parse::<u64>() {
+                        Ok(n) => (false, n, String::new()),
+                        Err(_) => (true, 0, part.to_string()),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (core, is_stable, pre)
+    }
+    parse(a).cmp(&parse(b))
+}
+
+/// Returns true when an updater error indicates a missing/unpublished manifest (HTTP 404 or empty release)
+/// or that the release manifest does not include a binary for this OS/architecture (`TargetNotFound`),
 /// which should be treated gracefully as "up to date" rather than alarming the user with a red error.
 pub fn is_missing_manifest_error(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
     e.contains("404")
         || e.contains("not found")
+        || e.contains("was not found in the response")
+        || e.contains("were found in the response")
         || e.contains("could not fetch a valid release json")
         || e.contains("valid release json")
         || e.contains("empty response")
@@ -283,13 +316,18 @@ pub async fn check_now(app: AppHandle, install: bool, silent: bool) -> Value {
         match updater.check().await {
             Ok(Some(upd)) => {
                 checked_any = true;
-                found = Some(upd);
-                break;
+                last_err = None;
+                let replace = match found.as_ref() {
+                    None => true,
+                    Some(best) => compare_semver(&upd.version, &best.version).is_gt(),
+                };
+                if replace {
+                    found = Some(upd);
+                }
             }
             Ok(None) => {
                 checked_any = true;
                 last_err = None;
-                break;
             }
             Err(e) => {
                 let msg = e.to_string();
@@ -299,7 +337,9 @@ pub async fn check_now(app: AppHandle, install: bool, silent: bool) -> Value {
                     continue;
                 }
                 last_err = Some(msg);
-                break;
+                if found.is_none() {
+                    break;
+                }
             }
         }
     }
@@ -643,7 +683,7 @@ pub fn open_release_page(app: &AppHandle) -> Value {
         _ => RELEASES_URL.to_string(),
     };
     std::thread::spawn(move || {
-        let _ = std::process::Command::new("/usr/bin/open").arg("--").arg(&url).status();
+        let _ = platform::os::shell::open(&url);
     });
     json!({ "ok": true })
 }
@@ -875,6 +915,17 @@ mod tests {
     fn missing_manifest_errors_recognized() {
         assert!(is_missing_manifest_error("status code 404 Not Found"));
         assert!(is_missing_manifest_error("Could not fetch a valid release JSON from the remote"));
+        assert!(is_missing_manifest_error("the platform `windows-x86_64` was not found in the response `platforms` object"));
+        assert!(is_missing_manifest_error("None of the fallback platforms `[\"windows-x86_64\"]` were found in the response `platforms` object"));
         assert!(!is_missing_manifest_error("connection refused"));
+    }
+
+    #[test]
+    fn semver_ordering_prefers_newest_across_beta_and_stable() {
+        assert!(compare_semver("0.2.0", "0.2.0-beta.4").is_gt());
+        assert!(compare_semver("0.2.0-beta.10", "0.2.0-beta.4").is_gt());
+        assert!(compare_semver("0.2.0-beta.4", "0.2.0-beta.3").is_gt());
+        assert!(compare_semver("0.2.0-beta.4", "0.1.0").is_gt());
+        assert!(compare_semver("v0.2.0-beta.4", "0.2.0-beta.4").is_eq());
     }
 }

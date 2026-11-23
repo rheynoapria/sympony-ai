@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.4] - 2026-11-23
+
 ### Added
+- **Official Windows x64 Release & Dual-OS Auto-Updater:** Sympony now ships official signed Windows NSIS installers (`Sympony_<v>_x64-setup.exe`) alongside macOS (`darwin-aarch64`) in a unified multi-platform `latest.json` (`darwin-aarch64` + `windows-x86_64`). Both macOS and Windows receive independent Stable and Beta update notifications matched to their OS binary.
+- **Floating Pony Chat Window:** Detach Pony into a resizable, draggable, optional always-on-top floating companion window (`pony-chat`) that shares live chat history, streaming responses, Markdown, tool steps, approval cards, and Glass/OLED looks across both macOS and Windows (WebView2 deadlock-safe), with one-click dock-to-notch and tray menu toggle.
+- **Liquid Smoked Crystal Glass Style:** Upgraded the `Glass` notch look (`data-look="glass"`) with multi-layer translucent depth, a 1 px directional specular bevel (`::before`), and seamless concave shoulder transitions.
+- **Copy User Chat Messages & Q&A Answers:** Added hover Copy buttons on user messages and interactive Q&A answer summaries in Pony Chat alongside assistant message copy.
 - **Windows port, phase 1 (builds and tests):** The Rust workspace now builds and its tests run on Windows. `crates/platform` has a `windows` backend with the same modules and signatures as `macos` (stand-ins that report "not available" for now), both reachable as `platform::os`; a new `platform::process` (own process group, kill the group, is a pid alive, parent pid) for Unix and Windows; and a `Rust (Windows)` CI job. On Windows, `crates/voice` links sherpa-onnx as DLLs (its static libraries use the static CRT, which MSVC won't mix with Rust's), and Pony's command and file tools refuse until their secret-place guards handle `cmd` syntax and Windows paths.
 - **Windows port, phase 2 (the notch):** On Windows the notch now sits centred on its display, stays above other windows and opens on hover with its modules. `platform::windows` reads the displays (per-monitor DPI, in the same points as macOS), the pointer and its buttons, and the taskbar; and sets Sympony's windows topmost, out of Alt+Tab, click-through or in front. With mixed display scales, the displays other than the primary one are placed approximately.
 - **Windows port, phase 3 (opening things):** On Windows, links, files and folders open in their app (ShellExecute), "show in folder" selects the file in Explorer, "Open with" starts the chosen program, and the file dialogs (Shelf, Launcher, drop actions, the adhan, backup import) are Explorer's. Both OSes reach this through `platform::os::shell` (`open`, `reveal`, `open_with`) and `platform::os::files::choose`; macOS keeps `open` and its AppleScript dialogs, moved as they were. `open_external` also accepts a Windows Settings page (`ms-settings:…`) and the Wi-Fi list (`ms-availablenetworks:`), which the Windows frontend links to; other Windows schemes stay refused.
@@ -77,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Voice V1:** On-device Indonesian-first hybrid STT (`Zipformer2-id` live partials + `Qwen3-ASR` Metal final pass) with deterministic KBBI/phonetic post-processing and custom user dictionary.
 - **Security Hardening:** Per-turn taint tracking (including YOLO mode), home-anchored secret & shell-profile protection, `0600`/`0700` data permissions, Hardened Runtime, backup disarming, SSRF-safe redirects, and scrubbed stdio MCP environments.
 
-[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.3...HEAD
+[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.4...HEAD
+[0.2.0-beta.4]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [0.2.0-beta.2]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/rheynoapria/sympony-ai/compare/v0.1.0...v0.2.0-beta.1

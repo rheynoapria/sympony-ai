@@ -246,7 +246,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.sig' -o -name 'SHA256SUMS.txt' \) -exec cp {} release-assets/ \;
+          find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.sig' \) -exec cp {} release-assets/ \;
+          # Merge per-OS SHA256SUMS.txt files instead of overwriting one OS's checksums with another's
+          find dist -type f -name 'SHA256SUMS.txt' -exec cat {} + | sort -u > release-assets/SHA256SUMS.txt
+          if [ ! -s release-assets/SHA256SUMS.txt ]; then rm -f release-assets/SHA256SUMS.txt; fi
 
           python3 tools/release-notes.py \
             --tag "$RELEASE_TAG" \

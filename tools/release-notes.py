@@ -140,7 +140,7 @@ def format_assets_table(assets_dir: Path | None, repo: str, tag: str) -> list[st
             arch = "Apple Silicon (`arm64`)" if ("arm64" in name or "aarch64" in name) else "Intel (`x86_64`)"
             rows.append((10, f"| macOS Installer ({arch}) | [`{name}`]({url}) | First-time install — Developer ID signed & Apple Notarized |"))
         elif name.endswith(".exe"):
-            rows.append((20, f"| Windows Installer (`x64`) | [`{name}`]({url}) | NSIS desktop installer |"))
+            rows.append((20, f"| Windows Installer (`x64`) | [`{name}`]({url}) | NSIS desktop installer & in-app auto-update package |"))
         elif name.endswith(".deb"):
             rows.append((30, f"| Linux Debian/Ubuntu (`amd64`) | [`{name}`]({url}) | `.deb` package |"))
         elif name.endswith(".rpm"):
@@ -166,6 +166,11 @@ def format_assets_table(assets_dir: Path | None, repo: str, tag: str) -> list[st
         "Verify download integrity on macOS / Linux:",
         "```bash",
         "shasum -a 256 -c SHA256SUMS.txt --ignore-missing",
+        "```",
+        "",
+        "Verify on Windows (PowerShell):",
+        "```powershell",
+        "Get-FileHash .\\Sympony_*_x64-setup.exe -Algorithm SHA256",
         "```",
     ]
 
@@ -243,8 +248,9 @@ def build_notes(
     out.extend([
         "## 🔄 How to Install or Update",
         "",
-        "- **Existing users (In-App Auto-Updater):** Sympony notifies you automatically when a new release matches your channel (**Stable** or **Beta**). Click **Update & Restart** (or **Install Beta**) — no manual `.dmg` reinstall required.",
-        "- **New macOS users:** Download the `.dmg` above, drag **Sympony.app** into **Applications**, and launch it. Official releases are signed with an Apple Developer ID certificate and notarized by Apple.",
+        "- **Existing users (In-App Auto-Updater on macOS & Windows):** Sympony notifies you automatically when a new release matches your OS and channel (**Stable** or **Beta**). Click **Update & Restart** (or **Install Beta**) — no manual reinstall required.",
+        "- **New macOS users:** Download the `.dmg` above, drag **Sympony.app** into **Applications**, and launch it. Official macOS releases are signed with an Apple Developer ID certificate and notarized by Apple.",
+        "- **New Windows users:** Download the `_x64-setup.exe` NSIS installer above and run it (Windows 10/11 x64). Subsequent Stable or Beta updates install automatically in-place.",
         "- **Switching channels:** Toggle **Watch Beta updates** anytime under **Settings → About & Updates**. Turning Beta off never downgrades — you will seamlessly move back to Stable on the next Stable release.",
         "",
     ])
