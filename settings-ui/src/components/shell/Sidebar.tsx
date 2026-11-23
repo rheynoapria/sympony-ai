@@ -43,6 +43,7 @@ export interface SidebarProps {
   onSelect: (id: string, opts?: { row?: string; part?: string }) => void;
   theme: Theme;
   onThemeChange: (next: Theme) => void;
+  updateBadge?: "stable" | "beta" | null;
 }
 
 export function Sidebar({
@@ -52,8 +53,10 @@ export function Sidebar({
   onSelect,
   theme,
   onThemeChange,
+  updateBadge,
 }: SidebarProps) {
   const isMac = os === "macos";
+  const isBetaBuild = version.includes("-");
   const [cmdOpen, setCmdOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
@@ -184,6 +187,17 @@ export function Sidebar({
           <SectionIcon name={sec.icon} className="size-4" />
         </span>
         <span className="truncate">{t(sec.title)}</span>
+        {sec.id === "about" && updateBadge && (
+          <span
+            aria-label={updateBadge === "beta" ? t("Beta") : t("New Release")}
+            className={cn(
+              "ms-auto size-2 shrink-0 rounded-full",
+              updateBadge === "beta"
+                ? "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.7)]"
+                : "bg-sky-500 shadow-[0_0_6px_rgba(14,165,233,0.7)]"
+            )}
+          />
+        )}
       </button>
     );
   };
@@ -218,9 +232,14 @@ export function Sidebar({
             </div>
             <div
               data-tauri-drag-region
-              className="mt-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
+              className="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium tabular-nums text-muted-foreground"
             >
-              {version ? `v${version}` : "…"}
+              <span>{version ? `v${version}` : "…"}</span>
+              {isBetaBuild && (
+                <span className="rounded bg-amber-500/18 px-1 py-px text-[9.5px] font-semibold tracking-wide text-amber-700 uppercase dark:bg-amber-400/20 dark:text-amber-300">
+                  {t("Beta")}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "beta"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "beta"]
 
 permissions:
   contents: read
@@ -23,12 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - name: Repository hygiene check
+      - name: Repository hygiene & version consistency check
         run: |
           if git ls-files | grep -qE '(^\.signing/|\.env$|\.keychain-db$)'; then
             echo "::error::Sensitive local signing or env file committed to git!"
             exit 1
           fi
+          ./tools/bump-version.sh --check
+          bash -n release/build.sh
+          python3 -m py_compile tools/release-notes.py
       - name: Frontend JS syntax check
         run: |
           for f in frontend/*.js frontend/modules/*.js; do

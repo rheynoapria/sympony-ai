@@ -7062,8 +7062,47 @@ window.N = {
   async boot() {
     paintIcons();
     applySettings(await api.getSettings());
-    // no update watcher: the binary's two update URLs are dead (tools/patch_updates.py), and its settings are kept off
-    { const s = st.settings; if (s.updateCheck || s.autoUpdate || s.usageCount) api.setSettings({ updateCheck: false, autoUpdate: false, usageCount: false }); }
+    // Legacy usage counter stays off; updateCheck & autoUpdate are active for the dual-channel updater.
+    { const s = st.settings; if (s.usageCount) api.setSettings({ usageCount: false }); }
+    // Listen for dual-channel update state (Stable vs Beta dot badge on Settings button + 1-time subtle notch toast)
+    const onUpdateState = (u) => {
+      if (!u || typeof u !== 'object') return;
+      st.update = u;
+      const btn = $('#btnSettings');
+      const avail = u.availableVersion && (u.status === 'available' || u.status === 'ready' || u.status === 'downloading');
+      const dismissed = u.dismissedVersion && u.dismissedVersion === u.availableVersion;
+      const showDot = !!(avail && (!dismissed || u.status === 'ready' || u.status === 'downloading'));
+      const isBeta = u.availableChannel === 'beta';
+      if (btn) {
+        btn.classList.toggle('has-update', showDot);
+        btn.classList.toggle('update-beta', showDot && isBeta);
+        btn.classList.toggle('update-stable', showDot && !isBeta);
+        btn.title = showDot
+          ? (isBeta
+            ? _t('Beta update available: v{v}', { v: u.availableVersion })
+            : _t('Update available: v{v}', { v: u.availableVersion }))
+          : _t('Settings');
+      }
+      if (avail && !dismissed && (u.status === 'available' || u.status === 'ready')) {
+        const key = `${u.availableChannel || 'stable'}:${u.availableVersion}`;
+        let seen = '';
+        try { seen = localStorage.getItem('sympony.updateNotified') || ''; } catch (e) { /* ignore */ }
+        if (seen !== key || u.preview) {
+          try { if (!u.preview) localStorage.setItem('sympony.updateNotified', key); } catch (e) { /* ignore */ }
+          if (isBeta) {
+            toast(fa('flask'), _t('Sympony v{v} Beta available', { v: u.availableVersion }), {
+              ms: 5500, color: '#f59e0b', glow: '#f59e0b', glowLoops: 2, side: 255, settings: 'about',
+            });
+          } else {
+            toast(fa('arrow-down'), _t('Sympony v{v} available', { v: u.availableVersion }), {
+              ms: 5500, color: '#38bdf8', glow: '#38bdf8', glowLoops: 2, side: 235, settings: 'about',
+            });
+          }
+        }
+      }
+    };
+    if (typeof api.onUpdate === 'function') api.onUpdate(onUpdateState);
+    if (typeof api.updateState === 'function') api.updateState().then(onUpdateState).catch(() => {});
     // Stacked notifications (swipe one sideways to dismiss it) start out on, once: turning them off in Settings → Animations stays
     try { if (!localStorage.getItem('sympony.stackedOn')) { localStorage.setItem('sympony.stackedOn', '1'); if (!st.settings.fxNotifStack) api.setSettings({ fxNotifStack: true }); } } catch (e) { /* no storage: the setting decides */ }
     dropCatalog = await api.svc('actions', 'catalog');

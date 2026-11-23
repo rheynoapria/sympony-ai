@@ -38,8 +38,11 @@ bun test ./frontend/tests
 
 ## Guidelines
 
+- **Branch targeting**: Open feature and bugfix pull requests against **`beta`** (active integration branch). Reserve **`main`** for Stable releases graduated from `beta` and urgent production hotfixes. See [docs/RELEASING.md](docs/RELEASING.md) for our full branching and SemVer standard.
+- **Commit style**: Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat(scope):`, `fix(scope):`, `perf(scope):`, `docs:`, `ci:`, `chore:`) so automated release notes stay clean and categorized.
 - **Code of Conduct**: All contributors and participants are expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 - **Changelog**: Note user-facing changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
+- **Version lockstep**: Never hand-edit version numbers in only one file — use `./tools/bump-version.sh` (checked automatically in CI with `./tools/bump-version.sh --check`).
 - **Small, focused PRs**: Keep each PR scoped to one bug fix, hardening item, or feature with unit tests covering the behaviour or regression.
 - **Security-sensitive areas**: Changes touching `crates/services/src/exec.rs`, `backup.rs`, `http.rs`, `mcp_client.rs`, `hooks.rs`, `phone.rs`, `src-tauri/src/brain.rs`, `hands.rs`, `eyes.rs`, or `tauri.conf.json` require explicit regression tests.
 - **UI & Motion**: Follow `DESIGN.md` — animate only `transform` and `opacity` (never layout properties), respect `prefers-reduced-motion`, and escape all dynamic text/attributes rendered into HTML.

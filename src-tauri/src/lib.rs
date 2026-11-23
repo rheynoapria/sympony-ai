@@ -36,6 +36,7 @@ mod shortcut;
 mod speedtest;
 mod tele;
 mod todosync;
+mod updater;
 mod voice;
 mod watchers;
 mod youtube;
@@ -73,6 +74,7 @@ pub fn hook_bridge(agent: &str, event: &str) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| settings_window::open(app, None)))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(shell::plugin())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -142,9 +144,11 @@ pub fn run() {
             speedtest::register(&mut reg, app.handle());
             tele::register(&mut reg, app.handle());
             backup::register(&mut reg, app.handle());
+            updater::register(&mut reg, app.handle());
             voice::register(&mut reg, app.handle());
             youtube::register(&mut reg, app.handle());
             app.manage(App { settings: deps.settings.clone(), deps, log, data_dir, reg, ctx, warned: Mutex::new(Default::default()) });
+            app.manage(updater::UpdaterState::new());
             voice::start(app.handle());
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -179,6 +183,7 @@ pub fn run() {
             lang::start(app.handle());
             extras::start(app.handle());
             radio::start(app.handle());
+            updater::start(app.handle());
             Ok(())
         })
         .invoke_handler(all_commands!())

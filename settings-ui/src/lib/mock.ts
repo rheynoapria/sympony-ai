@@ -30,6 +30,7 @@ export interface Notch {
   updateState(): Promise<Record<string, unknown> | null>;
   updateCheck(install?: boolean): Promise<Record<string, unknown> | null>;
   updatePage(): Promise<unknown>;
+  onUpdate?(fn: (state: Record<string, unknown>) => void): () => void;
   quit(): Promise<unknown>;
   log(msg: string): void;
   on(channel: string, fn: (payload: unknown) => void): () => void;
@@ -203,13 +204,59 @@ export function createMock(
       };
     },
     async updateState() {
-      return { state: "idle", version: "0.0.0-dev" };
+      return {
+        status: "upToDate",
+        currentVersion: "0.0.0-dev",
+        currentChannel: "beta",
+        watchBeta: typeof state.updateBeta === "boolean" ? state.updateBeta : true,
+        availableVersion: null,
+        availableChannel: null,
+        notes: "",
+        pubDate: null,
+        downloaded: 0,
+        total: null,
+        percent: null,
+        dismissedVersion: typeof state.dismissedUpdateVersion === "string" ? state.dismissedUpdateVersion : "",
+        lastChecked: null,
+        error: null,
+        preview: false,
+      };
     },
     async updateCheck() {
-      return { state: "idle", version: "0.0.0-dev" };
+      return {
+        status: "upToDate",
+        currentVersion: "0.0.0-dev",
+        currentChannel: "beta",
+        watchBeta: typeof state.updateBeta === "boolean" ? state.updateBeta : true,
+        availableVersion: null,
+        availableChannel: null,
+        notes: "",
+        pubDate: null,
+        downloaded: 0,
+        total: null,
+        percent: null,
+        dismissedVersion: typeof state.dismissedUpdateVersion === "string" ? state.dismissedUpdateVersion : "",
+        lastChecked: Date.now(),
+        error: null,
+        preview: false,
+      };
     },
     async updatePage() {
       return null;
+    },
+    onUpdate(fn) {
+      let set = channelListeners.get("update:state");
+      if (!set) {
+        set = new Set();
+        channelListeners.set("update:state", set);
+      }
+      const wrapped = (payload: unknown) => {
+        fn((payload as Record<string, unknown>) ?? {});
+      };
+      set.add(wrapped);
+      return () => {
+        set?.delete(wrapped);
+      };
     },
     async quit() {
       return null;

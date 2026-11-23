@@ -1,21 +1,33 @@
 import { Fragment, useEffect, useState } from "react";
 import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
   ExternalLink,
   FileDown,
   FileUp,
   FolderOpen,
   Loader2,
   Power,
+  RefreshCw,
   RotateCcw,
   RotateCw,
   Sparkles,
 } from "@/components/icons";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { Button } from "@/components/ui/knowns/button";
+import { Switch } from "@/components/ui/knowns/switch";
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/knowns/utils";
 import { notch } from "@/lib/notch";
+import {
+  effectiveWatchBeta,
+  formatBytes,
+  isPrereleaseVersion,
+  useUpdateState,
+} from "@/lib/update";
 import { onboardingApi } from "@/onboarding/api";
 import { leadNodes } from "@/rows/logic";
 import type { CustomPartProps, SectionBody } from "@/rows/types";
@@ -173,8 +185,9 @@ function InlineRich({ text }: { text: string }) {
   );
 }
 
-function AboutSection({ settings, os }: CustomPartProps) {
+function AboutSection({ settings, set, os }: CustomPartProps) {
   const [info, setInfo] = useState<{ version?: string; userData?: string }>({});
+  const { update, check: checkUpdate, install: installUpdate, openPage } = useUpdateState();
   const [whatsNew, setWhatsNew] = useState<WhatsNewData | null>(null);
   const [saved, setSaved] = useState<BackupSaved | null>(null);
   const [saveError, setSaveError] = useState("");
@@ -288,6 +301,66 @@ function AboutSection({ settings, os }: CustomPartProps) {
           "Settings, tasks, notes, AI chats, bookmarks, radio favourites, Dock and launcher items, your own events and calendar links, health, Pomodoro and screen time history, and the adhan and Dock icons you picked, in one .sympony file. Not in it: API keys and passwords (they’re locked to this PC, so enter them again on the other one), Todo sync’s sign-in, the Shelf and the notification history. The file isn’t encrypted, so keep it to yourself."
         );
 
+  const currentVer = info.version || update?.currentVersion || "";
+  const currentIsBeta = isPrereleaseVersion(currentVer);
+  const watchBeta = effectiveWatchBeta(settings, currentVer);
+  const autoCheck = settings.updateCheck !== false;
+  const autoDownload = Boolean(settings.autoUpdate);
+
+  const updStatus = update?.status ?? "idle";
+  const updAvailVer = update?.availableVersion ?? null;
+  const updAvailBeta = update?.availableChannel === "beta";
+  const updBusy = updStatus === "checking" || updStatus === "downloading" || updStatus === "installing";
+  const updPercent =
+    typeof update?.percent === "number"
+      ? Math.max(0, Math.min(100, update.percent))
+      : null;
+
+  const updateStatusLabel = (() => {
+    switch (updStatus) {
+      case "checking":
+        return t("Checking for updates…");
+      case "available":
+        return updAvailVer
+          ? updAvailBeta
+            ? t("Sympony v{version} (Beta) is available", { version: updAvailVer })
+            : t("Sympony v{version} is available", { version: updAvailVer })
+          : t("You’re up to date");
+      case "downloading":
+        return updPercent != null
+          ? t("Downloading {percent}%", { percent: updPercent })
+          : t("Downloading update…");
+      case "ready":
+        return updAvailVer
+          ? updAvailBeta
+            ? t("Sympony v{version} (Beta) is ready to install", { version: updAvailVer })
+            : t("Sympony v{version} is ready to install", { version: updAvailVer })
+          : t("Ready to restart");
+      case "installing":
+        return t("Installing update…");
+      case "error":
+        return t("Update failed");
+      default:
+        return t("You’re up to date");
+    }
+  })();
+
+  const updateStatusSub = (() => {
+    if (updStatus === "error" && update?.error) {
+      return <span className="text-destructive">{update.error}</span>;
+    }
+    if (updStatus === "downloading" && update?.downloaded) {
+      const size = update.total
+        ? `${formatBytes(update.downloaded)} / ${formatBytes(update.total)}`
+        : formatBytes(update.downloaded);
+      return <span className="tabular-nums">{size}</span>;
+    }
+    if (update?.lastChecked) {
+      return t("Last checked {when}", { when: formatWhen(update.lastChecked) });
+    }
+    return currentVer ? `v${currentVer}` : "";
+  })();
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/80 bg-card/60 p-4">
@@ -302,9 +375,14 @@ function AboutSection({ settings, os }: CustomPartProps) {
               <h2 className="text-[15px] font-semibold tracking-tight text-foreground">
                 Sympony
               </h2>
-              {info.version && (
+              {currentVer && (
                 <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-                  v{info.version}
+                  v{currentVer}
+                </span>
+              )}
+              {currentIsBeta && (
+                <span className="rounded-md bg-amber-500/18 px-1.5 py-0.5 text-[10.5px] font-semibold tracking-wide text-amber-700 uppercase dark:bg-amber-400/20 dark:text-amber-300">
+                  {t("Beta")}
                 </span>
               )}
             </div>
@@ -338,6 +416,168 @@ function AboutSection({ settings, os }: CustomPartProps) {
           </Button>
         </div>
       </div>
+
+      <PanelCard title={t("Updates")} icon={groupIcon("Updates")}>
+        <div className="divide-y divide-border/80">
+          <div className="pb-3">
+            <SettingsRow
+              label={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  {updStatus === "error" ? (
+                    <AlertTriangle className="size-3.5 text-destructive" />
+                  ) : updStatus === "available" || updStatus === "ready" ? (
+                    <Sparkles
+                      className={cn(
+                        "size-3.5",
+                        updAvailBeta
+                          ? "text-amber-500 dark:text-amber-400"
+                          : "text-sky-500 dark:text-sky-400"
+                      )}
+                    />
+                  ) : updStatus === "checking" || updStatus === "downloading" || updStatus === "installing" ? (
+                    <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                  ) : (
+                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  )}
+                  <span>{updateStatusLabel}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                      watchBeta
+                        ? "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300"
+                        : "bg-sky-500/15 text-sky-700 dark:bg-sky-400/20 dark:text-sky-300"
+                    )}
+                  >
+                    {watchBeta ? t("Beta") : t("Stable")}
+                  </span>
+                </span>
+              }
+              description={updateStatusSub}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {(updStatus === "available" || updStatus === "ready") && updAvailVer ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={updStatus === "ready" ? <RotateCw /> : <Download />}
+                    onClick={() => void installUpdate()}
+                    className={cn(
+                      updAvailBeta &&
+                        "!bg-amber-500 !text-zinc-950 hover:!bg-amber-400 dark:!bg-amber-400 dark:hover:!bg-amber-300"
+                    )}
+                  >
+                    {updStatus === "ready"
+                      ? updAvailBeta
+                        ? t("Restart & Install Beta")
+                        : t("Restart & Install")
+                      : updAvailBeta
+                        ? t("Install Beta")
+                        : t("Update & Restart")}
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={updBusy}
+                  icon={
+                    updBusy ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <RefreshCw />
+                    )
+                  }
+                  onClick={() => void checkUpdate(false)}
+                >
+                  {t("Check for updates")}
+                </Button>
+              </div>
+            </SettingsRow>
+            {(updStatus === "downloading" || updStatus === "installing") && (
+              <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-[width] duration-200 ease-out",
+                    updAvailBeta ? "bg-amber-500 dark:bg-amber-400" : "bg-sky-500 dark:bg-sky-400"
+                  )}
+                  style={{ width: `${updStatus === "installing" ? 100 : updPercent ?? 15}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="py-3">
+            <SettingsRow
+              label={t("Check for updates automatically")}
+              description={t("Checks for new Sympony releases in the background.")}
+            >
+              <Switch
+                checked={autoCheck}
+                onCheckedChange={(v) => void set({ updateCheck: v, updaterV1: true })}
+                aria-label={t("Check for updates automatically")}
+              />
+            </SettingsRow>
+          </div>
+
+          <div className="py-3">
+            <SettingsRow
+              label={t("Download updates automatically")}
+              description={t(
+                "Downloads new updates in the background so restarting applies them right away."
+              )}
+            >
+              <Switch
+                checked={autoDownload}
+                onCheckedChange={(v) => void set({ autoUpdate: v })}
+                aria-label={t("Download updates automatically")}
+              />
+            </SettingsRow>
+          </div>
+
+          <div className="py-3">
+            <SettingsRow
+              label={t("Watch Beta updates")}
+              description={
+                <>
+                  <span>
+                    {t(
+                      "Get early preview builds (-beta) before they reach Stable. You’ll also receive Stable releases when they ship."
+                    )}
+                  </span>
+                  {currentIsBeta && !watchBeta && (
+                    <span className="mt-1.5 block rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px] text-amber-700 dark:text-amber-300">
+                      {t(
+                        "You’re currently running a Beta build. Turning this off won’t downgrade — Sympony will switch back to Stable on the next Stable release."
+                      )}
+                    </span>
+                  )}
+                </>
+              }
+            >
+              <Switch
+                checked={watchBeta}
+                onCheckedChange={(v) => void set({ updateBeta: v })}
+                aria-label={t("Watch Beta updates")}
+              />
+            </SettingsRow>
+          </div>
+
+          <div className="pt-3">
+            <SettingsRow
+              label={t("Release notes")}
+              description={t("Every version’s notes on GitHub")}
+            >
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<ExternalLink />}
+                onClick={() => void openPage()}
+              >
+                {t("View release notes")}
+              </Button>
+            </SettingsRow>
+          </div>
+        </div>
+      </PanelCard>
 
       {whatsNew && (
         <PanelCard

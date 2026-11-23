@@ -1,8 +1,6 @@
-//! The commands `frontend/bridge.js` invokes, with its argument names. One not built yet answers its contract stub
-//! and logs `not implemented: <name>` once.
-use contract::Kind;
+//! The commands `frontend/bridge.js` invokes, with its argument names.
 use serde_json::Value;
-use services::{not_implemented, stub, Ctx, Registry};
+use services::{not_implemented, Ctx, Registry};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
@@ -17,13 +15,6 @@ pub struct App {
     pub warned: Mutex<HashSet<String>>,
 }
 
-impl App {
-    pub fn stub(&self, name: &str) -> Value {
-        not_implemented(&self.warned, &self.ctx, name);
-        stub(Kind::Command, name)
-    }
-}
-
 /// Async: off the main thread, so a service doing network calls never blocks the UI.
 #[tauri::command]
 pub async fn svc(handle: tauri::AppHandle, name: String, method: String, args: Vec<Value>) -> Result<Value, String> {
@@ -34,15 +25,6 @@ pub async fn svc(handle: tauri::AppHandle, name: String, method: String, args: V
     })
     .await
     .map_err(|e| e.to_string())
-}
-
-/// A command whose arguments aren't used yet: answers the stub.
-macro_rules! stubbed {
-    ($($name:ident ( $($arg:ident : $ty:ty),* );)*) => {$(
-        #[tauri::command]
-        #[allow(unused_variables)]
-        pub fn $name(app: State<App>, $($arg: $ty),*) -> Value { app.stub(stringify!($name)) }
-    )*};
 }
 
 /// The calendar is sent as the `calendar` event: once more now (`calendar_get`), or after fetching the feeds.
@@ -90,10 +72,19 @@ pub fn notch_hud(ms: f64) {
     let _ = ms;
 }
 
-stubbed! {
-    update_state();
-    update_check(install: bool);
-    update_page();
+#[tauri::command]
+pub fn update_state(handle: tauri::AppHandle) -> Value {
+    crate::updater::state_json(&handle)
+}
+
+#[tauri::command]
+pub async fn update_check(handle: tauri::AppHandle, install: Option<bool>) -> Value {
+    crate::updater::check_now(handle, install.unwrap_or(false), false).await
+}
+
+#[tauri::command]
+pub fn update_page(handle: tauri::AppHandle) -> Value {
+    crate::updater::open_release_page(&handle)
 }
 
 #[macro_export]

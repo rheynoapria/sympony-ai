@@ -100,6 +100,7 @@
     updateState: () => invoke('update_state'),
     updateCheck: (install) => invoke('update_check', { install: !!install }),
     updatePage: () => invoke('update_page'),
+    onUpdate: (fn) => symponyListen('update:state', fn),
     appIcon: (bundleId) => symponyInvoke('app_icon', { bundleId: bundleId || '' }),
     onShellFg: (fn) => symponyListen('shell:fg', fn),
     quit: () => invoke('app_quit'),

@@ -49,7 +49,9 @@ import {
 import { Placeholder } from "@/components/shell/Placeholder";
 import { SectionHeader } from "@/components/shell/SectionHeader";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { UpdateBanner } from "@/components/shell/UpdateBanner";
 import { SectionIcon } from "@/components/shell/icons";
+import { hasPendingBadge, useUpdateState } from "@/lib/update";
 
 const THEME_STORAGE_KEY = "sympony.settingsTheme";
 
@@ -144,6 +146,14 @@ function SettingsShell() {
   const [activePart, setActivePart] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({});
   const [version, setVersion] = useState<string>("");
+  const {
+    update,
+    check: checkUpdate,
+    install: installUpdate,
+    dismiss: dismissUpdate,
+    openPage: openUpdatePage,
+  } = useUpdateState();
+  const updateBadge = useMemo(() => hasPendingBadge(update), [update]);
   const [theme, setTheme] = useState<Theme>(readInitialTheme);
   const [systemDark, setSystemDark] = useState<boolean>(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -281,6 +291,7 @@ function SettingsShell() {
         onSelect={handleSelectSection}
         theme={theme}
         onThemeChange={handleThemeChange}
+        updateBadge={updateBadge}
       />
 
       <div
@@ -309,6 +320,14 @@ function SettingsShell() {
             </span>
           </div>
         </header>
+
+        <UpdateBanner
+          update={update}
+          onInstall={() => void installUpdate()}
+          onDismiss={() => void dismissUpdate()}
+          onRetry={() => void checkUpdate(false)}
+          onOpenPage={() => void openUpdatePage()}
+        />
 
         <main ref={mainRef} className="kn-scroll flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto flex max-w-[740px] flex-col gap-5">

@@ -64,6 +64,13 @@ pub fn migrate_notch(saved: &mut Map<String, Value>) {
         saved.insert("ponyFace".into(), Value::Bool(true));
         saved.insert("ponyV1".into(), Value::Bool(true));
     }
+    // (old builds forcibly saved updateCheck: false while the legacy updater URLs were dead; restore default once)
+    if saved.get("updateCheck") == Some(&Value::Bool(false))
+        && !saved.get("updaterV1").and_then(Value::as_bool).unwrap_or(false)
+    {
+        saved.remove("updateCheck");
+        saved.insert("updaterV1".into(), Value::Bool(true));
+    }
     // (Sympony AI is the default brain for new installs; one that already ran keeps the agent it was using)
     if !saved.is_empty() && !saved.contains_key("ponyBrain") {
         saved.insert("ponyBrain".into(), Value::from("agent"));
@@ -288,5 +295,19 @@ mod tests {
         migrate_notch(&mut m);
         assert_eq!(m.get("ponyFace"), Some(&json!(false)));
         assert_eq!(m.get("ponyV1"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn migrate_restores_update_check_once_and_respects_user_off() {
+        let mut m: Map<String, Value> = serde_json::from_value(json!({"updateCheck": false})).unwrap();
+        migrate_notch(&mut m);
+        assert!(!m.contains_key("updateCheck"));
+        assert_eq!(m.get("updaterV1"), Some(&json!(true)));
+
+        // After migration, explicitly turning updateCheck off stays off
+        m.insert("updateCheck".into(), json!(false));
+        migrate_notch(&mut m);
+        assert_eq!(m.get("updateCheck"), Some(&json!(false)));
+        assert_eq!(m.get("updaterV1"), Some(&json!(true)));
     }
 }

@@ -64,6 +64,7 @@
 }
 
 .ib {
+  position: relative;
   width: 26px; height: 26px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; line-height: 0; flex: none;
   color: var(--dim); cursor: pointer; transition: background 0.18s ease, color 0.18s ease, transform 0.2s var(--spring);
 }
@@ -71,6 +72,19 @@
 .ib:active { transform: scale(0.92); }
 .ib svg { width: 14px; height: 14px; }
 .ib[hidden] { display: none; }
+#btnSettings.has-update::after {
+  content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(10, 10, 12, 0.92);
+  pointer-events: none;
+}
+#btnSettings.has-update.update-stable::after {
+  background: #38bdf8;
+  box-shadow: 0 0 0 1.5px rgba(10, 10, 12, 0.92), 0 0 8px rgba(56, 189, 248, 0.75);
+}
+#btnSettings.has-update.update-beta::after {
+  background: #f59e0b;
+  box-shadow: 0 0 0 1.5px rgba(10, 10, 12, 0.92), 0 0 8px rgba(245, 158, 11, 0.75);
+}
 #topBars { margin-inline-end: 4px; cursor: pointer; }
 
 /* ------------------------------------------------------------ stage (632 × 218): dashboard ⇄ section slides only */

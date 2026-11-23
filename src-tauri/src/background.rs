@@ -86,6 +86,7 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
         location_soon(app);
     }
     crate::voice::settings_changed(app, patch);
+    crate::updater::settings_changed(app, patch);
 }
 
 /// At start, then whenever services::schedule::due says (every 30 wall-clock minutes, and right after waking).

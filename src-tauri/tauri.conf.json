@@ -32,5 +32,16 @@
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU1MzY4N0RBRjAxNzhCRTkKUldUcGl4Zncyb2MyVlI2Z2dRNFNTbUkvNUk4N3JDWWhpd0xpbHhWTmNIb1Fha084STNtbEJPQ1AK",
+      "endpoints": [
+        "https://github.com/rheynoapria/sympony-ai/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

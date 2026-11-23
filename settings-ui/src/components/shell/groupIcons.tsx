@@ -48,6 +48,7 @@ const ICONS: Record<string, () => ReactNode> = {
   "Try it": () => tint("MousePointerClick", "#3b82f6"),
   Default: () => tint("Star", "#f59e0b"),
   Info: () => tint("Info", "#3b82f6"),
+  Updates: () => tint("Download", "#0ea5e9"),
   "Back up and restore": () => tint("DatabaseBackup", "#14b8a6"),
   // features
   Reminders: () => tint("BellRing", "#ef4444"),

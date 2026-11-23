@@ -9,8 +9,9 @@
 **Your desktop notch AI companion — local-first Pony assistant (MCP, Skills, Eyes & Hands), offline Indonesian-first voice dictation, and 24 OLED modules in Rust.**
 
 <p>
-  <a href="https://github.com/rheynoapria/sympony-ai/releases"><img src="https://img.shields.io/badge/version-v0.1.0-4361ff?style=for-the-badge" alt="Version v0.1.0" /></a>
-  <img src="https://img.shields.io/badge/macOS-Ready-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Ready" />
+  <a href="https://github.com/rheynoapria/sympony-ai/releases"><img src="https://img.shields.io/github/v/release/rheynoapria/sympony-ai?include_prereleases&label=Release&style=for-the-badge&color=4361ff" alt="Latest Release" /></a>
+  <a href="https://github.com/rheynoapria/sympony-ai/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rheynoapria/sympony-ai/ci.yml?branch=main&label=CI&style=for-the-badge" alt="CI Status" /></a>
+  <img src="https://img.shields.io/badge/macOS-Signed%20%26%20Notarized-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Signed & Notarized" />
   <img src="https://img.shields.io/badge/Windows%20%26%20Linux-Roadmap-1f1f27?style=for-the-badge" alt="Windows & Linux Roadmap" />
   <img src="https://img.shields.io/badge/Rust-Tauri%202-f74c00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust + Tauri 2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-4ade80?style=for-the-badge" alt="License GPL-3.0-only" /></a>
@@ -114,7 +115,7 @@ Sympony is designed from day one as a **multi-platform desktop notch** using cle
 
 | Platform | Status | Backend & Packaging |
 |---|---|---|
-| **macOS** *(11.0+, Apple Silicon)* | ✅ **Ready (`v0.1.0`)** | Native `objc2` FFI, Accessibility, CoreAudio, Apple Vision OCR, Metal STT, `.dmg` / `.app` |
+| **macOS** *(11.0+, Apple Silicon)* | ✅ **Ready** | Native `objc2` FFI, Accessibility, CoreAudio, Apple Vision OCR, Metal STT, Notarized `.dmg` & In-App Auto-Updater |
 | **Windows** *(x64 / ARM64)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Win32/UIA backend + NSIS installer |
 | **Linux** *(Wayland / X11)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Linux backend + `.deb` / `.rpm` |
 
@@ -173,6 +174,13 @@ flowchart LR
 
 ## 🚀 Getting Started
 
+### Download & In-App Auto-Updates
+
+Grab the latest signed & notarized installer from **[GitHub Releases](https://github.com/rheynoapria/sympony-ai/releases)**:
+
+- **Stable channel (`vX.Y.Z`):** Everyday releases built from `main`.
+- **Beta channel (`vX.Y.Z-beta.N`):** Early preview builds cut from `beta`. Opt in anytime via **Settings → About & Updates → Watch Beta updates** — Sympony downloads cryptographically verified updates in-place without requiring a manual `.dmg` reinstall, and graduates Beta users smoothly to Stable when Stable ships.
+
 ### Prerequisites
 
 - **Rust** stable toolchain (`rustup`)
@@ -226,7 +234,8 @@ bun test ./frontend/tests
 
 ## 🤝 Contributing & Licensing
 
-- **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the PR verification checklist.
+- **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, branch targeting (`beta` vs `main`), and the PR verification checklist.
+- **Changelog & Releases:** See [CHANGELOG.md](CHANGELOG.md) for version history and [docs/RELEASING.md](docs/RELEASING.md) for our SemVer & dual-channel release standard.
 - **Security Policy:** See [SECURITY.md](SECURITY.md) for vulnerability reporting and our local-privilege security model.
 - **Third-Party Notices:** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dictionary, model, icon, and library attributions.
 - **License:** Distributed under the **GNU General Public License v3.0 only (`GPL-3.0-only`)**. See [LICENSE](LICENSE) for details.
