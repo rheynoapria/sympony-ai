@@ -2474,10 +2474,12 @@ api.on('voice:command', (d) => {
   openNotch('chat');
   setTimeout(() => {
     if (window.N && N.chat && typeof N.chat.send === 'function') {
-      // (with Eyes on, where the user was when they spoke: Pony reads that window if the request is about it)
+      // (with Eyes on, pass front-window hint silently in context so Pony uses screen_read only when user intent refers to the screen)
       const sc = d.screen;
-      const note = sc && sc.app ? `The user spoke this while looking at ${sc.app}${sc.title ? ` — "${sc.title}"` : ''}. If the request is about what's on their screen ("this", "this page", "this email"), read it with screen_read first.` : '';
-      N.chat.send(txt, note ? { attach: [{ kind: 'text', name: `${_t('Screen')}: ${sc.app}`, text: note, size: note.length }] } : {});
+      const screenContext = sc && sc.app
+        ? `Background hint (not an attached file; ignore unless the user's intent actually refers to their screen): the app in front when they spoke was ${sc.app}${sc.title ? ` — "${sc.title}"` : ''}.`
+        : '';
+      N.chat.send(txt, screenContext ? { screenContext } : {});
     } else {
       const inp = $('#page-chat textarea, #page-chat input[type="text"]');
       if (inp) { inp.value = txt; inp.focus(); }

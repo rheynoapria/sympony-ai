@@ -1152,7 +1152,9 @@
     pending = true;
     save(); changed();
     if (N.pony && N.pony.sync) N.pony.sync();
-    const context = await dayContext().catch(() => '');
+    const dayCtx = await dayContext().catch(() => '');
+    const extraCtx = opts && opts.screenContext ? String(opts.screenContext) : '';
+    const context = [dayCtx, extraCtx].filter(Boolean).join('\n');
     // this run's id: the agent's calls to Sympony's tools come back to this window with it (agent:tool below)
     const session = uid().replace(/[^a-z0-9]/gi, '');
     tool = { session, actions: [], steps: [], start: Date.now() };
