@@ -9,6 +9,7 @@ mod appbar;
 mod audio;
 pub mod automation;
 mod brightness;
+mod image;
 pub mod displays;
 pub mod keychain;
 pub mod location;
