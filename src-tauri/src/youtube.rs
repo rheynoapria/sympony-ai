@@ -1,21 +1,26 @@
 //! YouTube video mode.
 //! The player page: helper/yt.html served on a loopback port, loaded by the notch as http://localhost:<port>/yt.html.
-//! The video: looked up in the playing browser's tabs (helper/yt_tabs.js, its own short osascript, after the
-//! Automation permission) only while the open notch shows Music (`yt.want`), and sent as `video` with the media.
+//! The video: looked up in the playing browser's tabs (macOS: helper/yt_tabs.js, its own short osascript, after the
+//! Automation permission; Windows: the address bar of the browser window showing it) only while the open notch shows
+//! Music (`yt.want`), and sent as `video` with the media.
 use crate::commands::App;
 use platform::os::automation;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;
+#[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(target_os = "macos")]
 const TABS: &str = include_str!("../helper/yt_tabs.js");
+#[cfg(target_os = "macos")]
 static TABS_WRITTEN: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
 fn ensure_tabs_script(data_dir: &std::path::Path) -> std::path::PathBuf {
     let p = data_dir.join("helper/yt_tabs.js");
     if !TABS_WRITTEN.load(Ordering::Relaxed) || !p.exists() {
@@ -57,12 +62,16 @@ pub fn fill(app: &AppHandle, m: &mut Value) {
         return;
     }
     // (asking macOS only ever happens while Music is open; before that, only for a browser already allowed)
-    if !y.want.load(Ordering::SeqCst) && !*y.allowed.lock().unwrap().entry(bid.clone()).or_insert_with(|| automation::status(&bid, false) == "granted") {
+    // (the open notch showing Music, or the floating video: both want the video)
+    let want = y.want.load(Ordering::SeqCst) || app.get_webview_window(FLOAT).is_some();
+    if !want && !*y.allowed.lock().unwrap().entry(bid.clone()).or_insert_with(|| automation::status(&bid, false) == "granted") {
         return;
     }
     let key = services::youtube::lookup_key(m);
     let mut s = y.slot.lock().unwrap();
-    if services::youtube::due(&s.key, &key, s.id.is_some(), m["playing"] == true, s.busy, y.want.load(Ordering::SeqCst), s.at.elapsed()) {
+    // (again every 2 s on Windows, where a lookup reads one address bar; 5 s on macOS, an osascript each time)
+    let every = Duration::from_secs(if cfg!(windows) { 2 } else { 5 });
+    if services::youtube::due_every(&s.key, &key, s.id.is_some(), m["playing"] == true, s.busy, want, s.at.elapsed(), every) {
         let (id, avatar) = if s.key == key { (s.id.take(), s.avatar.take()) } else { (None, None) };
         *s = Slot { key: key.clone(), id, avatar, busy: true, at: Instant::now() };
         let (app, title, key) = (app.clone(), m["title"].as_str().unwrap_or("").to_string(), key.clone());
@@ -110,7 +119,7 @@ fn channel_avatar(id: &str) -> Option<String> {
 }
 
 /// The playing tab's video: asks macOS for the Automation permission the first time (the one prompt), then reads
-/// the browser's tabs.
+/// the browser's tabs. (Windows asks nothing: `automation::status` is "granted" there.)
 fn find(app: &AppHandle, bid: &str, title: &str) -> Option<String> {
     let a = app.state::<App>();
     let st = match automation::status(bid, false) {
@@ -126,6 +135,13 @@ fn find(app: &AppHandle, bid: &str, title: &str) -> Option<String> {
         return None;
     }
     app.state::<Yt>().allowed.lock().unwrap().insert(bid.to_string(), true);
+    services::youtube::pick_tab(&tabs(app, bid, title)?, title)
+}
+
+/// The browser's video tabs `(address, title)`, from helper/yt_tabs.js.
+#[cfg(target_os = "macos")]
+fn tabs(app: &AppHandle, bid: &str, _title: &str) -> Option<Vec<(String, String)>> {
+    let a = app.state::<App>();
     let path = ensure_tabs_script(&a.data_dir);
     let mut child = Command::new("/usr/bin/osascript").args(["-l", "JavaScript"]).arg(&path).arg(bid)
         .stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
@@ -150,12 +166,107 @@ fn find(app: &AppHandle, bid: &str, title: &str) -> Option<String> {
         }
     }
     let out = reader.join().ok()?;
-    match services::youtube::parse_tabs(&out) {
-        Some(tabs) => services::youtube::pick_tab(&tabs, title),
-        None => {
-            a.log.line(&format!("youtube: {bid} tabs: {}", out.trim()));
-            None
+    let tabs = services::youtube::parse_tabs(&out);
+    if tabs.is_none() {
+        a.log.line(&format!("youtube: {bid} tabs: {}", out.trim()));
+    }
+    tabs
+}
+
+/// Windows: the address bar of each of the browser's windows whose title names what plays (only those are read),
+/// with that title. A window shows its current tab: a video in a tab behind another is found once it's in front.
+#[cfg(windows)]
+fn tabs(_app: &AppHandle, bid: &str, title: &str) -> Option<Vec<(String, String)>> {
+    let exe = services::youtube::windows_browser(bid)?;
+    Some(platform::os::browser::addresses(exe, &|t| services::youtube::names(t, title)))
+}
+
+/// The floating video (picture in picture): its window, frontend/ytfloat.html.
+pub const FLOAT: &str = "ytfloat";
+/// Its place and size (logical points) as last moved or resized, kept in Settings (`ytFloat`) when it closes.
+static FLOAT_BOUNDS: Mutex<Option<(f64, f64, f64, f64)>> = Mutex::new(None);
+
+/// Opens the floating video over every window (where it was last time, else the primary display's bottom-right
+/// corner; without taking the keyboard from the app in front) or closes it.
+fn float(app: &AppHandle, open: bool) {
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = a.get_webview_window(FLOAT) {
+            if !open {
+                let _ = w.close();
+            }
+            return;
         }
+        if !open {
+            return;
+        }
+        let (x, y, w, h) = float_bounds(&a);
+        let built = WebviewWindowBuilder::new(&a, FLOAT, WebviewUrl::App("ytfloat.html".into()))
+            .initialization_script(crate::page_globals())
+            .title("Sympony video")
+            .decorations(false)
+            .shadow(true)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .resizable(true)
+            .focused(false)
+            .min_inner_size(240.0, 135.0)
+            .inner_size(w, h)
+            .position(x, y)
+            .build();
+        match built {
+            Ok(win) => {
+                *FLOAT_BOUNDS.lock().unwrap() = Some((x, y, w, h));
+                let h = a.clone();
+                win.on_window_event(move |e| match e {
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                        if let Some(w) = h.get_webview_window(FLOAT) {
+                            let k = w.scale_factor().unwrap_or(1.0);
+                            if let (Ok(p), Ok(s)) = (w.outer_position(), w.inner_size()) {
+                                let (p, s) = (p.to_logical::<f64>(k), s.to_logical::<f64>(k));
+                                *FLOAT_BOUNDS.lock().unwrap() = Some((p.x, p.y, s.width, s.height));
+                            }
+                        }
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        if let Some((x, y, w, h2)) = *FLOAT_BOUNDS.lock().unwrap() {
+                            h.state::<App>().settings.set(json!({ "ytFloat": { "x": x, "y": y, "w": w, "h": h2 } }));
+                        }
+                    }
+                    _ => {}
+                });
+            }
+            Err(e) => a.state::<App>().log.line(&format!("floating video window: {e}")),
+        }
+    });
+}
+
+/// Where the floating video opens: where it was, while that's still on a display; else 400×225 in the primary
+/// display's bottom-right corner, above the taskbar / Dock.
+fn float_bounds(app: &AppHandle) -> (f64, f64, f64, f64) {
+    let saved = &app.state::<App>().settings.snapshot()["ytFloat"];
+    let num = |k: &str| saved[k].as_f64();
+    let on_a_display = |x: f64, y: f64| {
+        app.available_monitors().unwrap_or_default().iter().any(|m| {
+            let k = m.scale_factor();
+            let (p, s) = (m.position().to_logical::<f64>(k), m.size().to_logical::<f64>(k));
+            x >= p.x && y >= p.y && x < p.x + s.width && y < p.y + s.height
+        })
+    };
+    if let (Some(x), Some(y), Some(w), Some(h)) = (num("x"), num("y"), num("w"), num("h")) {
+        if w >= 240.0 && h >= 135.0 && on_a_display(x + w / 2.0, y + h / 2.0) {
+            return (x, y, w, h);
+        }
+    }
+    let (w, h, margin) = (400.0, 225.0, 24.0);
+    match app.primary_monitor().ok().flatten() {
+        Some(m) => {
+            let (k, area) = (m.scale_factor(), m.work_area());
+            let (p, s) = (area.position.to_logical::<f64>(k), area.size.to_logical::<f64>(k));
+            (p.x + s.width - w - margin, p.y + s.height - h - margin, w, h)
+        }
+        None => (margin, margin, w, h),
     }
 }
 
@@ -219,6 +330,12 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         }
         Ok(Value::Null)
     }));
+    // the floating video: open (true, also when no argument) or closed (false)
+    let h = app.clone();
+    reg.add("yt.float", Box::new(move |_, a| {
+        float(&h, a.first().and_then(Value::as_bool).unwrap_or(true));
+        Ok(Value::Null)
+    }));
     // Settings → Media: the browser playing now and whether Sympony may read its tabs
     let h = app.clone();
     reg.add("yt.status", Box::new(move |_, _| {
@@ -253,6 +370,7 @@ mod tests {
         assert!(get(port, "/yt.html/../secrets.json").starts_with("HTTP/1.1 404"));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn tabs_helper_is_rewritten_if_deleted() {
         let dir = std::env::temp_dir().join(format!("sy-yt-helper-{}", std::process::id()));

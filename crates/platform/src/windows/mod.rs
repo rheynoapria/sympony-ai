@@ -17,6 +17,8 @@ pub mod ax;
 pub mod radios;
 pub mod calendar;
 pub mod files;
+pub mod media;
+pub mod browser;
 pub mod player;
 pub mod shell;
 pub mod voice;
@@ -30,4 +32,23 @@ impl MainThreadMarker {
     pub fn new() -> Option<Self> {
         Some(Self(()))
     }
+}
+
+/// COM on this thread, in the multithreaded apartment (WinRT and UI Automation calls that wait on their answers),
+/// once per thread and undone when the thread ends. A thread already in another apartment stays in it.
+pub(crate) fn mta() {
+    struct Com(bool);
+    impl Drop for Com {
+        fn drop(&mut self) {
+            if self.0 {
+                // SAFETY: this thread's CoInitializeEx succeeded (below)
+                unsafe { ::windows::Win32::System::Com::CoUninitialize() };
+            }
+        }
+    }
+    thread_local! {
+        // SAFETY: paired with CoUninitialize in Drop, on this same thread, only when it succeeded
+        static COM: Com = Com(unsafe { ::windows::Win32::System::Com::CoInitializeEx(None, ::windows::Win32::System::Com::COINIT_MULTITHREADED) }.is_ok());
+    }
+    COM.with(|_| {});
 }

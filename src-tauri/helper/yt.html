@@ -3,7 +3,7 @@
 <!-- Sympony's YouTube video mode (src-tauri/src/youtube.rs serves this as http://localhost:<port>/yt.html; the notch
      loads it in an iframe: YouTube refuses tauri:// (153) and, for label videos, 127.0.0.1 (150)). Always muted;
      driven by the notch over postMessage: {type:load,id,at,playing} {type:play} {type:pause} {type:seek,at} {type:rate,r};
-     answers {type:ready} {type:state,s,t} {type:time,t,d} every 500 ms {type:error,code}. -->
+     answers {type:ready} {type:state,s,t} {type:time,t,d} every 250 ms {type:error,code}. -->
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:fixed;inset:0;width:100vw;height:100vh}</style>
 </head><body><div id="p"></div>
 <script>
@@ -38,7 +38,7 @@ window.onYouTubeIframeAPIReady = () => {
       onError: (e) => say({ type: 'error', code: e.data }),
     },
   });
-  setInterval(() => { if (ready && player.getCurrentTime) say({ type: 'time', t: player.getCurrentTime(), d: player.getDuration() }); }, 500);
+  setInterval(() => { if (ready && player.getCurrentTime) say({ type: 'time', t: player.getCurrentTime(), d: player.getDuration() }); }, 250);
 };
 const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
 </script></body></html>

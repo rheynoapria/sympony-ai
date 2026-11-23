@@ -8,7 +8,7 @@ fn playing_part(p: &Value) -> Option<&Value> {
     (s != "stopped" && p["title"].as_str().is_some_and(|t| !t.is_empty())).then_some(p)
 }
 
-/// What plays wins over what's paused; then Spotify over whatever macOS says is playing.
+/// What plays wins over what's paused; then Spotify over whatever the system says is playing.
 pub fn from_poll(poll: &Value, now_ms: i64) -> Value {
     let parts = [("spotify", playing_part(&poll["spotify"])), ("music", playing_part(&poll["music"]))];
     let pick = |state: Option<&str>| parts.iter().find_map(|(s, p)| p.filter(|p| state.is_none_or(|st| p["state"] == st)).map(|p| (*s, p)));
@@ -26,10 +26,14 @@ pub fn from_poll(poll: &Value, now_ms: i64) -> Value {
         "artwork": if spotify && !str_of("art").is_empty() { json!(str_of("art")) } else { Value::Null },
         "arts": p["arts"].as_i64().unwrap_or(0),
         "duration": duration, "position": p["position"].as_f64().unwrap_or(0.0), "positionUpdated": now_ms,
+        // (Windows: when the app last told its position; a new one is a change to send, `changed`)
+        "positionStamp": p["stamp"].as_i64().filter(|s| *s > 0),
         "rate": p["rate"].as_f64().filter(|r| *r > 0.0).unwrap_or(1.0),
         "shuffle": p["shuffle"], "repeat": p["repeat"],
         "canShuffle": p["canShuffle"].as_bool().unwrap_or(false), "canRepeat": p["canRepeat"].as_bool().unwrap_or(false),
-        "canSeek": duration > 0.0,
+        // (Windows says which controls the app takes; the macOS helper doesn't: all of them)
+        "canPrev": p["canPrev"].as_bool().unwrap_or(true), "canNext": p["canNext"].as_bool().unwrap_or(true),
+        "canSeek": duration > 0.0 && p["canSeek"].as_bool().unwrap_or(true),
     })
 }
 

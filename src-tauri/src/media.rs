@@ -1,16 +1,25 @@
-//! Now playing: the JXA helper as a child process (JSON lines), polled every second while media is on.
+//! Now playing, polled every second while media is on: on macOS the JXA helper as a child process (JSON lines), on
+//! Windows the system media controls (`platform::os::media`), which answer as the helper does.
 use crate::commands::App;
 use serde_json::{json, Value};
+#[cfg(target_os = "macos")]
 use std::io::{BufRead, BufReader, Write};
+#[cfg(target_os = "macos")]
 use std::process::{Child, ChildStdin, Command, Stdio};
+#[cfg(target_os = "macos")]
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "macos")]
 const SCRIPT: &str = include_str!("../helper/media_mac.js");
+#[cfg(target_os = "macos")]
 const SERVES: u32 = 1500; // the helper exits by itself after this many requests
 
+#[cfg(target_os = "macos")]
 struct Proc {
     child: Child,
     stdin: ChildStdin,
@@ -18,6 +27,7 @@ struct Proc {
     served: u32,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Default)]
 struct Helper {
     proc: Option<Proc>,
@@ -26,6 +36,7 @@ struct Helper {
     cleaned: bool,
 }
 
+#[cfg(target_os = "macos")]
 impl Helper {
     fn spawn(&mut self, dir: &std::path::Path) -> anyhow::Result<()> {
         let path = dir.join("helper/media_mac.js");
@@ -115,6 +126,7 @@ impl Helper {
 
 #[derive(Default)]
 pub struct Media {
+    #[cfg(target_os = "macos")]
     helper: Mutex<Helper>,
     last: Mutex<Value>,
     art: Mutex<crate::artwork::Slot>,
@@ -127,20 +139,33 @@ impl Media {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ask(app: &AppHandle, req: &Value, wait: Duration) -> Option<Value> {
     let a = app.state::<App>();
     let log = |m: &str| a.log.line(m);
     app.state::<Media>().helper.lock().unwrap().request(&a.data_dir, req, wait, &log)
 }
 
+#[cfg(target_os = "macos")]
 fn spotify_pid() -> i64 {
     platform::os::apps::pid_of("com.spotify.client").unwrap_or(0) as i64
 }
 
+/// What plays now, as the helper answers (`{spotify, music}`).
+#[cfg(target_os = "macos")]
+fn poll(app: &AppHandle) -> Value {
+    ask(app, &json!({ "op": "poll", "spotify": spotify_pid(), "music": 1 }), Duration::from_secs(3)).unwrap_or(Value::Null)
+}
+
+/// What plays now: everything (Spotify too) reports to the system media controls on Windows.
+#[cfg(windows)]
+fn poll(_app: &AppHandle) -> Value {
+    json!({ "spotify": null, "music": platform::os::media::poll() })
+}
+
 /// One poll: read, add the artwork, send it if it changed.
 pub fn tick(app: &AppHandle) {
-    let poll = ask(app, &json!({ "op": "poll", "spotify": spotify_pid(), "music": 1 }), Duration::from_secs(3)).unwrap_or(Value::Null);
-    let mut m = services::media::from_poll(&poll, chrono::Utc::now().timestamp_millis());
+    let mut m = services::media::from_poll(&poll(app), chrono::Utc::now().timestamp_millis());
     // Sympony's own radio: while it plays (or nothing else plays) it's what the notch shows
     match crate::radio::media(app) {
         Some(r) if r["playing"] == true || m["playing"] != true => m = r,
@@ -176,22 +201,34 @@ pub fn start(app: &AppHandle) {
 
 /// `helper_cmd {cmd:"media", action, value}`: to the source playing now, then a poll at once.
 pub fn command(app: &AppHandle, action: &str, value: &Value) {
-    let source = app.state::<Media>().last()["source"].as_str().unwrap_or("music").to_string();
+    let last = app.state::<Media>().last();
+    let source = last["source"].as_str().unwrap_or("music").to_string();
     if source == "radio" {
         crate::radio::command(app, action);
         tick(app);
         return;
     }
-    let req = services::media::command(&source, spotify_pid(), action, value);
-    if ask(app, &req, Duration::from_secs(3)).is_some_and(|r| r["ok"] != true) {
+    #[cfg(target_os = "macos")]
+    let ok = ask(app, &services::media::command(&source, spotify_pid(), action, value), Duration::from_secs(3)).map(|r| r["ok"] == true);
+    #[cfg(windows)]
+    let ok = Some(platform::os::media::command(last["app"].as_str().unwrap_or(""), action, value));
+    if ok == Some(false) {
         app.state::<App>().log.line(&format!("media: {action} didn't work"));
     }
     tick(app);
 }
 
+/// The cover of the song playing, as its app gave it, to `path`.
+#[cfg(target_os = "macos")]
 pub(crate) fn ask_art(app: &AppHandle, path: &std::path::Path) -> bool {
     // the helper may look the cover up on iTunes first (two 6 s requests at most)
     ask(app, &json!({ "op": "art", "path": path }), Duration::from_secs(14)).is_some_and(|r| r["ok"] == true)
+}
+
+#[cfg(windows)]
+pub(crate) fn ask_art(_app: &AppHandle, path: &std::path::Path) -> bool {
+    let write = |b: Vec<u8>| path.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(path, b).is_ok();
+    platform::os::media::artwork().is_some_and(write)
 }
 
 pub(crate) fn art_slot(app: &AppHandle) -> std::sync::MutexGuard<'_, crate::artwork::Slot> {

@@ -13,8 +13,16 @@ pub const BROWSERS: &[&str] = &[
     "com.apple.Safari",
 ];
 
+/// Windows: the Chromium browsers whose address bar is read (UI Automation), by the app id they give the system
+/// media controls (`Chrome`, or `Chrome.…` for a channel or profile) → their program.
+const WINDOWS_BROWSERS: &[(&str, &str)] = &[("Chrome", "chrome.exe"), ("MSEdge", "msedge.exe"), ("Brave", "brave.exe"), ("Vivaldi", "vivaldi.exe")];
+
+pub fn windows_browser(app_id: &str) -> Option<&'static str> {
+    WINDOWS_BROWSERS.iter().find(|(id, _)| app_id == *id || app_id.strip_prefix(id).is_some_and(|r| r.starts_with('.'))).map(|(_, exe)| *exe)
+}
+
 pub fn is_browser(bundle: &str) -> bool {
-    BROWSERS.contains(&bundle)
+    BROWSERS.contains(&bundle) || windows_browser(bundle).is_some()
 }
 
 /// Safari names a tab's title `name`, the Chromium browsers `title`.
@@ -53,16 +61,20 @@ fn norm(s: &str) -> String {
     s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
 
+/// A tab's (or a browser window's: "… - YouTube - Google Chrome") title names what's playing.
+pub fn names(tab_title: &str, now_title: &str) -> bool {
+    let (t, want) = (norm(tab_title), norm(now_title));
+    !t.is_empty() && !want.is_empty() && (t.contains(&want) || want.contains(t.as_str()))
+}
+
 /// From the browser's tabs `(address, title)`: the video of the tab whose title matches what's playing; the only
 /// video tab there is only when nothing names what's playing (an unrelated paused tab must not stand in for YouTube
 /// Music, Spotify Web… playing in another tab); none when that can't be told.
 pub fn pick_tab(tabs: &[(String, String)], now_title: &str) -> Option<String> {
-    let videos: Vec<(String, String)> = tabs.iter().filter_map(|(u, t)| video_id(u).map(|id| (id, norm(t)))).collect();
+    let videos: Vec<(String, &str)> = tabs.iter().filter_map(|(u, t)| video_id(u).map(|id| (id, t.as_str()))).collect();
     let want = norm(now_title);
-    if !want.is_empty() {
-        if let Some((id, _)) = videos.iter().find(|(_, t)| !t.is_empty() && (t.contains(&want) || want.contains(t.as_str()))) {
-            return Some(id.clone());
-        }
+    if let Some((id, _)) = videos.iter().find(|(_, t)| names(t, now_title)) {
+        return Some(id.clone());
     }
     match videos.as_slice() {
         [(id, _)] if want.is_empty() => Some(id.clone()),
@@ -81,10 +93,17 @@ pub fn lookup_key(m: &Value) -> String {
 /// (the player page may be opened later) every 5 s while it plays and the open notch shows Music (`want`); one
 /// lookup at a time.
 pub fn due(slot_key: &str, key: &str, has_id: bool, playing: bool, busy: bool, want: bool, since_last: std::time::Duration) -> bool {
+    due_every(slot_key, key, has_id, playing, busy, want, since_last, std::time::Duration::from_secs(5))
+}
+
+/// `due`, looking again every `every` while the video isn't found (Windows: 2 s, its lookup reads one address bar;
+/// a browser names the new video in its window title a moment after Now Playing does).
+#[allow(clippy::too_many_arguments)]
+pub fn due_every(slot_key: &str, key: &str, has_id: bool, playing: bool, busy: bool, want: bool, since_last: std::time::Duration, every: std::time::Duration) -> bool {
     if busy {
         return false;
     }
-    slot_key != key || (!has_id && playing && want && since_last >= std::time::Duration::from_secs(5))
+    slot_key != key || (!has_id && playing && want && since_last >= every)
 }
 
 /// The channel's picture is worth fetching: the song has no cover and none is on its way from the helper.

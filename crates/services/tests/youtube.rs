@@ -1,5 +1,5 @@
 use serde_json::json;
-use services::youtube::{is_browser, lookup_key, pick_tab, video_id};
+use services::youtube::{is_browser, lookup_key, names, pick_tab, video_id, windows_browser};
 
 fn t(u: &str, n: &str) -> (String, String) {
     (u.into(), n.into())
@@ -57,6 +57,31 @@ fn browsers_only() {
 }
 
 #[test]
+fn windows_browsers_by_their_media_app_id() {
+    assert_eq!(windows_browser("Chrome"), Some("chrome.exe"));
+    assert_eq!(windows_browser("Chrome.BETA"), Some("chrome.exe"));
+    assert_eq!(windows_browser("MSEdge"), Some("msedge.exe"));
+    assert!(is_browser("Chrome") && is_browser("MSEdge"));
+    // not a browser here: Spotify, Media Player, and macOS bundle ids that merely contain a browser's name
+    for id in ["Spotify.exe", "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic", "ChromeCast", "com.google.Chrome", "com.operasoftware.Opera"] {
+        assert_eq!(windows_browser(id), None, "{id}");
+    }
+    assert!(!is_browser("Spotify.exe"));
+}
+
+#[test]
+fn a_browser_window_title_names_the_video() {
+    // Windows reads the address bar of the window whose title (its tab's, then the browser's name) names the video
+    let now = "Denny Caknan - PULUNG (Official Music Video)";
+    assert!(names("(3) Denny Caknan - PULUNG (Official Music Video) - YouTube - Google Chrome", now));
+    assert!(names("Denny Caknan - PULUNG (Official Music Video) - YouTube and 2 more pages - Personal - Microsoft Edge", now));
+    assert!(!names("Inbox - Gmail - Google Chrome", now));
+    assert!(!names("Anything - Google Chrome", ""));
+    let tabs = [t("https://www.youtube.com/watch?v=VgSWAOb7JTQ", "(3) Denny Caknan - PULUNG (Official Music Video) - YouTube - Google Chrome")];
+    assert_eq!(pick_tab(&tabs, now).as_deref(), Some("VgSWAOb7JTQ"));
+}
+
+#[test]
 fn key_has_app_title_artist_album() {
     let m = json!({"app": "com.brave.Browser", "title": "Pulung", "artist": "Denny Caknan", "album": ""});
     assert_eq!(lookup_key(&m), "com.brave.Browser|Pulung|Denny Caknan|");
@@ -83,6 +108,9 @@ fn due_on_a_new_song_and_every_5s_while_unfound() {
     assert!(!due("a", "a", false, true, false, true, s(4))); // not found: not before 5 s
     assert!(due("a", "a", false, true, false, true, s(5)));
     assert!(!due("a", "a", false, false, false, true, s(60))); // paused: wait
+    // (Windows looks again sooner)
+    assert!(!services::youtube::due_every("a", "a", false, true, false, true, s(1), s(2)));
+    assert!(services::youtube::due_every("a", "a", false, true, false, true, s(2), s(2)));
 }
 
 #[test]
