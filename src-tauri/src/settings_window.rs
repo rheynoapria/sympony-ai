@@ -18,7 +18,8 @@ pub fn open(app: &AppHandle, section: Option<String>) {
         return;
     }
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    // (the window is made from the event loop: `native::later_on_main_thread` says why)
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
             let _ = w.unminimize();
             let _ = w.show();

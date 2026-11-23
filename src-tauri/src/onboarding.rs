@@ -71,7 +71,8 @@ fn set_notch_visible(app: &AppHandle, visible: bool) {
 /// Opens the onboarding window (single instance). Starts in Phase A ("opening").
 pub fn open(app: &AppHandle) {
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    // (the window is made from the event loop: `native::later_on_main_thread` says why)
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
             let _ = w.show();
             let _ = w.set_focus();

@@ -36,3 +36,14 @@ pub(crate) fn view<R: Runtime>(w: &WebviewWindow<R>) -> Option<*mut c_void> {
         None
     }
 }
+
+/// Runs `f` on the main thread from its event loop, never right away. On Windows a new window can't be made while
+/// WebView2 is inside one of its own callbacks: a command that isn't async runs in one, and `run_on_main_thread`
+/// called on the main thread runs `f` right there, so WebView2 never finishes the new window and Sympony stops
+/// answering. Asked from another thread, `run_on_main_thread` queues `f` instead (on macOS too: one turn later).
+pub fn later_on_main_thread(app: &tauri::AppHandle, f: impl FnOnce() + Send + 'static) {
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let _ = a.run_on_main_thread(f);
+    });
+}
