@@ -375,6 +375,15 @@
     };
   }
 
+  // Unified closed-notch state key shared by the 1 s poll and renderClosed() so Pony idle / notifications / Claude
+  // cards never falsely trigger a 1 Hz swap re-animation (especially visible in #closedMid on non-camera Macs).
+  function closedStateKey({ actKey = '', claude = false, notif = false, ponyMood = '' } = {}) {
+    return String(actKey || '')
+      + (claude ? '|cc' : '')
+      + (notif ? '|nf' : '')
+      + (ponyMood ? `|pony:${ponyMood}` : '');
+  }
+
   const api = {
     meterLevel,
     meter,
@@ -398,6 +407,7 @@
     camClosedLayout,
     closedWidthNoCam,
     resolveModuleFrame,
+    closedStateKey,
   };
 
   if (typeof window !== 'undefined') window.NotchKit = api;

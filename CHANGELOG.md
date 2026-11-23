@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **YouTube Video Fast-Forward & Scrubber Seeking:** Routed `←` / `→` (±5s), `J` / `L` (±10s), and `Space` / `K` to YouTube playback while video mode is active (`Shift + ←/→` still slides tabs), added `−10s` / `+10s` overlay buttons with HUD feedback, and fixed progress-bar seek dispatch (`media` / `media.seek`).
 - **Claude Code & Codex Live Web Summarization:** Fixed Claude Code `--allowedTools` merging (`mcp__sympony,WebSearch,WebFetch`) and variadic `--tools` ordering so live web queries are never auto-denied, enabled live web search for Codex, and instructed CLI agents to summarize concrete live numbers/facts directly instead of returning bare links.
 - **Responsive Notch Layouts & `.sl-pane` Flex Stacking:** Fixed vertical stacking on *Pomodoro Minimal Strip* & *Weather Big Temp Minimal*, fixed `[hidden]` overrides, and removed leftover hardcoded `218 px` stage heights.
+- **Closed-Notch 1 Hz Flicker on Non-Camera Macs (`Show eyes in closed notch`):** Unified the closed-notch state key (`NotchKit.closedStateKey`), cleared the temporary `.swap` animation class after completion, and avoided unnecessary `#closedMid` DOM rebuilds so Pony's idle eyes no longer flash every second on Macs without a physical camera notch (e.g. M1 MacBook Air / 13" Pro).
 
 ## [0.2.0-beta.1] - 2026-11-23
 

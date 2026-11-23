@@ -362,4 +362,14 @@ describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid siz
       { id: 'prayer', x: 2, y: 0, w: 2, h: 1 },
     ]);
   });
+
+  test('closedStateKey matches between 1 s poll and renderClosed so pony idle does not blink every second', () => {
+    const kIdle = K.closedStateKey({ actKey: '', ponyMood: 'idle' });
+    expect(kIdle).toBe('|pony:idle');
+    expect(K.closedStateKey({ actKey: '', ponyMood: 'idle' })).toBe(kIdle);
+    expect(K.closedStateKey({ actKey: '', ponyMood: 'sleep' })).not.toBe(kIdle);
+    expect(K.closedStateKey({ actKey: 'music', ponyMood: '' })).toBe('music');
+    expect(K.closedStateKey({ actKey: '', claude: true })).toBe('|cc');
+    expect(K.closedStateKey({ actKey: '', notif: true })).toBe('|nf');
+  });
 });

@@ -2667,7 +2667,7 @@ setInterval(() => {
     || (bb && ['pomodoro', 'timer', 'stopwatch'].includes(bb.kind))) renderClosed();
   // a countdown whose time came (the prayer's, an event's) leaves the list: what shows instead is drawn now, rather
   // than the countdown staying at 0:00 until something else draws the closed notch (GitHub #60)
-  else if (actKey(act) !== lastActKey) { renderClosed(true); layout(); }
+  else if (closedStateKeyOf(act) !== lastActKey) { renderClosed(true); layout(); }
   // an alert with a check waits while the mouse is on it
   if (st.hover) holdAlert(1500);
   // the System summary (and the FPS line) may need more room as its numbers change
@@ -2856,8 +2856,23 @@ document.addEventListener('pointerleave', () => {
 });
 
 let lastActKey = '';
+let lastClosedL = null;
+let lastClosedM = null;
+let lastClosedR = null;
+let lastClosedB = null;
 // what the closed notch shows, as renderClosed keys it: the activity's kind (and a toast's text)
 const actKey = (act) => (act ? act.kind + (act.data && act.data.text ? act.data.text : '') : '');
+function closedStateKeyOf(act) {
+  const args = {
+    actKey: actKey(act),
+    claude: claudeShowing(),
+    notif: notifShowing(),
+    ponyMood: ponyIdleOn() ? currentPonyMood() : '',
+  };
+  return window.NotchKit && typeof NotchKit.closedStateKey === 'function'
+    ? NotchKit.closedStateKey(args)
+    : args.actKey + (args.claude ? '|cc' : '') + (args.notif ? '|nf' : '') + (args.ponyMood ? `|pony:${args.ponyMood}` : '');
+}
 function renderClosed(animate) {
   const left = $('#closedLeft');
   const mid = $('#closedMid');
@@ -3194,50 +3209,62 @@ function renderClosed(animate) {
       lastSlotSig = L + '|' + M + '|' + R;
     }
   }
-  const ponyMoodNow = currentPonyMood();
-  const key = actKey(act) + (claudeShowing() ? '|cc' : '') + (notifShowing() ? '|nf' : '') + (ponyIdleOn() ? `|pony:${ponyMoodNow}` : '');
+  const key = closedStateKeyOf(act);
   syncPonyMood();
   // a brief alert or HUD shows at full strength even if the closed notch is set to be see-through
   notchEl.classList.toggle('alerting', st.hudOnly || !!(st.activity && st.activity.until > Date.now()));
   const closed = $('#closed');
-  if (animate && key && key !== lastActKey) { closed.classList.remove('swap'); void closed.offsetWidth; closed.classList.add('swap'); }
+  if (animate && key && key !== lastActKey) {
+    closed.classList.remove('swap');
+    void closed.offsetWidth;
+    closed.classList.add('swap');
+    // Remove `.swap` after swapIn finishes so subsequent minute/battery/title updates inside #closedMid never re-blink
+    later('closedSwap', 540, () => closed.classList.remove('swap'));
+  }
   lastActKey = key;
   closed.classList.toggle('kind-music', !!act && act.kind === 'music');
-  left.innerHTML = L;
-  if (mid) mid.innerHTML = M;
-  right.innerHTML = R;
+  if (lastClosedL !== L) { left.innerHTML = L; lastClosedL = L; }
+  if (mid && lastClosedM !== M) { mid.innerHTML = M; lastClosedM = M; }
+  if (lastClosedR !== R) { right.innerHTML = R; lastClosedR = R; }
   left.classList.toggle('show', !!L);
   right.classList.toggle('show', !!R);
   st.below = !st.open && belowMeta ? belowMeta : null;
   if (belowEl) {
-    belowEl.innerHTML = !st.open ? B : '';
+    const nextB = !st.open ? B : '';
+    const belowChanged = lastClosedB !== nextB;
+    if (belowChanged) {
+      belowEl.innerHTML = nextB;
+      lastClosedB = nextB;
+    }
     belowEl.classList.toggle('show', !st.open && !!B);
-    $$('button', belowEl).forEach((b) => {
-      b.onclick = (e) => {
-        e.stopPropagation();
-        if (b.dataset.adhan) endAdhan();
-        else if (b.dataset.todo) tickTodo(b.dataset.todo);
-        else if (b.dataset.snooze) snoozeTodo(b.dataset.snooze);
-        else if (b.dataset.timer) timerAlertDone(b.dataset.timer === 'add');
-        else if (b.dataset.tick === 'water') logWater();
-        else if (b.dataset.voiceAction) {
-          const act = b.dataset.voiceAction;
-          if (act === 'download') api.svc('voice', 'download', '0.6b').catch(() => {});
-          else if (api.openSettings) api.openSettings('voice');
-        }
-        else if (b.dataset.nfClose) {
-          dropNotif(b.dataset.nfClose);
-        }
-        else if (b.dataset.nfOpen) {
-          const n = st.notifs.find((x) => String(x.id) === b.dataset.nfOpen);
-          if (n) {
-            api.svc('notif', 'open', n.aumid, n.launch || '', n.activation || '');
-            if (n.hid) api.svc('notif', 'read', n.hid).catch(() => {});
+    if (belowChanged) {
+      $$('button', belowEl).forEach((b) => {
+        b.onclick = (e) => {
+          e.stopPropagation();
+          if (b.dataset.adhan) endAdhan();
+          else if (b.dataset.todo) tickTodo(b.dataset.todo);
+          else if (b.dataset.snooze) snoozeTodo(b.dataset.snooze);
+          else if (b.dataset.timer) timerAlertDone(b.dataset.timer === 'add');
+          else if (b.dataset.tick === 'water') logWater();
+          else if (b.dataset.voiceAction) {
+            const act = b.dataset.voiceAction;
+            if (act === 'download') api.svc('voice', 'download', '0.6b').catch(() => {});
+            else if (api.openSettings) api.openSettings('voice');
           }
-          dropNotif(b.dataset.nfOpen);
-        }
-      };
-    });
+          else if (b.dataset.nfClose) {
+            dropNotif(b.dataset.nfClose);
+          }
+          else if (b.dataset.nfOpen) {
+            const n = st.notifs.find((x) => String(x.id) === b.dataset.nfOpen);
+            if (n) {
+              api.svc('notif', 'open', n.aumid, n.launch || '', n.activation || '');
+              if (n.hid) api.svc('notif', 'read', n.hid).catch(() => {});
+            }
+            dropNotif(b.dataset.nfOpen);
+          }
+        };
+      });
+    }
   }
   renderBubble(bubbleActivity());
   renderClock();
