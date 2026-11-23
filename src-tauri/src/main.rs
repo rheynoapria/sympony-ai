@@ -1,6 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Windows has no HOME, and the app finds `~/.sympony`, `~/.claude`, Downloads… from it: without it those paths
+    // came out relative to wherever Sympony was started. The profile folder is what HOME means there (and what Git
+    // and the agent CLIs use). Set before any thread starts.
+    #[cfg(windows)]
+    if std::env::var_os("HOME").is_none() {
+        if let Some(profile) = std::env::var_os("USERPROFILE") {
+            std::env::set_var("HOME", profile);
+        }
+    }
     // (started by an AI agent as Sympony's MCP server: a small bridge to the running app, no window)
     // (an AI agent's hook: the card under the notch, and its answer back)
     let args: Vec<String> = std::env::args().collect();
