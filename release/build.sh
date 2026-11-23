@@ -109,7 +109,12 @@ notarize_dmg() {
 
 case "$(uname -s)" in
   Darwin)
-    cargo tauri build --bundles app
+    # Strip Apple signing/notarization env vars during `cargo tauri build` so Tauri CLI does not
+    # run its built-in codesign/notarytool prematurely; tools/sign-mac.sh + notarize_dmg handle
+    # inside-out Developer ID signing, DMG packaging, Apple Notarization, and stapling cleanly.
+    env -u APPLE_SIGNING_IDENTITY -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID \
+        -u APPLE_API_KEY -u APPLE_API_KEY_PATH -u APPLE_API_ISSUER -u APPLE_API_KEY_ID \
+        cargo tauri build --bundles app
     tools/sign-mac.sh "$B/macos/Sympony.app"
     RAW_ARCH="$(uname -m)"
     case "$RAW_ARCH" in
