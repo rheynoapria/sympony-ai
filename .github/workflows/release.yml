@@ -26,7 +26,7 @@ jobs:
       channel: ${{ steps.meta.outputs.channel }}
       release_title: ${{ steps.meta.outputs.release_title }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate SemVer & manifest lockstep
         id: meta
         env:
@@ -67,7 +67,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: oven-sh/setup-bun@v2
       - uses: Swatinem/rust-cache@v2
@@ -145,7 +145,7 @@ jobs:
           cd release/out/*
           shasum -a 256 *.dmg *.exe *.deb *.rpm *.AppImage *.tar.gz 2>/dev/null > SHA256SUMS.txt || shasum -a 256 * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sympony-${{ runner.os }}
           path: release/out/
@@ -158,10 +158,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Flatten release assets, generate notes & updater manifest
@@ -221,7 +221,7 @@ jobs:
           echo "=== Generated Release Body ==="
           cat release-body.md
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ needs.validate.outputs.release_title }}
           body_path: release-body.md
