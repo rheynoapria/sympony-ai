@@ -5,6 +5,7 @@
 //! rather than pretending to work. Real Win32 / UI Automation / WinRT code replaces them module by module; keep each
 //! signature as `macos` has it, so the app needs no `cfg` of its own.
 pub mod apps;
+mod audio;
 pub mod automation;
 pub mod displays;
 pub mod keychain;

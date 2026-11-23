@@ -1,24 +1,9 @@
-//! Sound, screen, power, and the System tab's readings (stand-in: nothing read yet).
+//! Sound, screen, power, and the System tab's readings. Sound is read and set (Core Audio: `audio.rs`); the rest is
+//! a stand-in for now (nothing read yet).
 use crate::geometry::Rect;
 use serde_json::{json, Value};
 
-/// (id, name, is the default) of each output (`input` false) or input device.
-pub fn audio_devices(_input: bool) -> Vec<(u32, String, bool)> {
-    vec![]
-}
-
-pub fn set_default_device(_id: u32, _input: bool) -> bool {
-    false
-}
-
-/// (level 0-100, muted)
-pub fn volume() -> Option<(u8, bool)> {
-    None
-}
-
-pub fn set_volume(_level: u8) {}
-
-pub fn toggle_mute() {}
+pub use super::audio::{audio_devices, mic, set_default_device, set_volume, toggle_mic, toggle_mute, volume};
 
 pub fn brightness() -> Option<u8> {
     None
@@ -84,13 +69,6 @@ pub fn onscreen_windows(_display: Rect, _skip_pid: u32) -> Vec<Rect> {
 pub fn focus_on() -> bool {
     false
 }
-
-/// (a mic in use, muted)
-pub fn mic() -> (bool, bool) {
-    (false, false)
-}
-
-pub fn toggle_mic() {}
 
 pub fn screen_locked() -> bool {
     false
