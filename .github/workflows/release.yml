@@ -36,7 +36,7 @@ jobs:
       release_title: ${{ steps.meta.outputs.release_title }}
       matrix_os: ${{ steps.meta.outputs.matrix_os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate SemVer & manifest lockstep
         id: meta
         env:
@@ -87,8 +87,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - uses: dtolnay/rust-toolchain@stable
@@ -173,7 +173,7 @@ jobs:
             $SHACMD * > SHA256SUMS.txt
           fi
           cat SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sympony-${{ runner.os }}
           path: release/out/
@@ -191,8 +191,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - uses: dtolnay/rust-toolchain@stable
@@ -220,7 +220,7 @@ jobs:
             $SHACMD * > SHA256SUMS.txt
           fi
           cat SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sympony-${{ runner.os }}
           path: release/out/
@@ -233,10 +233,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Flatten release assets, generate notes & updater manifest
@@ -296,7 +296,7 @@ jobs:
           echo "=== Generated Release Body ==="
           cat release-body.md
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ needs.validate.outputs.release_title }}
           body_path: release-body.md
