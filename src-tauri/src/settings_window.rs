@@ -83,6 +83,7 @@ pub fn open(app: &AppHandle, section: Option<String>) {
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                     reveal(&h2);
                 });
+                #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
                 let h = a.clone();
                 w.on_window_event(move |e| {
                     if matches!(e, WindowEvent::Destroyed) {
@@ -102,12 +103,11 @@ pub fn open(app: &AppHandle, section: Option<String>) {
     });
 }
 
-/// In front of the app the user is in, right away (see `platform::macos::window::bring_front`).
+/// In front of the app the user is in, right away (see `platform::os::window::bring_front`).
 fn bring_front(w: &tauri::WebviewWindow) {
-    #[cfg(target_os = "macos")]
-    if let Ok(ns) = w.ns_window() {
+    if let Some(ns) = crate::native::window(w) {
         // SAFETY: a live NSWindow, on the main thread (`open` runs there)
-        unsafe { platform::macos::window::bring_front(ns) };
+        unsafe { platform::os::window::bring_front(ns) };
     }
 }
 

@@ -9,7 +9,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::App;
-use platform::macos::files::{self as pb, Clip};
+use platform::os::files::{self as pb, Clip};
 
 /// A copied text over this isn't kept (a whole file's worth).
 const MAX_TEXT: usize = 1 << 20;

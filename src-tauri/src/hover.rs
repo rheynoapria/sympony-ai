@@ -2,8 +2,8 @@
 //! is `notch:hover`. A 60 Hz check on the main thread (where AppKit's mouse position and the window live).
 use crate::commands::App;
 use crate::notch::{Notch, LABEL};
-use objc2::MainThreadMarker;
-use platform::macos::displays::mouse_location;
+use platform::os::MainThreadMarker;
+use platform::os::displays::mouse_location;
 use services::hit::{HitMsg, Hover};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};

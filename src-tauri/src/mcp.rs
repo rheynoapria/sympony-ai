@@ -5,7 +5,11 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+// (Windows 10+ has the same Unix-domain sockets, through uds_windows)
+#[cfg(unix)]
+pub(crate) use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(windows)]
+pub(crate) use uds_windows::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;
@@ -300,9 +304,9 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     }));
 }
 
-/// The socket the bridges call (this account only).
+/// The socket the bridges call (this account only: mode 0600 on Unix; on Windows it's in the data folder, which
+/// only this account, SYSTEM and administrators can open).
 pub fn start(app: &AppHandle) {
-    use std::os::unix::fs::PermissionsExt;
     let path = socket(app);
     let _ = std::fs::remove_file(&path);
     let listener = match UnixListener::bind(&path) {
@@ -312,7 +316,11 @@ pub fn start(app: &AppHandle) {
             return;
         }
     };
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
@@ -407,7 +415,7 @@ pub fn hook(agent: &str, event: &str) {
     let sock = dirs_data().join("agent.sock");
     let Ok(mut s) = UnixStream::connect(&sock) else { return };
     let _ = s.set_read_timeout(Some(Duration::from_secs(75)));
-    let ppid = unsafe { libc_getppid() };
+    let ppid = platform::process::parent_pid();
     if writeln!(s, "{}", json!({"type": "hook", "agent": agent, "event": event, "payload": payload, "ppid": ppid})).is_err() {
         return;
     }
@@ -420,11 +428,6 @@ pub fn hook(agent: &str, event: &str) {
 
 fn dirs_data() -> std::path::PathBuf {
     services::paths::data_dir()
-}
-
-unsafe extern "C" {
-    #[link_name = "getppid"]
-    fn libc_getppid() -> i32;
 }
 
 /// Whether a built-in tool's result brings untrusted external content (web, screen, or another AI/agent's output)

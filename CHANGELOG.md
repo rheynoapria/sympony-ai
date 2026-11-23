@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Windows port, phase 1 (builds and tests):** The Rust workspace now builds and its tests run on Windows. `crates/platform` has a `windows` backend with the same modules and signatures as `macos` (stand-ins that report "not available" for now), both reachable as `platform::os`; a new `platform::process` (own process group, kill the group, is a pid alive, parent pid) for Unix and Windows; and a `Rust (Windows)` CI job. On Windows, `crates/voice` links sherpa-onnx as DLLs (its static libraries use the static CRT, which MSVC won't mix with Rust's), and Pony's command and file tools refuse until their secret-place guards handle `cmd` syntax and Windows paths.
+
+### Fixed
+- **Windows:** stdio MCP servers keep the Windows system variables they need to start at all (`SYSTEMROOT`, `TEMP`, `APPDATA`, `LOCALAPPDATA`, `PATHEXT`, …; still never keys or tokens). `tools/extract_contract.py` and `tools/classify_contract.py` read and write UTF-8 instead of Windows' default code page.
+
 ## [0.2.0-beta.3] - 2026-11-23
 
 ### Fixed

@@ -134,7 +134,7 @@ fn ask(app: &AppHandle, req: &Value, wait: Duration) -> Option<Value> {
 }
 
 fn spotify_pid() -> i64 {
-    platform::macos::apps::pid_of("com.spotify.client").unwrap_or(0) as i64
+    platform::os::apps::pid_of("com.spotify.client").unwrap_or(0) as i64
 }
 
 /// One poll: read, add the artwork, send it if it changed.
@@ -152,7 +152,7 @@ pub fn tick(app: &AppHandle) {
     let media = app.state::<Media>();
     if let Some(id) = m["app"].as_str().filter(|id| !id.is_empty()).map(String::from) {
         let icon = media.icons.lock().unwrap().entry(id.clone()).or_insert_with(|| {
-            platform::macos::apps::icon_png(&id, 64.0).and_then(|png| services::media::data_url(&png)).map(Value::String).unwrap_or(Value::Null)
+            platform::os::apps::icon_png(&id, 64.0).and_then(|png| services::media::data_url(&png)).map(Value::String).unwrap_or(Value::Null)
         }).clone();
         m["appIcon"] = icon;
     }
@@ -211,7 +211,7 @@ pub fn app_icon(app: AppHandle, bundle_id: String) -> Option<String> {
         .unwrap()
         .entry(bundle_id.clone())
         .or_insert_with(|| {
-            platform::macos::apps::icon_png(&bundle_id, 64.0)
+            platform::os::apps::icon_png(&bundle_id, 64.0)
                 .and_then(|png| services::media::data_url(&png))
                 .map(Value::String)
                 .unwrap_or(Value::Null)

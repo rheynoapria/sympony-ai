@@ -1,8 +1,8 @@
 //! The notch's open state, keyboard focus, dragging, the toggle shortcut and the tray.
 use crate::commands::App;
 use crate::notch::{Notch, LABEL};
-use objc2::MainThreadMarker;
-use platform::macos::{apps, displays::mouse_location};
+use platform::os::MainThreadMarker;
+use platform::os::{apps, displays::mouse_location};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -91,7 +91,7 @@ pub fn drag(app: &AppHandle, action: &str) {
                     let _ = app.run_on_main_thread(move || {
                         let (Some(mtm), Some(win)) = (MainThreadMarker::new(), *a.state::<Notch>().win.lock().unwrap()) else { return };
                         // the mouseup may never reach the page (it went click-through, or reloaded): no button down ends it
-                        if !platform::macos::displays::mouse_down() {
+                        if !platform::os::displays::mouse_down() {
                             drag(&a, "end");
                             return;
                         }

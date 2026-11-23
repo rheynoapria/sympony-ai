@@ -190,12 +190,12 @@ fn overlay(app: &AppHandle, gen: u64, target_frame: (f64, f64, f64, f64)) -> boo
             })
             .build();
         let created = if let Ok(w) = built {
-            if let Ok(ns) = w.ns_window() {
+            if let Some(ns) = crate::native::window(&w) {
                 // SAFETY: a live NSWindow on the main thread; above windows, under the notch (25), clicks pass through
                 unsafe {
-                    platform::macos::window::style_onboarding_window(ns, 24);
-                    platform::macos::window::set_click_through(ns, true);
-                    platform::macos::window::set_window_level(ns, 24, Some(false));
+                    platform::os::window::style_onboarding_window(ns, 24);
+                    platform::os::window::set_click_through(ns, true);
+                    platform::os::window::set_window_level(ns, 24, Some(false));
                 }
             }
             true

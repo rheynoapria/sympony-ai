@@ -42,7 +42,7 @@ pub fn picture(app: &AppHandle, path: &str, photo: bool) -> Option<String> {
         return Some(p.clone());
     }
     let pic = if photo { thumbnail(path, &app.state::<App>().data_dir.join("thumbs")) } else { None };
-    let pic = pic.or_else(|| platform::macos::files::icon_png(path, 64.0).map(|b| data_url("image/png", &b)))?;
+    let pic = pic.or_else(|| platform::os::files::icon_png(path, 64.0).map(|b| data_url("image/png", &b)))?;
     let mut pics = f.pics.lock().unwrap();
     // ponytail: dropped whole past 300 (photos edited over months); an LRU if lists get that long
     if pics.len() > 300 {
@@ -193,9 +193,9 @@ pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<Stri
         return;
     }
     let _ = app.run_on_main_thread(move || {
-        if let Ok(v) = w.ns_view() {
+        if let Some(v) = crate::native::view(&w) {
             // SAFETY: the window's own NSView, on the main thread
-            unsafe { platform::macos::files::share(v, &paths) };
+            unsafe { platform::os::files::share(v, &paths) };
         }
     });
 }
@@ -209,7 +209,7 @@ pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
     }
     let h = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Ok(v) = win.ns_view() else { return };
+        let Some(v) = crate::native::view(&win) else { return };
         let done = Box::new(move |dropped: bool| {
             if dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true {
                 h.state::<Files>().shelf.lock().unwrap().retain(|x| !ids.contains(&x["id"]));
@@ -219,7 +219,7 @@ pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
             }
         });
         // SAFETY: the window's own NSView, on the main thread, while the page's drag goes on
-        unsafe { platform::macos::files::drag_out(v, &paths, done) };
+        unsafe { platform::os::files::drag_out(v, &paths, done) };
     });
 }
 
@@ -352,7 +352,7 @@ fn run_action(action: &str, files: &[String]) -> Value {
         }
         "trash" => {
             for f in &files {
-                if let Err(e) = platform::macos::files::trash(f) {
+                if let Err(e) = platform::os::files::trash(f) {
                     return done(false, format!("Couldn’t move {} to the Trash: {e}", name_of(f)));
                 }
             }
@@ -451,7 +451,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                         open(u);
                     }
                 }
-                _ => { platform::macos::files::write_text(e["text"].as_str().unwrap_or("")); }
+                _ => { platform::os::files::write_text(e["text"].as_str().unwrap_or("")); }
             }
         }
         Value::Null
@@ -465,7 +465,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     add!("shelf.copy", |h, a| {
         let e = shelf_item(&h, a.first().and_then(Value::as_str).unwrap_or(""));
         let t = e.as_ref().and_then(|e| e["path"].as_str().or(e["text"].as_str())).unwrap_or("");
-        json!(!t.is_empty() && platform::macos::files::write_text(t))
+        json!(!t.is_empty() && platform::os::files::write_text(t))
     });
     add!("shelf.share", |h, a| {
         share(&h, None, shelf_paths(&h, &ids_arg(&a)));
@@ -513,6 +513,6 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         Value::Null
     });
     reg.add("apps.open", Box::new(|_, _| {
-        Ok(Value::Array(platform::macos::apps::open_apps().into_iter().map(|(id, name)| json!({"exe": id.to_ascii_lowercase(), "name": name})).collect()))
+        Ok(Value::Array(platform::os::apps::open_apps().into_iter().map(|(id, name)| json!({"exe": id.to_ascii_lowercase(), "name": name})).collect()))
     }));
 }

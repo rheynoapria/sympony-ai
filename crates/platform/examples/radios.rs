@@ -1,6 +1,6 @@
 //! cargo run -p platform --example radios: what the Bluetooth & Wi-Fi tab reads (names need Location: the terminal
 //! usually has none, Sympony has).
-use platform::macos::radios::*;
+use platform::os::radios::*;
 fn main() {
     let nets = wifi_scan(false).unwrap_or_default();
     println!("wifi: on {:?}, connected {:?}, {} networks (cached), {} named, saved {}", wifi_on(), wifi_ssid(), nets.len(), nets.iter().filter(|n| n.0.is_some()).count(), wifi_saved().len());

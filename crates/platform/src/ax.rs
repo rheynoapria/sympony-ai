@@ -5,6 +5,11 @@ pub use crate::macos::ax::{
     activate, app_name, app_version, bring, choose, click_at, default_browser, double_click_at, drag, find_running_app, front_app, front_pid, installed, is_front, menu_path, mouse_move, open_apps, open_background, open_with, pid_of,
     press_combo, press_key, read, screen_access, scroll_at, secure_input, settle, selection, trusted, type_all, type_text, typing_in, window, window_id, El,
 };
+#[cfg(target_os = "windows")]
+pub use crate::windows::ax::{
+    activate, app_name, app_version, bring, choose, click_at, default_browser, front_app, front_pid, installed, is_front, menu_path, open_apps, open_background, open_with, pid_of,
+    press_combo, press_key, read, screen_access, scroll_at, secure_input, settle, selection, trusted, type_all, type_text, typing_in, window, window_id, El,
+};
 
 /// One element of a window, in reading order (`depth` from the window).
 #[derive(Debug, Clone, Default)]

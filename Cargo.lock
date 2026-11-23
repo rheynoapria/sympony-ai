@@ -3580,6 +3580,7 @@ dependencies = [
  "rusqlite",
  "security-framework",
  "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4681,7 +4682,6 @@ dependencies = [
  "chrono",
  "contract",
  "libc",
- "objc2",
  "platform",
  "serde",
  "serde_json",
@@ -4691,6 +4691,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "uds_windows",
  "url",
  "voice",
 ]

@@ -68,7 +68,7 @@ def phase_of(kind, name):
 
 
 def main(path):
-    items = json.load(open(path))
+    items = json.load(open(path, encoding='utf-8'))
     have = {(i['kind'], i['name']) for i in items}
     items += [{'kind': 'event', 'name': n} for n in EXTRA_EVENTS if ('event', n) not in have]
     items += [{'kind': 'method', 'name': n} for n in EXTRA_METHODS if ('method', n) not in have]
@@ -77,8 +77,8 @@ def main(path):
         i['phase'] = (3 if n.startswith('notif.') else 4 if n.startswith(('bluetooth.', 'todosync.')) else 5 if n.startswith(('ai.', 'agent', 'claude.', 'paseo.')) else 2 if i['kind'] == 'method' else 6) if n in FIX else phase_of(i['kind'], n)
         i['class'] = 'excluded' if n in EXCLUDED else 'fix' if n in FIX else 'mac'
         i['stub'] = STUBS.get(n, [] if i['kind'] == 'method' and n.split('.')[1] in LIST_METHODS else None)
-    json.dump(items, open(path, 'w'), indent=1, ensure_ascii=False)
-    open(path, 'a').write('\n')
+    json.dump(items, open(path, 'w', encoding='utf-8'), indent=1, ensure_ascii=False)
+    open(path, 'a', encoding='utf-8').write('\n')
 
 
 if __name__ == '__main__':

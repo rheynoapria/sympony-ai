@@ -1,5 +1,5 @@
 //! macOS permissions service (`perm.status`, `perm.request`) for first-run onboarding (spec §5.4).
-use platform::macos::{automation, banners, calendar, location, notifications, voice};
+use platform::os::{automation, banners, calendar, location, notifications, voice};
 use serde_json::{json, Value};
 use services::onboarding::{action, Action, Perm};
 use tauri::AppHandle;

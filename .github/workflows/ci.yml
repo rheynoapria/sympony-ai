@@ -61,3 +61,29 @@ jobs:
         run: cargo test --workspace
       - name: Contract parity check
         run: cargo run -q -p services --bin parity
+
+  rust-windows:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      # (the contract and MCP tests run small Python scripts)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ci-rust-windows
+      - name: Rust workspace check (tests and examples too)
+        run: cargo check --workspace --all-targets
+      # (links the app itself: an extern that only exists on Unix shows here, not in check or the tests)
+      - name: Build the app binary
+        run: cargo build -p sympony
+      - name: Rust workspace tests
+        run: cargo test --workspace
+      - name: Contract parity check
+        run: cargo run -q -p services --bin parity

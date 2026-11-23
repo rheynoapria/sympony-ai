@@ -3,7 +3,7 @@
 //! The video: looked up in the playing browser's tabs (helper/yt_tabs.js, its own short osascript, after the
 //! Automation permission) only while the open notch shows Music (`yt.want`), and sent as `video` with the media.
 use crate::commands::App;
-use platform::macos::automation;
+use platform::os::automation;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::TcpListener;

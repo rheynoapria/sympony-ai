@@ -10,7 +10,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use platform::macos::voice::{mic_status, MacInsert, MacTrigger};
+use platform::os::voice::mic_status;
+#[cfg(target_os = "macos")]
+use platform::os::voice::{MacInsert as NativeInsert, MacTrigger as NativeTrigger};
+#[cfg(target_os = "windows")]
+use platform::os::voice::{WinInsert as NativeInsert, WinTrigger as NativeTrigger};
 use platform::voice::{Capture, CpalCapture, Insert, InsertResult, Trigger, TriggerEvent, VoiceKey};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -139,10 +143,10 @@ pub struct VoiceRuntime {
     screen: Mutex<Option<(String, String)>>,
     /// The app that had keyboard focus when dictation started, so synthetic ⌘V never pastes into a switched app.
     target_pid: Mutex<Option<i32>>,
-    trigger: MacTrigger,
-    cmd_trigger: MacTrigger,
+    trigger: NativeTrigger,
+    cmd_trigger: NativeTrigger,
     capture: CpalCapture,
-    insert: MacInsert,
+    insert: NativeInsert,
     qwen: Mutex<Option<LoadedQwen>>,
     zipformer: Mutex<Option<LoadedZipformer>>,
     active_stream: Mutex<Option<Box<dyn Stream>>>,
@@ -169,10 +173,10 @@ impl VoiceRuntime {
             mode: Mutex::new(VoiceMode::Dictate),
             screen: Mutex::new(None),
             target_pid: Mutex::new(None),
-            trigger: MacTrigger::new(),
-            cmd_trigger: MacTrigger::new(),
+            trigger: NativeTrigger::new(),
+            cmd_trigger: NativeTrigger::new(),
             capture: CpalCapture::new(),
-            insert: MacInsert::new(),
+            insert: NativeInsert::new(),
             qwen: Mutex::new(None),
             zipformer: Mutex::new(None),
             active_stream: Mutex::new(None),
@@ -1108,7 +1112,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     "vocabMissing": rt.vocab_missing(),
                     "permissions": {
                         "microphone": mic_status(),
-                        "accessibility": if platform::macos::banners::trusted(false) { "granted" } else { "denied" },
+                        "accessibility": if platform::os::banners::trusted(false) { "granted" } else { "denied" },
                     },
                     "activeDownload": dl,
                 }))

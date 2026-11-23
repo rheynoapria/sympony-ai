@@ -22,6 +22,7 @@ mod extras;
 mod hover;
 mod lang;
 mod mcp;
+mod native;
 mod media;
 mod notch;
 mod notif;
@@ -109,11 +110,11 @@ pub fn run() {
                     })
                 },
             };
-            let secrets = services::secrets::FileSecrets::open(&data_dir, Some(&platform::macos::keychain::Keychain), services::settings::SECRET_KEYS);
+            let secrets = services::secrets::FileSecrets::open(&data_dir, Some(&platform::os::keychain::Keychain), services::settings::SECRET_KEYS);
             for k in services::settings::RETIRED_KEYS {
                 let _ = platform::Secrets::set(&secrets, k, ""); // (AI goes through the agents now: no API keys kept)
             }
-            let deps = services::Deps::new(&data_dir, Arc::new(secrets), Arc::new(platform::macos::location::CoreLocation));
+            let deps = services::Deps::new(&data_dir, Arc::new(secrets), Arc::new(platform::os::location::CoreLocation));
             let mut reg = services::build(&deps);
             watchers::register_audio(&mut reg);
             watchers::register_system(&mut reg, app.handle());

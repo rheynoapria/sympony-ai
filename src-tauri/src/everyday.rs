@@ -29,7 +29,7 @@ fn icon(app: &AppHandle, id: &str) -> Option<String> {
         return i.clone();
     }
     // (drawn outside the lock: another summary isn't held up by it)
-    let i = platform::macos::apps::icon_png(id, 64.0).and_then(|b| services::media::data_url(&b));
+    let i = platform::os::apps::icon_png(id, 64.0).and_then(|b| services::media::data_url(&b));
     e.icons.lock().unwrap().insert(id.to_string(), i.clone());
     i
 }
@@ -40,10 +40,10 @@ fn screen_second(app: &AppHandle, s: &Value, day: &str) {
         return;
     }
     let idle_max = s["screenTimeIdle"].as_f64().unwrap_or(120.0);
-    if platform::macos::system::idle_secs() >= idle_max || platform::macos::system::screen_locked() {
+    if platform::os::system::idle_secs() >= idle_max || platform::os::system::screen_locked() {
         return;
     }
-    let Some((id, name)) = platform::macos::apps::frontmost() else { return };
+    let Some((id, name)) = platform::os::apps::frontmost() else { return };
     // (locked, the screen saver, or Sympony's own notch in front: not an app being used)
     const LOCKED: &[&str] = &["com.apple.loginwindow", "com.apple.ScreenSaver.Engine", "app.sympony"];
     let excluded = s["screenTimeExcluded"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).any(|x| {
@@ -89,7 +89,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle, dir: &Path) {
     let h = app.clone();
     reg.add("screentime.summary", Box::new(move |_, a| {
         let range = a.first().and_then(|v| v.as_str()).unwrap_or("today").to_string();
-        let current = platform::macos::apps::frontmost().map(|(_, n)| n);
+        let current = platform::os::apps::frontmost().map(|(_, n)| n);
         let st = h.state::<Everyday>().screen.lock().unwrap().clone();
         Ok(st.summary(&range, &today(), current.as_deref(), &|id| icon(&h, id)))
     }));
@@ -180,7 +180,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle, dir: &Path) {
     }));
 
     reg.add("clock.quiet", Box::new(|_, _| {
-        use platform::macos::system::{focus_on, fullscreen_front};
+        use platform::os::system::{focus_on, fullscreen_front};
         Ok(json!({"dnd": focus_on(), "fullscreen": fullscreen_front()}))
     }));
 }
@@ -240,7 +240,7 @@ pub fn start(app: &AppHandle) {
                 }
                 // health every 5 s (it counts minutes)
                 if beat % 20 == 0 {
-                    let idle = (platform::macos::system::idle_secs() * 1000.0) as i64;
+                    let idle = (platform::os::system::idle_secs() * 1000.0) as i64;
                     for n in h.tick(t, idle, &hc, &day) {
                         match n {
                             Nudge::Remind(v) => out.push(("health:remind", v)),

@@ -57,8 +57,7 @@ pub(crate) fn which(bin: &str) -> Option<PathBuf> {
 /// blocks on a full pipe), at most 4 MB each, and a pipe a leftover keeps open is waited on a few seconds only.
 /// `started` gets the group's id (to stop it from elsewhere).
 fn run_capture_in(cmd: &mut Command, limit: Duration, started: Option<&Mutex<Option<u32>>>) -> Result<(bool, String, String), String> {
-    use std::os::unix::process::CommandExt;
-    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0).spawn().map_err(|e| e.to_string())?;
+    let mut child = platform::process::own_group(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())).spawn().map_err(|e| e.to_string())?;
     let pid = child.id();
     if let Some(slot) = started {
         *slot.lock().unwrap() = Some(pid);
@@ -73,14 +72,7 @@ fn run_capture_in(cmd: &mut Command, limit: Duration, started: Option<&Mutex<Opt
         rx
     };
     let (out, err) = (reader(Box::new(child.stdout.take().unwrap())), reader(Box::new(child.stderr.take().unwrap())));
-    let kill_group = || {
-        if let Ok(pgid) = i32::try_from(pid) {
-            if pgid > 0 {
-                // SAFETY: sending SIGKILL to the child's own dedicated process group (`process_group(0)`).
-                unsafe { libc::kill(-pgid, libc::SIGKILL) };
-            }
-        }
-    };
+    let kill_group = || platform::process::kill_group(pid);
     let start = Instant::now();
     let status = loop {
         if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {

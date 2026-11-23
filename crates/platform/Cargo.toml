@@ -4,20 +4,25 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notifications) for Sympony"
+description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notifications; Windows in progress) for Sympony"
 
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
-libc = "0.2"
 cpal = "0.15"
-objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 rusqlite = "0.37"
+objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
 security-framework = "3"
 objc2 = "0.6"
 objc2-core-location = { version = "0.3", features = ["CLLocationManager", "CLLocation", "CLGeocoder", "CLPlacemark", "block2"] }

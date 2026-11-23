@@ -1,6 +1,6 @@
 //! Volume, brightness, Caps Lock and the input language every 200 ms, the battery every 30 s: a `helper` message
 //! only when a reading changed. The System tab's numbers (`stats`, and `net` for the speeds) every second.
-use platform::macos::{radios, system};
+use platform::os::{radios, system};
 use serde_json::{json, Value};
 use services::watch::{lockkeys_changed, Watch};
 use std::collections::HashMap;

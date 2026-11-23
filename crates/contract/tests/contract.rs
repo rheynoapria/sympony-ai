@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use std::process::Command;
 
 fn contract_names_from_frontend() -> BTreeSet<String> {
-    let out = Command::new("python3")
+    // (Windows names the interpreter `python`)
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let out = Command::new(python)
         .args(["-I", "../../tools/extract_contract.py", "../../frontend"])
         .output()
         .expect("python3");

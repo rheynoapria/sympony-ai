@@ -1,7 +1,7 @@
 //! The notch window `notch-1`: made, placed on its display around the camera notch, kept there as displays change.
 use crate::commands::App;
 use platform::geometry::{place, target, Rect};
-use platform::macos::{displays::displays_here, window::style_notch_window};
+use platform::os::{displays::displays_here, window::style_notch_window};
 use serde_json::Value;
 use std::sync::Mutex;
 use tauri::webview::PageLoadEvent;
@@ -59,7 +59,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build()?;
-    if let Ok(ns) = window.ns_window() {
+    if let Some(ns) = crate::native::window(&window) {
         // SAFETY: Tauri's own NSWindow for this window, on the main thread (setup)
         unsafe { style_notch_window(ns) };
     }
