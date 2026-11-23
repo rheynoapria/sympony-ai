@@ -7,9 +7,23 @@ use tauri::AppHandle;
 const MUSIC_BUNDLE: &str = "com.apple.Music";
 const SPOTIFY_BUNDLE: &str = "com.spotify.client";
 
+#[cfg(target_os = "macos")]
 fn open_pane(pane: &str) {
     let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
     let _ = std::process::Command::new("/usr/bin/open").arg(url).status();
+}
+
+/// Windows' own page for the permission (Settings → Privacy & security → …); the ones Windows has no switch for open
+/// nothing.
+#[cfg(target_os = "windows")]
+fn open_pane(pane: &str) {
+    let page = match pane {
+        "Privacy_LocationServices" => "ms-settings:privacy-location",
+        "Privacy_Calendars" => "ms-settings:privacy-calendar",
+        "Privacy_Microphone" => "ms-settings:privacy-microphone",
+        _ => return,
+    };
+    platform::os::shell::open(page);
 }
 
 fn full_disk_status() -> &'static str {

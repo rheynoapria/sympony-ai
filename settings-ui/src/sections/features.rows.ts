@@ -359,7 +359,7 @@ export const WEATHER_ROWS: readonly Row[] = [
     t: "toggle",
     k: "locationAuto",
     label: "Use my current location",
-    sub: "Follows this Mac: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.",
+    sub: "Follows this PC: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.",
     unset: true,
   },
   { t: "custom", id: "locate", label: "Detect my location" },

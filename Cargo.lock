@@ -3580,6 +3580,7 @@ dependencies = [
  "rusqlite",
  "security-framework",
  "serde_json",
+ "ureq 3.5.2",
  "windows 0.62.2",
  "windows-collections",
  "windows-sys 0.61.2",

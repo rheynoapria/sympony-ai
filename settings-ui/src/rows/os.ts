@@ -137,6 +137,15 @@ const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
         ? { ...r, sub: "Comma-separated app names, e.g. Steam, 1Password" }
         : r
     ),
+  weather: (rows) =>
+    rows.map((r) =>
+      "k" in r && r.k === "locationAuto"
+        ? {
+            ...r,
+            sub: "Follows this Mac: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.",
+          }
+        : r
+    ),
   stats: (rows) =>
     rows.map((r) =>
       "k" in r && r.k === "statsEnabled"

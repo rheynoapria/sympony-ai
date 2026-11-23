@@ -32,12 +32,13 @@ function WeatherLocationPart({ settings, set }: CustomPartProps) {
   );
 }
 
-function WeatherLocatePart({ settings }: CustomPartProps) {
+function WeatherLocatePart({ settings, os }: CustomPartProps) {
   const loc = (settings.weatherLocation as WeatherPlace | null | undefined) ?? null;
   return (
     <LocatePart
       which="weather"
       cur={loc && loc.lat != null && loc.lon != null ? { lat: loc.lat, lon: loc.lon } : null}
+      os={os}
     />
   );
 }
