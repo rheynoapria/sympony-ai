@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::commands::App;
 use platform::ax::{self, Node};
@@ -38,6 +39,10 @@ pub struct Hands {
     trail: Mutex<HashMap<String, (Vec<Value>, String)>>,
     /// the runs already told how to act (with their first screen read, not in every request's system prompt)
     taught: Mutex<std::collections::HashSet<String>>,
+    /// top-left (logical points) of the monitor the `hands.html` overlay currently covers
+    origin: Mutex<(f64, f64)>,
+    /// last `show` payload, re-sent on freshly created `hands.html` once PageLoadEvent::Finished fires
+    pending_show: Mutex<Option<Value>>,
     shown: AtomicU64,
 }
 
@@ -66,13 +71,17 @@ pub fn how_to_act(app: &AppHandle, session: &str) -> Option<String> {
         .then(|| format!("{}\n\n{}", h::RULES, services::routines::RULES))
 }
 
-/// The run ended: its view goes.
+/// The run ended: its view goes and any active overlay fades out smoothly.
 pub fn forget(app: &AppHandle, session: &str) {
     if let Some(h) = app.try_state::<Hands>() {
-        h.views.lock().unwrap().remove(session);
+        let had = h.views.lock().unwrap().remove(session).is_some();
         h.actions.lock().unwrap().remove(session);
         h.trail.lock().unwrap().remove(session);
         h.taught.lock().unwrap().remove(session);
+        if had {
+            let gen = h.shown.fetch_add(1, Ordering::SeqCst) + 1;
+            end_later_ms(app, gen, 900);
+        }
     }
 }
 
@@ -96,9 +105,35 @@ fn in_web(nodes: &[Node], i: usize) -> bool {
 
 // ---- the overlay
 
-/// Ensures the fullscreen `hands.html` overlay exists and is visible, serialized on the main thread so it cannot
-/// race with `end_later`'s hide/close closures. Returns `true` when the window was freshly created.
-fn overlay(app: &AppHandle, gen: u64) -> bool {
+/// Picks the monitor (logical origin & size) containing `target_frame`'s center, falling back to primary.
+fn monitor_rect(app: &AppHandle, target_frame: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
+    let cx = target_frame.0 + target_frame.2 / 2.0;
+    let cy = target_frame.1 + target_frame.3 / 2.0;
+    if let Ok(mons) = app.available_monitors() {
+        for m in &mons {
+            let sf = m.scale_factor();
+            let pos = m.position().to_logical::<f64>(sf);
+            let sz = m.size().to_logical::<f64>(sf);
+            if cx >= pos.x && cx <= pos.x + sz.width && cy >= pos.y && cy <= pos.y + sz.height {
+                return (pos.x, pos.y, sz.width, sz.height);
+            }
+        }
+    }
+    app.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let sf = m.scale_factor();
+            let pos = m.position().to_logical::<f64>(sf);
+            let sz = m.size().to_logical::<f64>(sf);
+            (pos.x, pos.y, sz.width, sz.height)
+        })
+        .unwrap_or((0.0, 0.0, 1512.0, 982.0))
+}
+
+/// Ensures the fullscreen `hands.html` overlay exists and is visible on the target window's display,
+/// serialized on the main thread so it cannot race with `end_later`'s hide/close closures.
+fn overlay(app: &AppHandle, gen: u64, target_frame: (f64, f64, f64, f64)) -> bool {
     let (tx, rx) = mpsc::channel();
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -106,13 +141,23 @@ fn overlay(app: &AppHandle, gen: u64) -> bool {
             let _ = tx.send(false);
             return;
         }
+        let (mx, my, mw, mh) = monitor_rect(&a, target_frame);
+        *a.state::<Hands>().origin.lock().unwrap() = (mx, my);
         if let Some(w) = a.get_webview_window(LABEL) {
+            let _ = w.set_position(LogicalPosition::new(mx, my));
+            let _ = w.set_size(LogicalSize::new(mw, mh));
             let _ = w.show();
+            if let Ok(ns) = w.ns_window() {
+                // SAFETY: live NSWindow on the main thread; orderFrontRegardless ensures overlay appears above focused browser/apps
+                unsafe {
+                    platform::macos::window::style_onboarding_window(ns, 24);
+                    platform::macos::window::set_click_through(ns, true);
+                    platform::macos::window::set_window_level(ns, 24, Some(false));
+                }
+            }
             let _ = tx.send(false);
             return;
         }
-        // (the main display, where AX coordinates start; ponytail: other displays get the cursor when it's needed there)
-        let size = a.primary_monitor().ok().flatten().map(|m| m.size().to_logical::<f64>(m.scale_factor())).map(|s| (s.width, s.height)).unwrap_or((1512.0, 982.0));
         let built = WebviewWindowBuilder::new(&a, LABEL, WebviewUrl::App("hands.html".into()))
             .initialization_script(crate::page_globals())
             .title("Pony")
@@ -125,8 +170,16 @@ fn overlay(app: &AppHandle, gen: u64) -> bool {
             .skip_taskbar(true)
             .always_on_top(true)
             .visible_on_all_workspaces(true)
-            .position(0.0, 0.0)
-            .inner_size(size.0, size.1)
+            .position(mx, my)
+            .inner_size(mw, mh)
+            .on_page_load(|w, p| {
+                if p.event() == PageLoadEvent::Finished {
+                    let h = w.app_handle();
+                    if let Some(payload) = h.state::<Hands>().pending_show.lock().unwrap().clone() {
+                        let _ = h.emit_to(LABEL, "hands", payload);
+                    }
+                }
+            })
             .build();
         let created = if let Ok(w) = built {
             if let Ok(ns) = w.ns_window() {
@@ -134,6 +187,7 @@ fn overlay(app: &AppHandle, gen: u64) -> bool {
                 unsafe {
                     platform::macos::window::style_onboarding_window(ns, 24);
                     platform::macos::window::set_click_through(ns, true);
+                    platform::macos::window::set_window_level(ns, 24, Some(false));
                 }
             }
             true
@@ -154,22 +208,40 @@ fn show(app: &AppHandle, what: Value) {
     let _ = app.emit_to(LABEL, "hands", what);
 }
 
+fn to_overlay(app: &AppHandle, x: f64, y: f64) -> (f64, f64) {
+    let (ox, oy) = *app.state::<Hands>().origin.lock().unwrap();
+    (x - ox, y - oy)
+}
+
+/// Shows the glowing screen edges while Eyes inspects the screen with Hands enabled.
+pub fn peek_overlay(app: &AppHandle, app_name: &str, target_frame: (f64, f64, f64, f64)) {
+    let gen = begin(app, app_name, target_frame);
+    end_later_ms(app, gen, 8000);
+}
+
 /// Shows the glow and Pony's cursor; they go away a moment after the last step.
-fn begin(app: &AppHandle, status: &str) -> u64 {
+fn begin(app: &AppHandle, status: &str, target_frame: (f64, f64, f64, f64)) -> u64 {
     let gen = app.state::<Hands>().shown.fetch_add(1, Ordering::SeqCst) + 1;
-    overlay(app, gen);
     let s = app.state::<App>().settings.snapshot();
-    show(app, json!({"do": "show", "status": status, "shape": s["ponyShape"], "color": s["ponyColor"]}));
+    let payload = json!({"do": "show", "status": status, "shape": s["ponyShape"], "color": s["ponyColor"]});
+    *app.state::<Hands>().pending_show.lock().unwrap() = Some(payload.clone());
+    overlay(app, gen, target_frame);
+    show(app, payload);
     gen
 }
 
 fn end_later(app: &AppHandle, gen: u64) {
+    end_later_ms(app, gen, 8000);
+}
+
+fn end_later_ms(app: &AppHandle, gen: u64, wait_ms: u64) {
     let a = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(2500));
+        std::thread::sleep(Duration::from_millis(wait_ms));
         if a.state::<Hands>().shown.load(Ordering::SeqCst) != gen {
             return;
         }
+        *a.state::<Hands>().pending_show.lock().unwrap() = None;
         show(&a, json!({"do": "hide"}));
         // Let the CSS fade finish, then check generation + hide NSWindow atomically on the main thread.
         std::thread::sleep(Duration::from_millis(350));
@@ -265,7 +337,7 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
     }
     let _ = app.emit("agent:step", json!({"session": session, "kind": "hands", "detail": app_name.chars().take(60).collect::<String>()}));
     let _driving = crate::shell::Driving::start();
-    let gen = begin(app, &app_name);
+    let gen = begin(app, &app_name, win.frame());
     let (old_nodes, old_map) = {
         let st = app.state::<Hands>();
         let views = st.views.lock().unwrap();
@@ -476,7 +548,8 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
     }
     if kind != "menu" && kind != "key" {
         let shown = if kind == "point" { step["say"].as_str().unwrap_or(&label).to_string() } else { label.chars().take(40).collect() };
-        show(app, json!({"do": if kind == "point" { "point" } else { "move" }, "x": at.0, "y": at.1, "kind": kind, "label": shown}));
+        let (ox, oy) = to_overlay(app, at.0, at.1);
+        show(app, json!({"do": if kind == "point" { "point" } else { "move" }, "x": ox, "y": oy, "kind": kind, "label": shown}));
         std::thread::sleep(Duration::from_millis(if kind == "point" { 900 } else { 320 }));
     }
     let ok = match kind {
@@ -495,13 +568,14 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             if h::risky(&spot_label) {
                 ask(app, session, format!("{app_name}\nclick “{spot_label}”"))?;
             }
-            show(app, json!({"do": "move", "x": px, "y": py, "kind": "click", "label": spot_label.chars().take(40).collect::<String>()}));
+            let (ox, oy) = to_overlay(app, px, py);
+            show(app, json!({"do": "move", "x": ox, "y": oy, "kind": "click", "label": spot_label.chars().take(40).collect::<String>()}));
             std::thread::sleep(Duration::from_millis(320));
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
             ax::click_at(px, py);
-            show(app, json!({"do": "tap", "x": px, "y": py}));
+            show(app, json!({"do": "tap", "x": ox, "y": oy}));
             ax::settle(pid, win, 1500);
             return Ok(format!("click t{k}"));
         }
@@ -528,8 +602,10 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
                 if !ax::bring(pid, win) {
                     return Err("the app couldn't come to the front".into());
                 }
-                el.set_flag("AXFocused", true);
-                std::thread::sleep(Duration::from_millis(120));
+                if web || !el.set_flag("AXFocused", true) {
+                    ax::click_at(at.0, at.1);
+                }
+                std::thread::sleep(Duration::from_millis(140));
                 ax::press_combo(0, 0x0010_0000); // cmd+a: the old text goes
                 ax::type_all(text);
                 true
@@ -567,7 +643,8 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         });
     }
     if kind != "menu" && kind != "key" {
-        show(app, json!({"do": "tap", "x": at.0, "y": at.1}));
+        let (ox, oy) = to_overlay(app, at.0, at.1);
+        show(app, json!({"do": "tap", "x": ox, "y": oy}));
     }
     ax::settle(pid, win, 1500);
     Ok(match (kind, n) {

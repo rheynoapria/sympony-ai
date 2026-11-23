@@ -16,7 +16,9 @@ point {n, say} (only shows the user where). It stops at a step that fails and an
 those. When that answer shows the request is done, it is: don't read the screen again to check. If nothing changed, don't repeat \
 the step: try another way or tell the user. Act only on what the user asked; sending, buying, paying or deleting asks the user first.";
 /// In the system prompt while Hands are on (the rules come with the first screen read of a run).
-pub const BRIEF: &str = "Hands: screen_do acts on what screen_read (elements or ocr) shows; how to, with the first read.";
+pub const BRIEF: &str = "Hands: YOU CAN DO MULTI-STEP UI AUTOMATION on desktop apps and browser websites using screen_read + screen_do (clicking buttons/links/videos, typing in search fields, pressing Enter, scrolling, using menus). \
+If the app or website the user asks to automate isn't in front yet, open or focus it first (e.g. via exec: `open \"https://...\" && sleep 2` or `open -a \"AppName\" && sleep 1`), then call screen_read (mode \"elements\", or \"ocr\" if elements are sparse/unlabeled), then call screen_do to act across steps until the task is done. \
+Do NOT claim you cannot read or automate a website or app (like YouTube) when screen_read and screen_do are in your tools—even if earlier chat messages said Eyes/Hands were off, use your active tools now. Detailed step syntax comes with your first screen_read.";
 
 pub fn tools() -> Vec<Value> {
     json!([{"name": "screen_do", "description": "Acts on the window the user is looking at, using the numbers from the last screen_read: one or more steps, in order.",

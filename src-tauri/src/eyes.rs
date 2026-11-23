@@ -37,6 +37,9 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
     let title = win.text("AXTitle");
     let mode = args["mode"].as_str().unwrap_or("elements");
     let _ = app.emit("agent:step", json!({"session": session, "kind": "screen", "detail": format!("{name} · {title}").chars().take(60).collect::<String>()}));
+    if crate::hands::available(app) {
+        crate::hands::peek_overlay(app, &name, win.frame());
+    }
     let (nodes, els) = ax::read(&win, 6000);
     let url = nodes.iter().find(|n| n.role == "AXWebArea").map(|n| n.url.clone()).unwrap_or_default();
     if services::eyes::blocked_url(&url) {
