@@ -7,6 +7,7 @@
 pub mod apps;
 mod audio;
 pub mod automation;
+mod brightness;
 pub mod displays;
 pub mod keychain;
 pub mod location;

@@ -599,3 +599,26 @@ pub fn screen_locked() -> bool {
     })
 }
 
+/// Keep awake (Control tab): macOS's own `caffeinate` keeps the display on while it runs, tied to Sympony's life.
+pub fn keep_awake(on: bool) {
+    static CHILD: std::sync::Mutex<Option<std::process::Child>> = std::sync::Mutex::new(None);
+    let mut c = CHILD.lock().unwrap();
+    match (on, c.is_some()) {
+        (true, false) => {
+            *c = std::process::Command::new("/usr/bin/caffeinate").args(["-di", "-w", &std::process::id().to_string()]).spawn().ok();
+        }
+        (false, true) => {
+            if let Some(mut ch) = c.take() {
+                let _ = ch.kill();
+                let _ = ch.wait();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Opens macOS's Screenshot (its toolbar, as ⇧⌘5 does).
+pub fn screenshot() {
+    let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.screenshot.launcher"]).status();
+}
+

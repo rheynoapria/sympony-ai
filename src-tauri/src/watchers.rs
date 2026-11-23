@@ -122,7 +122,7 @@ pub fn start(app: &AppHandle) {
                 if idle_watch.update((asleep, locked)).is_some() || (idle_ms >= 60_000 && beat % 15 == 0) {
                     send(&app, "idle", json!({ "idleMs": idle_ms, "locked": locked }));
                 }
-                keep_awake(app.state::<crate::commands::App>().settings.bool_or("keepAwake", false));
+                system::keep_awake(app.state::<crate::commands::App>().settings.bool_or("keepAwake", false));
                 let (rx, tx, wired) = system::network();
                 let _ = app.emit("helper", json!({ "type": "net", "rx": rx, "tx": tx, "t": chrono::Utc::now().timestamp_millis(), "wired": wired }));
             }
@@ -167,24 +167,6 @@ pub fn register_audio(reg: &mut services::Registry) {
 /// The network now: `{ssid, quality}` (null when not on Wi-Fi, or macOS doesn't tell the name).
 fn wifi() -> Value {
     radios::wifi_ssid().map(|s| json!({ "ssid": s, "quality": services::stats::wifi_quality(radios::wifi_rssi()) })).unwrap_or(Value::Null)
-}
-
-/// Keep awake (Control tab): macOS's own `caffeinate` keeps the display on while it runs, tied to Sympony's life.
-fn keep_awake(on: bool) {
-    static CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
-    let mut c = CHILD.lock().unwrap();
-    match (on, c.is_some()) {
-        (true, false) => {
-            *c = std::process::Command::new("/usr/bin/caffeinate").args(["-di", "-w", &std::process::id().to_string()]).spawn().ok();
-        }
-        (false, true) => {
-            if let Some(mut ch) = c.take() {
-                let _ = ch.kill();
-                let _ = ch.wait();
-            }
-        }
-        _ => {}
-    }
 }
 
 /// `system.toggle(id)` (the Control tab's tiles) and `stats.wifi`.
@@ -260,9 +242,7 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
             "keepAwake" => flip("keepAwake"),
             "eyeBreaks" => flip("healthEyeBreaks"),
             "lock" => radios::lock_screen(),
-            "screenshot" => {
-                let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.screenshot.launcher"]).status();
-            }
+            "screenshot" => system::screenshot(),
             other => (ctx.log)(&format!("system.toggle: {other} isn't on a Mac")),
         }
         Ok(Value::Null)
