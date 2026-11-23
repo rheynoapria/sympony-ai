@@ -159,9 +159,12 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
     }));
 }
 
+#[cfg(target_os = "macos")]
 const OCR: &str = include_str!("../helper/ocr.js");
+#[cfg(target_os = "macos")]
 static OCR_WRITTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
 fn ensure_ocr_script(data_dir: &std::path::Path) -> std::path::PathBuf {
     use std::sync::atomic::Ordering;
     let dir = data_dir.join("helper");
@@ -175,7 +178,9 @@ fn ensure_ocr_script(data_dir: &std::path::Path) -> std::path::PathBuf {
     p
 }
 
+#[cfg(target_os = "macos")]
 struct TempFile(std::path::PathBuf);
+#[cfg(target_os = "macos")]
 impl Drop for TempFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
@@ -183,6 +188,7 @@ impl Drop for TempFile {
 }
 
 /// Captures `win` as a resized JPEG (<= 1280 px) in Sympony's private 0700 tmp folder and returns `("image/jpeg", base64)`.
+#[cfg(target_os = "macos")]
 fn capture_jpeg(app: &AppHandle, pid: i32, win: &ax::El) -> Result<(String, String), String> {
     use base64::Engine;
     use std::process::Command;
@@ -223,8 +229,14 @@ fn capture_jpeg(app: &AppHandle, pid: i32, win: &ax::El) -> Result<(String, Stri
     Ok((mime, base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
+#[cfg(not(target_os = "macos"))]
+fn capture_jpeg(_app: &AppHandle, _pid: i32, _win: &ax::El) -> Result<(String, String), String> {
+    Err("Vision screenshot capture is currently available on macOS only".into())
+}
+
 /// The text in a picture of `pid`'s window, read on this Mac by Vision (`helper/ocr.js`). The picture is a private
 /// temporary file inside Sympony's 0700 data folder, removed automatically on drop; it never leaves the Mac.
+#[cfg(target_os = "macos")]
 fn ocr(app: &AppHandle, pid: i32, win: &ax::El) -> Result<Vec<Value>, String> {
     use std::io::Read;
     use std::process::{Command, Stdio};
@@ -279,4 +291,9 @@ fn ocr(app: &AppHandle, pid: i32, win: &ax::El) -> Result<Vec<Value>, String> {
         return Err(format!("Couldn't read the text in the picture: {e}"));
     }
     Ok(v.as_array().cloned().unwrap_or_default())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ocr(_app: &AppHandle, _pid: i32, _win: &ax::El) -> Result<Vec<Value>, String> {
+    Err("Screen OCR is currently available on macOS only".into())
 }

@@ -12,4 +12,8 @@ pub mod radios;
 pub mod calendar;
 pub mod files;
 pub mod player;
+pub mod shell;
 pub mod voice;
+
+/// AppKit's proof of being on the main thread, under the name `platform::os` gives it on every OS.
+pub use objc2::MainThreadMarker;

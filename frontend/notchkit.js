@@ -232,14 +232,29 @@
   function ytView(m, s, blocked, dismissed) {
     return !!(m && m.active && m.video && (s || {}).ytVideo !== false && !blocked.has(m.video) && !dismissed.has(m.video));
   }
-  // what the notch's muted copy does: t/d its time and length, target the tab's position, npDur the tab's length.
-  // Lengths more than 3 s apart = the tab plays an ad (hold). More than 1.5 s off = seek, 0.5 s ahead for the
-  // buffering a seek costs; never while it settles (buffering, or just seeked): seeking a copy that is still
-  // buffering starts its buffering over, and it never plays.
-  function ytSync({ t, d, target, npDur, playing, settling }) {
+  // what the notch's muted copy does: t/d its time and length as it last reported them (ageMs ago, playing when
+  // state is 1, at rate: its speed now), target the tab's position, npDur the tab's length. Lengths more than 3 s
+  // apart = the tab plays an ad (hold). Where the copy is now = t, run on since the report while it plays; drift > 0:
+  // ahead of the tab. A little off while playing (more than 0.08 s, up to 1.5 s): nudge, a little faster (1.25×) or
+  // slower (0.75×) until within 0.03 s (nudging: it's doing so), which neither jumps nor buffers. More than 1.5 s off:
+  // seek, `lead` s ahead for the time a seek takes (learned: ytLead). Never while it settles (buffering, or just
+  // seeked): seeking a copy that is still buffering starts its buffering over, and it never plays. A tab without a
+  // timeline (live) can't be followed: left alone.
+  function ytSync({ t, ageMs = 0, state = 1, rate = 1, d, target, npDur, playing, settling, nudging = false, lead = 0 }) {
     const ad = d > 0 && npDur > 0 && Math.abs(d - npDur) > 3;
-    const seek = !ad && !settling && Math.abs(t - target) > 1.5 ? Math.round((target + 0.5) * 10) / 10 : null;
-    return { ad, seek, play: !!playing && !ad };
+    const drift = (state === 1 ? t + (Math.max(0, ageMs) / 1000) * rate : t) - target;
+    let seek = null; let nudge = 1;
+    if (!ad && !settling && npDur > 0) {
+      const off = Math.abs(drift);
+      if (off > 1.5) seek = Math.round((target + (playing ? lead : 0)) * 100) / 100;
+      else if (playing && (off > 0.08 || (nudging && off > 0.03))) nudge = drift > 0 ? 0.75 : 1.25;
+    }
+    return { ad, seek, play: !!playing && !ad, nudge, drift };
+  }
+  // the lead for the next seek: the last one landed `landed` s ahead (> 0) or behind (< 0) of the tab once the copy
+  // played steadily, so aim that much less (more) next time; 0 to 2 s
+  function ytLead(lead, landed) {
+    return Math.max(0, Math.min(2, Math.round((lead - landed) * 100) / 100));
   }
 
   // whether the video's thumbnail covers the player: until it has played 2.5 s since it was loaded (YouTube shows
@@ -766,6 +781,7 @@
     voiceBars,
     ytView,
     ytSync,
+    ytLead,
     ytCover,
     ytCommand,
     ytGrace,

@@ -123,6 +123,11 @@ fn check_file_path(raw: &str, home: &str, name: &str) -> Result<(String, String)
 
 /// One of services::exec::NAMES. `after_web`: Pony read the web/screen/MCP earlier in this turn (then changes ask, also in YOLO).
 pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &Value) -> Result<String, String> {
+    // (the secret-place guards read sh syntax and Unix paths: until they're made and tested for cmd and Windows paths,
+    // Pony gets no commands or files there)
+    if cfg!(windows) {
+        return Err("Pony's commands and files aren't available on Windows yet".into());
+    }
     let home = home();
     let step = |kind: &str, detail: &str| {
         let _ = app.emit("agent:step", json!({"session": session, "kind": kind, "detail": detail.chars().take(60).collect::<String>()}));
@@ -342,7 +347,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     reg.add("pony.execForget", Box::new(move |_, _| Ok(apply_settings_patch(&h, json!({"ponyExecAllow": []})))));
 }
 
-#[cfg(test)]
+// (sh syntax, /tmp and Unix symlinks; Windows gets its own when `run` works there)
+#[cfg(all(test, unix))]
 mod tests {
     use super::{check_file_path, shell};
     use std::time::{Duration, Instant};

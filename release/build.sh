@@ -7,7 +7,8 @@
 #   release/build.sh [--clean]   --clean: drop target/ afterwards
 set -euo pipefail
 cd "$(dirname "$0")/.."
-V=$(python3 -I -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+PY=$(command -v python3 || command -v python)
+V=$("$PY" -I -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
 OUT="release/out/$V"; mkdir -p "$OUT"
 
 OAUTH="$PWD/.signing/oauth.env"
@@ -56,7 +57,7 @@ sign_updater_artifact() {
     echo "ERROR: expected signature file $sig_file was not generated" >&2
     exit 1
   fi
-  python3 -I - "$target" "$V" "$(basename "$artifact")" "$sig_file" "$OUT/updater-${target}.json" <<'PY'
+  "$PY" -I - "$target" "$V" "$(basename "$artifact")" "$sig_file" "$OUT/updater-${target}.json" <<'PY'
 import json, sys
 target, version, filename, sig_path, out_path = sys.argv[1:6]
 sig = open(sig_path, "r", encoding="utf-8").read().strip()
@@ -93,8 +94,8 @@ notarize_and_staple() {
   out_json=$(xcrun notarytool submit "$submit_file" "${NOTARY_ARGS[@]}" --wait --output-format json)
   echo "$out_json"
   local status id
-  status=$(python3 -I -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("status",""))' <<< "$out_json")
-  id=$(python3 -I -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("id",""))' <<< "$out_json")
+  status=$("$PY" -I -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("status",""))' <<< "$out_json")
+  id=$("$PY" -I -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("id",""))' <<< "$out_json")
   if [ "$status" != "Accepted" ]; then
     echo "Notarization failed with status: $status (id=$id). Fetching Apple notary log..."
     if [ -n "$id" ]; then

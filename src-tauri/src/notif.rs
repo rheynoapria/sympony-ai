@@ -2,7 +2,7 @@
 //! with "Don't show them twice" (`notifHideBanners`), closed so they show only in Sympony; usernoted's database read
 //! every second for silent/missed notifications, while rows for already-shown banners only populate app metadata. Each new one is sent as `notif` and kept in the history.
 use base64::Engine;
-use platform::macos::{apps, notifications};
+use platform::os::{apps, notifications};
 use serde_json::{json, Value};
 use services::notif::{banner_app, parse_record, History, Recent};
 use std::collections::HashMap;
@@ -25,14 +25,21 @@ pub struct Notifs {
 /// macOS asked again after each update. Err when it can't be read or kept: the history then stays in memory.
 fn key(dir: &std::path::Path) -> Result<[u8; 32], String> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let b64 = base64::engine::general_purpose::STANDARD;
     let path = dir.join("notif-history.key");
     match std::fs::read_to_string(&path) {
         Ok(s) => b64.decode(s.trim()).ok().and_then(|v| <[u8; 32]>::try_from(v).ok()).ok_or_else(|| "the key file is damaged".to_string()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let k = services::notif::new_key();
-            let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path).map_err(|e| e.to_string())?;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            // (on Windows the data folder's own access list keeps it to this account)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut f = opts.open(&path).map_err(|e| e.to_string())?;
             f.write_all(b64.encode(k).as_bytes()).map_err(|e| e.to_string())?;
             Ok(k)
         }
@@ -115,7 +122,7 @@ fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: 
 
 /// The banners: read as they appear, closed with "Don't show them twice".
 fn watch_banners(app: AppHandle) {
-    use platform::macos::banners;
+    use platform::os::banners;
     std::thread::spawn(move || {
         let mut seen: std::collections::VecDeque<String> = Default::default();
         let mut asked = false;
@@ -228,11 +235,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     let a = app.clone();
     reg.add("notif.access", Box::new(move |_, _| {
         let mut v = notif_access(&a);
-        v["banners"] = json!(platform::macos::banners::trusted(false));
+        v["banners"] = json!(platform::os::banners::trusted(false));
         Ok(v)
     }));
     reg.add("notif.grantBanners", Box::new(|_, _| {
-        if !platform::macos::banners::trusted(true) {
+        if !platform::os::banners::trusted(true) {
             let _ = std::process::Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility").status();
         }
         Ok(Value::Null)

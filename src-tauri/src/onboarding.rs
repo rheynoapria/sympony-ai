@@ -3,8 +3,8 @@
 use crate::commands::{apply_settings_patch, App};
 use crate::notch;
 use platform::geometry::Display;
-use platform::macos::displays::{displays_here, dock_rect};
-use platform::macos::system::onscreen_windows;
+use platform::os::displays::{displays_here, dock_rect};
+use platform::os::system::onscreen_windows;
 use serde_json::{json, Value};
 use services::onboarding::{patch, perms_for, picks_from, skip_patch, Feel};
 use std::sync::Mutex;
@@ -71,7 +71,8 @@ fn set_notch_visible(app: &AppHandle, visible: bool) {
 /// Opens the onboarding window (single instance). Starts in Phase A ("opening").
 pub fn open(app: &AppHandle) {
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    // (the window is made from the event loop: `native::later_on_main_thread` says why)
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
             let _ = w.show();
             let _ = w.set_focus();
@@ -87,7 +88,7 @@ pub fn open(app: &AppHandle) {
             .into_iter()
             .map(|r| json!({ "x": r.x, "y": r.y, "w": r.w, "h": r.h, "kind": "win" }))
             .collect();
-        if let Some(mtm) = objc2::MainThreadMarker::new() {
+        if let Some(mtm) = platform::os::MainThreadMarker::new() {
             if let Some(dock) = dock_rect(mtm, disp.id) {
                 wins.push(json!({ "x": dock.x, "y": dock.y, "w": dock.w, "h": dock.h, "kind": "dock" }));
             }
@@ -127,9 +128,9 @@ pub fn open(app: &AppHandle) {
 
         match built {
             Ok(w) => {
-                if let Ok(ns) = w.ns_window() {
+                if let Some(ns) = crate::native::window(&w) {
                     // SAFETY: live NSWindow on the main thread
-                    unsafe { platform::macos::window::style_onboarding_window(ns, 25) };
+                    unsafe { platform::os::window::style_onboarding_window(ns, 25) };
                 }
                 let _ = w.set_focus();
                 let h = a.clone();
@@ -247,11 +248,11 @@ pub fn onboarding_phase(
                 let _ = win.set_effects(None);
                 let _ = win.set_position(LogicalPosition::new(disp.frame.x, disp.frame.y));
                 let _ = win.set_size(LogicalSize::new(disp.frame.w, disp.frame.h));
-                if let Ok(ns) = win.ns_window() {
+                if let Some(ns) = crate::native::window(&win) {
                     unsafe {
-                        platform::macos::window::set_window_alpha(ns, 1.0);
-                        platform::macos::window::set_window_shadow(ns, false);
-                        platform::macos::window::set_window_level(ns, 25, Some(false));
+                        platform::os::window::set_window_alpha(ns, 1.0);
+                        platform::os::window::set_window_shadow(ns, false);
+                        platform::os::window::set_window_level(ns, 25, Some(false));
                     }
                 }
                 let _ = win.set_focus();
@@ -271,12 +272,12 @@ pub fn onboarding_phase(
                 let _ = win.set_size(LogicalSize::new(win_w.round(), win_h.round()));
                 let _ = win.set_position(LogicalPosition::new(pos_x, pos_y));
                 if prev_phase != "card" {
-                    if let Ok(ns) = win.ns_window() {
+                    if let Some(ns) = crate::native::window(&win) {
                         unsafe {
-                            platform::macos::window::set_window_alpha(ns, 1.0);
-                            platform::macos::window::set_window_shadow(ns, false);
+                            platform::os::window::set_window_alpha(ns, 1.0);
+                            platform::os::window::set_window_shadow(ns, false);
                             // Floating above regular desktop windows, well below the notch (level 25)
-                            platform::macos::window::set_window_level(ns, 3, Some(false));
+                            platform::os::window::set_window_level(ns, 3, Some(false));
                         }
                     }
                     set_notch_visible(&a, true);
@@ -295,11 +296,11 @@ pub fn onboarding_lower(handle: AppHandle, lower: bool) {
     let a = handle.clone();
     let _ = handle.run_on_main_thread(move || {
         let Some(win) = a.get_webview_window(LABEL) else { return };
-        if let Ok(ns) = win.ns_window() {
+        if let Some(ns) = crate::native::window(&win) {
             let level = if lower { 0 } else { 3 };
             unsafe {
-                platform::macos::window::set_window_alpha(ns, if lower { 0.0 } else { 1.0 });
-                platform::macos::window::set_window_level(ns, level, Some(lower));
+                platform::os::window::set_window_alpha(ns, if lower { 0.0 } else { 1.0 });
+                platform::os::window::set_window_level(ns, level, Some(lower));
             }
         }
         if !lower {
@@ -316,10 +317,10 @@ pub fn onboarding_cancel_wait(handle: AppHandle) {
     let a = handle.clone();
     let _ = handle.run_on_main_thread(move || {
         let Some(win) = a.get_webview_window(LABEL) else { return };
-        if let Ok(ns) = win.ns_window() {
+        if let Some(ns) = crate::native::window(&win) {
             unsafe {
-                platform::macos::window::set_window_alpha(ns, 1.0);
-                platform::macos::window::set_window_level(ns, 3, Some(false));
+                platform::os::window::set_window_alpha(ns, 1.0);
+                platform::os::window::set_window_level(ns, 3, Some(false));
             }
         }
         let _ = win.set_focus();

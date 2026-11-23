@@ -53,7 +53,7 @@ pub fn start(app: &AppHandle) {
     // the Mac's calendars: asked once (macOS keeps the answer), on a thread of its own so the prompt holds up nothing
     let a = app.clone();
     std::thread::spawn(move || {
-        if a.state::<App>().settings.get()["calendarEnabled"] != false && platform::macos::calendar::access() {
+        if a.state::<App>().settings.get()["calendarEnabled"] != false && platform::os::calendar::access() {
             kick(&a, false);
         }
     });
@@ -97,7 +97,7 @@ fn run(app: AppHandle, rx: Receiver<bool>) {
                 events.extend(parse_ics(t, &feed, from, to, tz));
             }
             events.extend(expand_local(&s["localEvents"], from, to, tz));
-            let mac = platform::macos::calendar::events(from, to);
+            let mac = platform::os::calendar::events(from, to);
             mac_n = mac.len();
             events.extend(mac);
             events.sort_by_key(|e| e["start"].as_i64());
@@ -105,7 +105,7 @@ fn run(app: AppHandle, rx: Receiver<bool>) {
         let v = json!({"events": events, "errors": errors});
         let changed = *app.state::<Calendar>().last.lock().unwrap() != v;
         if changed {
-            app.state::<App>().log.line(&format!("calendar: {} events ({mac_n} from the Mac's calendars, access {:?})", events_n(&v), platform::macos::calendar::status_name()));
+            app.state::<App>().log.line(&format!("calendar: {} events ({mac_n} from the Mac's calendars, access {:?})", events_n(&v), platform::os::calendar::status_name()));
         }
         if changed || resend {
             *app.state::<Calendar>().last.lock().unwrap() = v.clone();

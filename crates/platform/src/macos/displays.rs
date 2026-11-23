@@ -5,6 +5,11 @@ use objc2_foundation::{ns_string, NSNumber};
 
 /// Every display, in desktop coordinates with a top-left origin (AppKit's are bottom-left from the main screen).
 /// The camera notch is the gap between the two "auxiliary top" areas macOS reports beside it.
+/// The screen colour picker is Windows' (the Control tab offers it there only): None.
+pub fn pick_color() -> Option<[u8; 3]> {
+    None
+}
+
 pub fn displays(mtm: MainThreadMarker) -> Vec<Display> {
     let screens = NSScreen::screens(mtm);
     let Some(first) = screens.firstObject() else { return vec![] };

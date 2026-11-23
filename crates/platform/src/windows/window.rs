@@ -1,0 +1,163 @@
+//! Sympony's own windows. `handle` is the window's HWND where macOS takes its NSWindow (`native::window` in the app).
+//! Whether a window takes the keyboard stays with Tauri (`set_focusable`): nothing here touches WS_EX_NOACTIVATE.
+use std::ffi::c_void;
+use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    BringWindowToTop, GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOPMOST,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOWNA, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+};
+
+/// macOS's floating level (3) and up keep a window above ordinary ones: on Windows, topmost.
+const FLOATING: isize = 3;
+
+/// Adds and removes extended styles, then has Windows apply them.
+unsafe fn ex_style(h: HWND, add: u32, remove: u32) {
+    // SAFETY (callers): `h` is a live window of this process.
+    unsafe {
+        let old = GetWindowLongPtrW(h, GWL_EXSTYLE) as u32;
+        let new = (old | add) & !remove;
+        if new != old {
+            SetWindowLongPtrW(h, GWL_EXSTYLE, new as isize);
+            SetWindowPos(h, std::ptr::null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+    }
+}
+
+unsafe fn topmost(h: HWND, on: bool) {
+    // SAFETY (callers): `h` is a live window of this process.
+    unsafe { SetWindowPos(h, if on { HWND_TOPMOST } else { HWND_NOTOPMOST }, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) };
+}
+
+/// The notch window: above every ordinary window (fullscreen apps included), and no entry in Alt+Tab (the taskbar
+/// already leaves it out: `skip_taskbar`).
+///
+/// # Safety
+/// `handle` must be a live HWND of this process (Tauri's). Null is ignored.
+pub unsafe fn style_notch_window(handle: *mut c_void) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        ex_style(h, WS_EX_TOOLWINDOW, 0);
+        topmost(h, true);
+    }
+}
+
+/// The onboarding window at `level` (25 above everything, 3 floating, 0 ordinary), no Alt+Tab entry.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn style_onboarding_window(handle: *mut c_void, level: isize) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        ex_style(h, WS_EX_TOOLWINDOW, 0);
+        topmost(h, level >= FLOATING);
+    }
+}
+
+/// `level` as on macOS (floating and up: topmost), and `lower`: behind every other window (true) or shown in front
+/// without taking the keyboard (false).
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn set_window_level(handle: *mut c_void, level: isize, lower: Option<bool>) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        match lower {
+            Some(true) => {
+                topmost(h, false);
+                SetWindowPos(h, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            Some(false) => {
+                ShowWindow(h, SW_SHOWNA);
+                topmost(h, level >= FLOATING);
+            }
+            None => topmost(h, level >= FLOATING),
+        }
+    }
+}
+
+/// Undecorated windows have no shadow on Windows (Tauri's `.shadow(false)` keeps it so): nothing to change.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn set_window_shadow(_handle: *mut c_void, _shadow: bool) {}
+
+/// Not yet on Windows: a WebView2 window's transparency comes from composition, and making it layered to fade it
+/// breaks that. The onboarding uses it to step aside; that waits for the onboarding's own Windows work.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn set_window_alpha(_handle: *mut c_void, _alpha: f64) {}
+
+/// Lets clicks pass through to what's under the window (an overlay that only shows).
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn set_click_through(handle: *mut c_void, through: bool) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    // (WS_EX_TRANSPARENT only passes clicks on a layered window; Tauri's set_ignore_cursor_events does the same)
+    unsafe {
+        if through {
+            ex_style(h, WS_EX_TRANSPARENT | WS_EX_LAYERED, 0);
+        } else {
+            ex_style(h, 0, WS_EX_TRANSPARENT);
+        }
+    }
+}
+
+/// The floating Pony chat window: no Alt+Tab/taskbar clutter, optionally pinned topmost.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn style_floating_chat_window(handle: *mut c_void, always_on_top: bool) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        ex_style(h, WS_EX_TOOLWINDOW, 0);
+        topmost(h, always_on_top);
+    }
+}
+
+/// Switches the floating Pony chat window between pinned topmost and normal window z-order.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn set_floating_chat_pin(handle: *mut c_void, always_on_top: bool) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        topmost(h, always_on_top);
+    }
+}
+
+/// Puts one of Sympony's windows in front of the app the user is in and gives it the keyboard. Windows lets a
+/// background app do that only in some cases; when it refuses, the window still comes up and its taskbar button
+/// flashes.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn bring_front(handle: *mut c_void) {
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        BringWindowToTop(h);
+        SetForegroundWindow(h);
+    }
+}

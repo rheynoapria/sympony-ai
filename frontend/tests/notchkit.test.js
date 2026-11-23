@@ -190,12 +190,42 @@ describe('YouTube video mode', () => {
     expect(K.ytView({ active: false, video: 'VgSWAOb7JTQ' }, {}, new Set(), new Set())).toBe(false);
   });
   test('sync_paused_pauses_and_no_seek_under_threshold', () => {
-    expect(K.ytSync({ t: 40.5, d: 267, target: 40, npDur: 267, playing: false })).toEqual({ ad: false, seek: null, play: false });
-    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true })).toEqual({ ad: false, seek: 42.5, play: true });
+    expect(K.ytSync({ t: 40.5, d: 267, target: 40, npDur: 267, playing: false, state: 2 })).toMatchObject({ ad: false, seek: null, play: false, nudge: 1 });
+    // far off: a seek to the tab, `lead` ahead while playing
+    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true })).toMatchObject({ ad: false, seek: 42, play: true });
+    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true, lead: 0.3 }).seek).toBe(42.3);
     expect(K.ytSync({ t: 40, d: 267, target: 41.4, npDur: 267, playing: true }).seek).toBe(null);
+    // settling (buffering, just seeked): left alone
+    expect(K.ytSync({ t: 40, d: 267, target: 45, npDur: 267, playing: true, settling: true })).toMatchObject({ seek: null, nudge: 1 });
+  });
+  test('ytSync counts the time since the copy last reported', () => {
+    // reported 40.0 half a second ago while playing: it's at 40.5 now, as the tab is
+    expect(K.ytSync({ t: 40, ageMs: 500, state: 1, d: 267, target: 40.5, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 1 });
+    // paused (state 2): where it reported
+    expect(K.ytSync({ t: 40, ageMs: 500, state: 2, d: 267, target: 40, npDur: 267, playing: false }).drift).toBe(0);
+  });
+  test('ytSync nudges a little off instead of jumping', () => {
+    // 0.4 s ahead: slower until back; 0.4 s behind: faster
+    expect(K.ytSync({ t: 40.4, d: 267, target: 40, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 0.75 });
+    expect(K.ytSync({ t: 40, d: 267, target: 40.4, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 1.25 });
+    // within 0.08 s: in step; nudging goes on down to 0.03 s (0.1 s behind is caught up)
+    expect(K.ytSync({ t: 40.05, d: 267, target: 40, npDur: 267, playing: true }).nudge).toBe(1);
+    expect(K.ytSync({ t: 40, d: 267, target: 40.1, npDur: 267, playing: true }).nudge).toBe(1.25);
+    expect(K.ytSync({ t: 40.05, d: 267, target: 40, npDur: 267, playing: true, nudging: true }).nudge).toBe(0.75);
+    expect(K.ytSync({ t: 40.02, d: 267, target: 40, npDur: 267, playing: true, nudging: true }).nudge).toBe(1);
+    // paused: never nudged
+    expect(K.ytSync({ t: 40.4, d: 267, target: 40, npDur: 267, playing: false, state: 2 }).nudge).toBe(1);
+  });
+  test('ytSync leaves a live tab alone', () => {
+    expect(K.ytSync({ t: 3600, d: 0, target: 0, npDur: 0, playing: true })).toMatchObject({ seek: null, nudge: 1, play: true });
+  });
+  test('ytLead learns from where a seek landed', () => {
+    expect(K.ytLead(0.2, 0.3)).toBe(0); // landed 0.3 s ahead: aim lower (not below 0)
+    expect(K.ytLead(0.2, -0.4)).toBe(0.6); // landed behind: aim higher
+    expect(K.ytLead(1.9, -0.5)).toBe(2); // at most 2 s
   });
   test('ytSync spots an ad in the tab', () => {
-    expect(K.ytSync({ t: 40, d: 267, target: 5, npDur: 15, playing: true })).toEqual({ ad: true, seek: null, play: false });
+    expect(K.ytSync({ t: 40, d: 267, target: 5, npDur: 15, playing: true })).toMatchObject({ ad: true, seek: null, play: false });
     expect(K.ytSync({ t: 40, d: 0, target: 5, npDur: 15, playing: true }).ad).toBe(false); // embed not loaded yet
   });
 });
@@ -215,7 +245,7 @@ describe('ytCover', () => {
 describe('ytSync while the copy settles', () => {
   test('no seek while it buffers or just after a seek (that loop never let it play)', () => {
     expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: true }).seek).toBe(null);
-    expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: false }).seek).toBe(50.5);
+    expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: false, lead: 0.5 }).seek).toBe(50.5);
   });
   test('a long buffer is covered, a short one is not', () => {
     expect(K.ytCover(3, 9000, 300)).toBe(false);

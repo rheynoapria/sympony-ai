@@ -31,3 +31,24 @@ fn external_urls_allowed_by_scheme() {
         assert!(!services::external_url_ok(bad), "{bad}");
     }
 }
+
+#[test]
+fn windows_settings_links_only_not_other_windows_schemes() {
+    for ok in ["ms-settings:privacy-location", "ms-settings:network-wifi", "ms-availablenetworks:"] {
+        assert!(services::external_url_ok(ok), "{ok}");
+    }
+    // (schemes that have run code or searched remote shares, files, UNC paths, and the bare Settings scheme)
+    for bad in [
+        "ms-msdt:/id PCWDiagnostic",
+        "search-ms:query=x&crumb=location:\\\\evil\\share",
+        "shell:startup",
+        "ms-settings:",
+        "ms-availablenetworks:x",
+        "C:\\Windows\\System32\\calc.exe",
+        "\\\\server\\share\\x.exe",
+        "file://C:/Windows/System32/calc.exe",
+        "MS-MSDT:x",
+    ] {
+        assert!(!services::external_url_ok(bad), "{bad}");
+    }
+}

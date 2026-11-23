@@ -1,8 +1,8 @@
 //! The notch's open state, keyboard focus, dragging, the toggle shortcut and the tray.
 use crate::commands::App;
 use crate::notch::{Notch, LABEL};
-use objc2::MainThreadMarker;
-use platform::macos::{apps, displays::mouse_location};
+use platform::os::MainThreadMarker;
+use platform::os::{apps, displays::mouse_location};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -105,7 +105,7 @@ pub fn drag(app: &AppHandle, action: &str) {
                     let _ = app.run_on_main_thread(move || {
                         let (Some(mtm), Some(win)) = (MainThreadMarker::new(), *a.state::<Notch>().win.lock().unwrap()) else { return };
                         // the mouseup may never reach the page (it went click-through, or reloaded): no button down ends it
-                        if !platform::macos::displays::mouse_down() {
+                        if !platform::os::displays::mouse_down() {
                             drag(&a, "end");
                             return;
                         }
@@ -178,8 +178,8 @@ pub fn sync_shortcut(app: &AppHandle) {
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, sc, ev| {
-            // (the Teleprompter's reading keys go to it)
-            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) {
+            // (the Teleprompter's reading keys go to it, the colour picker's starts it)
+            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) && !crate::colorpick::pressed(app, sc) {
                 let _ = app.emit_to(LABEL, "notch:toggle", ());
             }
         })

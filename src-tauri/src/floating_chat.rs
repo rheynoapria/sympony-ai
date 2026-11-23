@@ -2,7 +2,7 @@
 //! window sharing the exact same chat history, Pony tools, streaming, approvals, and Glass/OLED look.
 use crate::commands::App;
 use platform::geometry::target;
-use platform::macos::displays::displays_here;
+use platform::os::displays::displays_here;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -97,10 +97,9 @@ fn initial_bounds(app: &AppHandle) -> (f64, f64, f64, f64) {
 }
 
 fn bring_front(w: &tauri::WebviewWindow) {
-    #[cfg(target_os = "macos")]
-    if let Ok(ns) = w.ns_window() {
-        // SAFETY: live NSWindow on the main thread
-        unsafe { platform::macos::window::bring_front(ns) };
+    if let Some(handle) = crate::native::window(w) {
+        // SAFETY: live OS window handle (NSWindow on macOS, HWND on Windows) on the main thread
+        unsafe { platform::os::window::bring_front(handle) };
     }
 }
 
@@ -127,7 +126,8 @@ pub fn open(app: &AppHandle) {
     OPENED_AT.store(now, Ordering::Relaxed);
 
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    // Queue onto the main event loop off-thread so Windows WebView2 never deadlocks when creating a window from a command.
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
             let _ = w.unminimize();
             let _ = w.show();
@@ -144,7 +144,7 @@ pub fn open(app: &AppHandle) {
             .title("Pony")
             .transparent(true)
             .decorations(false)
-            .shadow(true)
+            .shadow(cfg!(target_os = "macos"))
             .resizable(true)
             .focusable(true)
             .skip_taskbar(true)
@@ -161,10 +161,9 @@ pub fn open(app: &AppHandle) {
 
         match built {
             Ok(win) => {
-                #[cfg(target_os = "macos")]
-                if let Ok(ns) = win.ns_window() {
-                    // SAFETY: live NSWindow created on the main thread
-                    unsafe { platform::macos::window::style_floating_chat_window(ns, pinned) };
+                if let Some(handle) = crate::native::window(&win) {
+                    // SAFETY: live OS window created on the main thread
+                    unsafe { platform::os::window::style_floating_chat_window(handle, pinned) };
                 }
                 // Fallback reveal in case PageLoadEvent::Finished was missed
                 let h_reveal = a.clone();
@@ -204,7 +203,7 @@ pub fn open(app: &AppHandle) {
 /// Closes the floating Pony chat window cleanly (keeping its last position/size).
 pub fn close(app: &AppHandle) {
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
             let _ = w.close();
         }
@@ -227,15 +226,12 @@ pub fn set_pin(app: &AppHandle, pinned: bool) -> Value {
         st.pinned.store(pinned, Ordering::Relaxed);
     }
     let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    crate::native::later_on_main_thread(app, move || {
         if let Some(w) = a.get_webview_window(LABEL) {
-            #[cfg(target_os = "macos")]
-            if let Ok(ns) = w.ns_window() {
-                // SAFETY: live NSWindow on the main thread
-                unsafe { platform::macos::window::set_floating_chat_pin(ns, pinned) };
+            if let Some(handle) = crate::native::window(&w) {
+                // SAFETY: live OS window on the main thread
+                unsafe { platform::os::window::set_floating_chat_pin(handle, pinned) };
             }
-            #[cfg(not(target_os = "macos"))]
-            let _ = w.set_always_on_top(pinned);
         }
         emit_state(&a);
     });

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sympony video</title>
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css" />
+  <!-- The floating video (picture in picture): src-tauri/src/youtube.rs opens it from the video in Music. The video is
+       the browser's, muted and in step with the tab (the sound stays the tab's); drag it anywhere, resize it at its
+       edges. -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; user-select: none; color: #fff;
+      font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system, "Inter", "Noto Sans", system-ui, sans-serif; }
+    #frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+    #thumb { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+    body.cover #thumb { opacity: 1; }
+    #msg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; padding: 6px 12px; border-radius: 14px;
+      background: rgba(0, 0, 0, 0.62); font-size: 12px; text-align: center; display: none; pointer-events: none; }
+    body.msg #msg { display: block; }
+    #ov { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: space-between; opacity: 0; transition: opacity 0.2s;
+      background: linear-gradient(rgba(0, 0, 0, 0.55), transparent 32%, transparent 58%, rgba(0, 0, 0, 0.7)); cursor: grab; }
+    body.hover #ov { opacity: 1; }
+    .top, .bottom { display: flex; align-items: center; gap: 6px; padding: 8px 10px; }
+    .top { justify-content: space-between; }
+    .chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 10px; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+    .bottom { flex-direction: column; align-items: stretch; gap: 4px; }
+    #title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+    .row { display: flex; align-items: center; gap: 6px; }
+    button { width: 28px; height: 28px; flex: none; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.16); color: #fff;
+      font-size: 12px; cursor: pointer; display: grid; place-items: center; }
+    button:hover { background: rgba(255, 255, 255, 0.3); }
+    button:disabled { opacity: 0.35; cursor: default; }
+    #play { width: 32px; height: 32px; background: #fff; color: #000; }
+    .n { font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.85; pointer-events: none; min-width: 34px; }
+    #rem { text-align: right; }
+    #bar { flex: 1; height: 14px; display: flex; align-items: center; cursor: pointer; }
+    #bar span { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3); overflow: hidden; }
+    #bar i { position: absolute; inset: 0; background: #ff0033; transform-origin: left; transform: scaleX(0); }
+    #bar.off { pointer-events: none; opacity: 0.4; }
+  </style>
+</head>
+<body class="cover">
+  <iframe id="frame" allow="autoplay; encrypted-media"></iframe>
+  <img id="thumb" alt="" />
+  <div id="msg"></div>
+  <div id="ov" data-tauri-drag-region>
+    <div class="top" data-tauri-drag-region>
+      <span class="chip" id="app"></span>
+      <button id="close" type="button" data-i18n-attrs="title" title="Close"></button>
+    </div>
+    <div class="bottom" data-tauri-drag-region>
+      <div id="title" dir="auto"></div>
+      <div class="row">
+        <button id="prev" type="button" data-i18n-attrs="title" title="Previous"></button>
+        <button id="play" type="button"></button>
+        <button id="next" type="button" data-i18n-attrs="title" title="Next"></button>
+        <span class="n" id="el"></span>
+        <div id="bar"><span><i></i></span></div>
+        <span class="n" id="rem"></span>
+      </div>
+    </div>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="bridge.js"></script>
+  <script src="icons.js"></script>
+  <script src="notchkit.js"></script>
+  <script src="ytfloat.js"></script>
+</body>
+</html>

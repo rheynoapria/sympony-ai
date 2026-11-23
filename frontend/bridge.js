@@ -112,6 +112,8 @@
     openNotchModule: (module) => symponyInvoke('floating_chat_open_module', { module: String(module || 'chat') }),
     onFloatingChatState: (fn) => symponyListen('floating-chat:state', fn),
     onFloatingChatFocus: (fn) => symponyListen('floating-chat:focus', fn),
+    onNotchYield: (fn) => symponyListen('notch:yield', fn),
+    onNotchOpenMod: (fn) => symponyListen('notch:openMod', fn),
     startDragging: () => (me && typeof me.startDragging === 'function' ? me.startDragging() : Promise.resolve()),
     quit: () => invoke('app_quit'),
     version: () => invoke('app_info').then((i) => i.version),

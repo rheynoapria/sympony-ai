@@ -994,13 +994,13 @@ api.on('notch:reset', () => {
   if (st.open) closeNotch(); else { renderClosed(); layout(); }
 });
 // Hands needs to click/drag near the top of the screen: fold the expanded notch cleanly out of the way.
-api.on('notch:yield', () => {
+if (api.onNotchYield) api.onNotchYield(() => {
   cancel('open');
   st.hover = false;
   if (st.open) closeNotch();
 });
 // Floating Pony Chat requested docking back to the notch (or opening a module from an action chip).
-api.on('notch:openMod', (mod) => {
+if (api.onNotchOpenMod) api.onNotchOpenMod((mod) => {
   const target = typeof mod === 'string' && mod ? mod : 'chat';
   openNotch(target);
   if (N.openModule) N.openModule(target);
@@ -4571,6 +4571,15 @@ function onMedia(m) {
   renderLyrics();
 }
 
+// a seek from any progress bar (the notch's, the Music section's, the video's): shown at once, then sent
+function seekTo(sec) {
+  const d = st.media.duration || 0;
+  if (!d) return;
+  st.media.position = Math.max(0, Math.min(d, sec)); st.media.positionUpdated = Date.now();
+  cmd('seek', st.media.position);
+  updateProgress();
+}
+
 function cmd(action, value) {
   if (action === 'toggle') { st.media.playing = !st.media.playing; st.media.position = mediaPosition(); st.media.positionUpdated = Date.now(); renderMusic(); renderClosed(); layout(); }
   else if (action === 'seek' && Number.isFinite(Number(value))) {
@@ -4631,13 +4640,7 @@ function bindSlider(bar, onSet, onDrag) {
   });
 }
 
-bindSlider($('#progress'), (f) => {
-  const d = st.media.duration || 0;
-  if (!d) return;
-  st.media.position = f * d; st.media.positionUpdated = Date.now();
-  cmd('seek', f * d);
-  updateProgress();
-}, (f) => {
+bindSlider($('#progress'), (f) => seekTo(f * (st.media.duration || 0)), (f) => {
   $('#tElapsed').textContent = fmt(f * (st.media.duration || 0));
   $('#tRemain').textContent = '-' + fmt((1 - f) * (st.media.duration || 0));
 });
@@ -6302,8 +6305,10 @@ let homeSecSub = 'music'; // 'music' | 'lyrics' | 'mirror'
 // (yt.url) in an iframe, driven over postMessage. blocked: refused by YouTube (100/101/150/153); dismissed: ♫.
 // state: the player's YT state; played: ms it has played since this video was loaded (NotchKit.ytCover)
 // videoAt: when Now Playing last had a video (ytGrace); cmdAt: when play/pause was last sent (ytCommand)
+// tAt: when the player last told its time (t); rate: its speed now (the tab's, nudged: nudge); lead: how far ahead
+// of the tab a seek aims, learned from where the last one landed (landing: that's still to be seen)
 const yt = { url: null, want: false, blocked: new Set(), dismissed: new Set(), frame: null, id: null, ready: false,
-  t: 0, d: 0, state: -1, stateAt: 0, played: 0, seekAt: 0, videoAt: 0, cmdAt: 0, rate: 1 };
+  t: 0, tAt: 0, d: 0, state: -1, stateAt: 0, played: 0, seekAt: 0, videoAt: 0, cmdAt: 0, rate: 1, nudge: 1, lead: 0.2, landing: false };
 // the video view: kept while the notch is closed (paused, so reopening Music shows it at once) but never built then,
 // and kept through the moment between two videos in the same tab
 function ytShows(m) {
@@ -6355,7 +6360,7 @@ function ytPost(msg) {
 }
 function ytTeardown() {
   if (yt.frame) yt.frame.remove();
-  Object.assign(yt, { frame: null, id: null, ready: false, t: 0, d: 0, state: -1, played: 0, cmdAt: 0, rate: 1 });
+  Object.assign(yt, { frame: null, id: null, ready: false, t: 0, tAt: 0, d: 0, state: -1, played: 0, cmdAt: 0, rate: 1, nudge: 1, landing: false });
 }
 function ytPaint(el, m) {
   const vid = m.video || yt.id; // (between two videos: the last one until the next is found)
@@ -6373,7 +6378,7 @@ function ytPaint(el, m) {
     yt.id = vid;
     const thumb = `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/hqdefault.jpg`;
     $('.mc-v-glow', el).src = thumb; $('.mc-v-thumb', el).src = thumb;
-    yt.state = -1; yt.played = 0; el.classList.add('cover');
+    yt.state = -1; yt.played = 0; yt.d = 0; el.classList.add('cover'); // (d: the last video's length is no ad)
     if (yt.ready) { ytPost({ type: 'load', id: vid, at: mediaPosition(), playing: yt.want && !!m.playing }); yt.cmdAt = Date.now(); yt.rate = 1; }
   }
   const app = appLabel(m.app); const iconUrl = mediaAppIconUrl(m);
@@ -6400,6 +6405,7 @@ function ytPaint(el, m) {
     + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
     + `</div><div class="mc-v-right">`
     + `<button type="button" class="mc-round-btn" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}</button>`
+    + `<button type="button" class="mc-round-btn" data-mfloat="1" title="${esc(_t('Floating video'))}">${ic('pip')}</button>`
     + `<button type="button" class="mc-round-btn" data-mfill="1" title="${esc(fill ? _t('Fit') : _t('Fill'))}">${fa(fill ? 'compress' : 'expand')}</button>`
     + `<button type="button" class="mc-round-btn" data-mmusic="1" title="${esc(_t('Back to the music'))}">${ic('music')}</button>`
     + `</div></div>`;
@@ -6422,6 +6428,8 @@ function ytPaint(el, m) {
   }
   $('[data-mout]', el).onclick = (e) => { e.stopPropagation(); N.openModule('control'); callModule('control', 'showSound'); };
   $('[data-mfill]', el).onclick = (e) => { e.stopPropagation(); api.setSettings({ ytVideoFill: !fill }); };
+  // the video in its own small window over everything (picture in picture), to watch while working; the notch closes
+  $('[data-mfloat]', el).onclick = (e) => { e.stopPropagation(); api.svc('yt', 'float', true).catch(() => {}); closeNotch(); };
   $('[data-mmusic]', el).onclick = (e) => { e.stopPropagation(); yt.dismissed.add(vid); ytTeardown(); renderHomeSection(); };
 }
 window.addEventListener('message', (e) => {
@@ -6433,7 +6441,7 @@ window.addEventListener('message', (e) => {
   } else if (d.type === 'state') {
     if (Number(d.s) !== yt.state) { yt.state = Number(d.s); yt.stateAt = Date.now(); }
   } else if (d.type === 'time') {
-    yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0;
+    yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0; yt.tAt = Date.now();
   } else if (d.type === 'error' && [100, 101, 150, 153].includes(Number(d.code))) {
     if (yt.id) yt.blocked.add(yt.id);
     ytTeardown(); renderHomeSection();
@@ -6455,15 +6463,19 @@ setInterval(() => {
   const box = $('#page-home .mc-video');
   if (!!box !== ytShows(m) && (want || box)) renderHomeSection(); // (a video found or gone since the last paint)
   if (!yt.frame || !yt.ready || !yt.frame.isConnected) return;
-  const settling = yt.state === 3 || yt.state === -1 || now - yt.seekAt < 3000;
-  const r = NotchKit.ytSync({ t: yt.t, d: yt.d, target: mediaPosition(), npDur: m.duration || 0, playing: !!m.playing, settling });
+  const settling = yt.state === 3 || yt.state === -1 || now - yt.seekAt < 1000;
+  const r = NotchKit.ytSync({ t: yt.t, ageMs: now - yt.tAt, state: yt.state, rate: yt.rate, d: yt.d, target: mediaPosition(),
+    npDur: m.duration || 0, playing: !!m.playing, settling, nudging: yt.nudge !== 1, lead: yt.lead });
   // (play/pause from what the player reports: a dropped pause is sent again; closed or elsewhere it waits paused)
   const c = NotchKit.ytCommand({ wantPlay: want && r.play, state: yt.state, sinceCmdMs: now - yt.cmdAt });
   if (c) { ytPost({ type: c }); yt.cmdAt = now; }
   if (!want) return;
-  if (r.seek !== null) { ytPost({ type: 'seek', at: r.seek }); yt.t = r.seek; yt.seekAt = now; }
-  const rate = m.rate || 1;
-  if (rate !== yt.rate) { ytPost({ type: 'rate', r: rate }); yt.rate = rate; } // (a tab at 1.5×, 2×…)
+  // where the last seek landed, once the copy plays steadily after it: the next one aims better
+  if (yt.landing && yt.state === 1 && now - yt.stateAt > 700 && now - yt.seekAt > 1000) { yt.lead = NotchKit.ytLead(yt.lead, r.drift); yt.landing = false; }
+  if (r.seek !== null) { ytPost({ type: 'seek', at: r.seek }); yt.t = r.seek; yt.tAt = now; yt.seekAt = now; yt.landing = !!m.playing; }
+  yt.nudge = r.seek === null ? r.nudge : 1;
+  const rate = (m.rate || 1) * yt.nudge; // (a tab at 1.5×, 2×…; a little faster or slower to catch up)
+  if (rate !== yt.rate) { ytPost({ type: 'rate', r: rate }); yt.rate = rate; }
   if (yt.state === 1) yt.played += dt;
   if (box) {
     box.classList.toggle('ad', r.ad);

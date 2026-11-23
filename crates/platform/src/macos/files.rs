@@ -187,3 +187,21 @@ pub unsafe fn drag_out(view: *mut std::ffi::c_void, paths: &[String], done: Box<
     LAST_DRAG_SOURCE.with(|slot| *slot.borrow_mut() = Some(source));
     true
 }
+
+/// `osascript` choosing files / a folder / an app / an audio file: their POSIX paths (none: cancelled). `what`:
+/// "files" (several), "folder", "app", "backup" (from Downloads), "audio", anything else one file (from Applications).
+pub fn choose(what: &str, prompt: &str) -> Vec<String> {
+    let script = match what {
+        "files" => format!("set l to choose file with prompt {prompt:?} with multiple selections allowed\nset o to \"\"\nrepeat with f in l\nset o to o & POSIX path of f & linefeed\nend repeat\nreturn o"),
+        "folder" => format!("POSIX path of (choose folder with prompt {prompt:?})"),
+        "app" => format!("POSIX path of (choose application with prompt {prompt:?} as alias)"),
+        "backup" => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to downloads folder))"),
+        "audio" => format!("POSIX path of (choose file with prompt {prompt:?} of type {{\"public.audio\"}})"),
+        _ => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to applications folder))"),
+    };
+    let Ok(out) = std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).output() else { return vec![] };
+    if !out.status.success() {
+        return vec![];
+    }
+    String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+}
