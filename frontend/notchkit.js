@@ -66,8 +66,22 @@
     teleprompter: [1, 1],
   };
 
+  function parseGridSize(raw, fallback) {
+    if (Array.isArray(raw) && raw.length === 2) {
+      const w = Math.max(1, Math.min(4, Math.round(Number(raw[0]) || 1)));
+      const h = Math.max(1, Math.min(2, Math.round(Number(raw[1]) || 1)));
+      return [w, h];
+    }
+    if (typeof raw === 'string') {
+      const m = /^([1-4])x([1-2])$/i.exec(raw.trim());
+      if (m) return [Number(m[1]), Number(m[2])];
+    }
+    return fallback || [1, 1];
+  }
+
   function packCards(ids, opts) {
     const raw = Array.isArray(ids) ? ids : [];
+    const customSizes = (opts && opts.sizes && typeof opts.sizes === 'object') ? opts.sizes : null;
     const seen = new Set();
     const list = [];
     if (opts && opts.hitl) {
@@ -89,7 +103,8 @@
       return true;
     };
     for (const id of list) {
-      const sz = CARD_SIZES[id] || [1, 1];
+      const defSz = CARD_SIZES[id] || [1, 1];
+      const sz = customSizes && customSizes[id] ? parseGridSize(customSizes[id], defSz) : defSz;
       const w = sz[0];
       const h = sz[1];
       let placed = false;
@@ -249,6 +264,117 @@
     return !!hasFrame && msSinceVideo < 3000;
   }
 
+  // Activities that may keep the time alongside them when "Keep the time while music or a timer plays" is on
+  const CLOCK_ACTIVITIES = new Set(['music', 'pomodoro', 'timer', 'stopwatch']);
+  function isClockActivity(kind) {
+    return CLOCK_ACTIVITIES.has(kind);
+  }
+
+  // Closed-notch layout over a MacBook camera notch: places the clock on the empty or narrower side of the camera so
+  // each wing only grows to fit what actually lives on THAT side (instead of summing side + clock on both sides).
+  function camClosedLayout({ camW, leftW = 0, rightW = 0, clockW = 0, pad = 0, notchWidth = 0, maxW = 0 }) {
+    const cam = Math.max(0, Number(camW) || 0);
+    const lw = Math.max(0, Number(leftW) || 0);
+    const rw = Math.max(0, Number(rightW) || 0);
+    const cw = Math.max(0, Number(clockW) || 0);
+    const p = Math.max(0, Number(pad) || 0);
+    const nw = Math.max(0, Number(notchWidth) || 0);
+    const cap = Math.max(0, Number(maxW) || 0);
+    const hasL = lw > 0;
+    const hasR = rw > 0;
+    const hasClock = cw > 0;
+    const gap = 6;
+    const camGap = 2;
+    const clockRight = hasClock ? (!hasR || (hasL && rw < lw)) : false;
+    let leftNeed = lw;
+    let rightNeed = rw;
+    if (hasClock) {
+      if (clockRight) rightNeed = rw + (hasR ? gap : 0) + cw + camGap;
+      else leftNeed = lw + (hasL ? gap : 0) + cw + camGap;
+    }
+    const wing = Math.max(leftNeed, rightNeed);
+    let width = Math.max(nw, Math.ceil(cam + (wing + p) * 2));
+    let showClock = hasClock;
+    if (showClock && cap > 0 && width > cap && (hasL || hasR)) {
+      const noClockW = Math.max(nw, Math.ceil(cam + (Math.max(lw, rw) + p) * 2));
+      if (noClockW < width) {
+        showClock = false;
+        width = noClockW;
+      }
+    }
+    if (cap > 0) width = Math.min(width, Math.max(Math.ceil(cam), cap));
+    const halfCam = cam / 2;
+    let clockL = 0;
+    let clockSpan = 0;
+    if (showClock) {
+      if (clockRight) {
+        clockL = width / 2 + halfCam + camGap;
+        clockSpan = Math.max(0, width - p - (hasR ? rw + gap : 0) - clockL);
+      } else {
+        clockL = p + (hasL ? lw + gap : 0);
+        clockSpan = Math.max(0, width / 2 - halfCam - camGap - clockL);
+      }
+    }
+    return {
+      width,
+      showClock,
+      clockRight,
+      clockL: Math.round(clockL),
+      clockW: Math.round(clockSpan),
+    };
+  }
+
+  // Closed-notch width on a display without a physical camera cutout: avoids adding an empty middle on top of side * 2.
+  function closedWidthNoCam({ notchWidth = 200, midNeed = 0, side = 0, pad = 28, maxW = 0 }) {
+    const nw = Math.max(0, Number(notchWidth) || 0);
+    const mid = Math.max(0, Number(midNeed) || 0);
+    const s = Math.max(0, Number(side) || 0);
+    const p = Math.max(0, Number(pad) || 0);
+    const cap = Math.max(0, Number(maxW) || 0);
+    let width = Math.max(nw, Math.ceil(mid + p + s * 2));
+    if (cap > 0) width = Math.min(width, cap);
+    return width;
+  }
+
+  // Open-notch frame dimensions for a module's chosen Style & Size override (Phase 1 Module Styling Library).
+  // Auto follows the style's natural height + global expandedWidth; presets & custom W×H are clamped safely.
+  const FRAME_SIZE_HEIGHTS = { compact: 148, standard: 204, tall: 272 };
+  function resolveModuleFrame({ styleDef, pref, expandedWidth = 660, maxW = 780, maxH = 340 }) {
+    const def = styleDef && typeof styleDef === 'object' ? styleDef : { id: 'bento', height: 272, surface: 'oled' };
+    const p = pref && typeof pref === 'object' ? pref : {};
+    const sizeMode = ['auto', 'compact', 'standard', 'tall', 'custom'].includes(p.size) ? p.size : 'auto';
+    const baseW = Number.isFinite(Number(expandedWidth)) ? Number(expandedWidth) : 660;
+    const styleH = Number.isFinite(Number(def.height)) ? Number(def.height) : 272;
+
+    let wantW = baseW;
+    let wantH = styleH;
+    if (sizeMode === 'custom') {
+      if (Number.isFinite(Number(p.width)) && Number(p.width) > 0) wantW = Number(p.width);
+      if (Number.isFinite(Number(p.height)) && Number(p.height) > 0) wantH = Number(p.height);
+    } else if (sizeMode !== 'auto' && FRAME_SIZE_HEIGHTS[sizeMode]) {
+      wantH = FRAME_SIZE_HEIGHTS[sizeMode];
+    }
+
+    const capW = Math.max(420, Number(maxW) || 780);
+    const capH = Math.max(116, Number(maxH) || 340);
+    const width = Math.round(Math.max(420, Math.min(780, capW, wantW)));
+    const height = Math.round(Math.max(116, Math.min(320, capH, wantH)));
+    const stageH = Math.max(60, height - (height <= 148 ? 50 : 54));
+    const rawSurf = p.surface;
+    const surface = ['oled', 'borderless', 'outline', 'glass'].includes(rawSurf)
+      ? rawSurf
+      : (def.surface || 'oled');
+
+    return {
+      styleId: def.id || 'bento',
+      sizeMode,
+      width,
+      height,
+      stageH,
+      surface,
+    };
+  }
+
   const api = {
     meterLevel,
     meter,
@@ -268,6 +394,10 @@
     ytCover,
     ytCommand,
     ytGrace,
+    isClockActivity,
+    camClosedLayout,
+    closedWidthNoCam,
+    resolveModuleFrame,
   };
 
   if (typeof window !== 'undefined') window.NotchKit = api;

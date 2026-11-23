@@ -49,7 +49,7 @@
       const hasDot = ev.length > 0 || td.some((t) => !t.done);
       const bg = isToday ? 'background:#ff5a52;color:#fff' : isSel ? 'background:var(--pill-hi);color:#fff' : isOut ? 'color:#2c2c34' : 'color:#d6d6dc';
       const dotCol = ev[0] ? (ev[0].color || '#8fa2ff') : '#fb923c';
-      html += `<button type="button" class="n" data-day="${d}" style="height:22px;display:grid;place-items:center;border-radius:11px;font-size:11px;position:relative;cursor:pointer;${bg}">${dt.getDate()}${hasDot && !isToday ? `<i style="position:absolute;bottom:1px;width:3px;height:3px;border-radius:2px;background:${esc(dotCol)}"></i>` : ''}</button>`;
+      html += `<button type="button" class="n" data-day="${d}" style="min-height:18px;height:100%;max-height:24px;display:grid;place-items:center;border-radius:11px;font-size:11px;position:relative;cursor:pointer;${bg}">${dt.getDate()}${hasDot && !isToday ? `<i style="position:absolute;bottom:1px;width:3px;height:3px;border-radius:2px;background:${esc(dotCol)}"></i>` : ''}</button>`;
     }
     const grid = $('.calm-grid', page);
     grid.innerHTML = html;
@@ -95,7 +95,7 @@
     $('.calm-list', page).innerHTML = rows.length ? rows.join('')
       : `<div class="sub" style="margin:auto;text-align:center;padding:12px">${far ? _t('Sympony loads events from five weeks back to two months ahead.') : noCalendars ? `${_t('No calendars yet.')}<br><button type="button" class="sbtn" style="margin-top:8px" data-cal="settings">${_t('Connect Google / Outlook calendar')}</button>` : _t('Nothing on this day')}</div>`;
     $$('[data-join]', page).forEach((b) => { b.onclick = (ev) => { ev.stopPropagation(); api.openExternal(b.dataset.join); N.closeNotch(); }; });
-    $$('[data-ev]', page).forEach((el) => { el.onclick = () => { detail = el.dataset.ev; askDelete = false; render(); }; });
+    $$('[data-ev]', page).forEach((el) => { el.onclick = () => { detail = el.dataset.ev; askDelete = false; render(); if (N.layout) N.layout(); }; });
     $$('[data-task]', page).forEach((el) => { el.onclick = () => N.openModule('todo'); });
     const c = $('[data-cal="settings"]', page); if (c) c.onclick = () => api.openSettings('calendar');
   }
@@ -228,7 +228,7 @@
     });
   }
 
-  function back() { detail = null; askDelete = false; render(); }
+  function back() { detail = null; askDelete = false; render(); if (N.layout) N.layout(); }
 
   function onCardClick(ev) {
     const e = events().find((x) => x.id === detail);
@@ -290,6 +290,7 @@
     paintPicks();
     paintActs();
     render();
+    if (N.layout) N.layout();
     N.focusField($('.calf-title', box));
   }
 
@@ -329,10 +330,11 @@
     saved = { id: r.event.id, until: Date.now() + 1500 };
     form = null;
     render();
+    if (N.layout) N.layout();
   }
 
   // back to where the form was opened from: the event's card, or the day
-  function closeForm() { detail = form.back; form = null; render(); }
+  function closeForm() { detail = form.back; form = null; render(); if (N.layout) N.layout(); }
 
   function onFormClick(ev) {
     const a = ev.target.closest('[data-f]');
@@ -357,12 +359,99 @@
     }
   }
 
+  function renderTodayBadge() {
+    const el = $('.cal-td-badge', page);
+    if (!el) return;
+    const d = new Date(sel);
+    const today = sod(Date.now());
+    const { ev, td } = dayItems(sel);
+    const total = ev.length + td.filter((t) => !t.done).length;
+    const countStr = total === 0 ? _t('Free day') : total === 1 ? _t('{n} item', { n: 1 }) : _t('{n} items', { n: total });
+    el.innerHTML = `<div class="sub" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--red)">${esc(d.toLocaleDateString(_tLocale(), { weekday: 'short' }))}</div>`
+      + `<div class="cal-td-daynum">${d.getDate()}</div>`
+      + `<div class="sub t1" style="font-size:11.5px;margin-top:4px">${esc(d.toLocaleDateString(_tLocale(), { month: 'long', year: 'numeric' }))}</div>`
+      + `<div class="row" style="gap:6px;margin-top:8px">`
+      + `<span class="sub" style="font-size:10.5px">${esc(countStr)}</span>`
+      + (sel !== today ? `<button type="button" class="sl-pill" data-nav="0" style="height:20px;padding:0 8px;font-size:10px">${esc(_t('Today'))}</button>` : '')
+      + `</div>`;
+    const tb = $('[data-nav="0"]', el);
+    if (tb) tb.onclick = () => { sel = sod(Date.now()); month = null; detail = null; if (form) formDay(); render(); };
+  }
+
+  function renderWeekStrip() {
+    const el = $('.cal-wk-strip', page);
+    if (!el) return;
+    const mon = mondayOf(sel);
+    const today = sod(Date.now());
+    let html = '';
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(mon);
+      dt.setDate(dt.getDate() + i);
+      const ts = dt.getTime();
+      const { ev, td } = dayItems(ts);
+      const hasDot = ev.length > 0 || td.some((t) => !t.done);
+      const wd = dt.toLocaleDateString(_tLocale(), { weekday: 'short' });
+      html += `<button type="button" class="cal-wk-day${ts === today ? ' today' : ''}${ts === sel ? ' sel' : ''}" data-wday="${ts}">`
+        + `<span style="font-size:9.5px;font-weight:700;opacity:0.75">${esc(wd)}</span>`
+        + `<b class="n" style="font-size:13px">${dt.getDate()}</b>`
+        + `${hasDot ? '<i class="wd-dot"></i>' : ''}</button>`;
+    }
+    html += `<button type="button" class="sbtn calm-add-wk" style="height:36px;padding:0 10px" title="${esc(_t('Add event'))}">${N.ic('plus', 'width:12px;height:12px')}</button>`;
+    el.innerHTML = html;
+    $$('[data-wday]', el).forEach((b) => {
+      b.onclick = () => {
+        sel = +b.dataset.wday;
+        const d = new Date(sel);
+        month = [d.getFullYear(), d.getMonth()];
+        detail = null;
+        if (form) formDay();
+        render();
+      };
+    });
+    const add = $('.calm-add-wk', el);
+    if (add) add.onclick = () => openForm(null);
+  }
+
   function render() {
     if (!page || !st.settings) return;
     if (sel == null) sel = sod(Date.now());
     if (!month) { const d = new Date(sel); month = [d.getFullYear(), d.getMonth()]; }
-    renderMonth();
+    const style = window.StyleLib ? StyleLib.styleIdFor(st.settings, 'calendar') : 'bento';
+    const root = $('.calm-root', page);
+    const monthEl = $('.calm-month', page);
+    const badgeEl = $('.cal-td-badge', page);
+    const weekEl = $('.cal-wk-strip', page);
     const pane = $('.calm-day-pane', page);
+    const dayHeadRow = $('.calm-dayhead-row', page);
+    if (root) {
+      if (style === 'today') {
+        root.className = 'calm-root cal-td-wrap sl-pane';
+        root.style.cssText = '';
+        if (monthEl) monthEl.hidden = true;
+        if (badgeEl) badgeEl.hidden = false;
+        if (weekEl) weekEl.hidden = true;
+        if (dayHeadRow) dayHeadRow.hidden = false;
+        renderTodayBadge();
+      } else if (style === 'week') {
+        root.className = 'calm-root cal-wk-wrap sl-pane';
+        root.style.cssText = '';
+        if (monthEl) monthEl.hidden = true;
+        if (badgeEl) badgeEl.hidden = true;
+        if (weekEl) weekEl.hidden = false;
+        if (dayHeadRow) dayHeadRow.hidden = true;
+        renderWeekStrip();
+      } else {
+        root.className = 'calm-root';
+        root.style.cssText = 'display:grid;grid-template-columns:226px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%';
+        if (monthEl) monthEl.hidden = false;
+        if (badgeEl) badgeEl.hidden = true;
+        if (weekEl) weekEl.hidden = true;
+        if (dayHeadRow) dayHeadRow.hidden = false;
+        renderMonth();
+      }
+    } else {
+      renderMonth();
+    }
     pane.classList.toggle('form', !!form);
     // the form keeps what's typed in it (the events coming again every minute leave it alone)
     if (form) { pane.classList.remove('detail'); return; }
@@ -484,10 +573,12 @@
     }
   }
 
+  N.calendarNeedsTall = () => !!(form || detail);
   N.openCalendarEvent = (ev, day) => {
     N.openModule('calendar');
     const mod = N.moduleOf('calendar');
     if (mod && mod.showEvent && ev && ev.id) mod.showEvent(ev.id, day);
+    if (N.layout) N.layout();
   };
 
   N.register({
@@ -495,15 +586,17 @@
     tall: true,
     init(p) {
       page = p;
-      page.innerHTML = `<div style="display:grid;grid-template-columns:226px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
+      page.innerHTML = `<div class="calm-root" style="display:grid;grid-template-columns:226px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
+        + `<div class="cal-td-badge" hidden></div>`
+        + `<div class="cal-wk-strip" hidden></div>`
         + `<div class="c calm-month" style="padding:12px;width:auto;min-width:0;min-height:0">`
         + `<div class="row" style="justify-content:space-between"><b class="calm-title" style="font-size:14px"></b>`
         + `<span class="row" style="gap:4px;color:var(--dim)"><button type="button" class="mini-btn" style="width:22px;height:22px" data-nav="-1" title="${esc(_t('Previous month'))}">${N.ic('prev', 'width:10px;height:10px')}</button><button type="button" class="mini-btn" style="width:22px;height:22px" data-nav="1" title="${esc(_t('Next month'))}">${N.ic('next', 'width:10px;height:10px')}</button></span></div>`
-        + `<div class="calm-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-top:8px;text-align:center"></div>`
+        + `<div class="calm-grid" style="display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:auto repeat(5,minmax(0,1fr));gap:2px;margin-top:6px;flex:1;min-height:0;text-align:center"></div>`
         + `</div>`
-        + `<div class="c calm-day-pane" style="padding:12px 14px;min-width:0;min-height:0;position:relative;border:0">`
-        + `<div class="row" style="justify-content:space-between;flex:none"><span class="calm-dayhead"></span><button type="button" class="sbtn calm-add" style="height:26px;padding:0 10px" title="${esc(_t('Add event'))}">${N.ic('plus', 'width:11px;height:11px')}${esc(_t('Event'))}</button></div>`
-        + `<div class="calm-list sc-y" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;flex:1"></div>`
+        + `<div class="c calm-day-pane" style="padding:12px 14px;min-width:0;min-height:0;position:relative;border:0;flex:1">`
+        + `<div class="row calm-dayhead-row" style="justify-content:space-between;flex:none"><span class="calm-dayhead"></span><button type="button" class="sbtn calm-add" style="height:26px;padding:0 10px" title="${esc(_t('Add event'))}">${N.ic('plus', 'width:11px;height:11px')}${esc(_t('Event'))}</button></div>`
+        + `<div class="calm-list sc-y" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;flex:1"></div>`
         + `<div class="cald" style="padding:0;background:transparent;border-radius:0"></div>`
         + `<div class="calf" style="padding:0;background:transparent;border-radius:0"></div>`
         + `</div></div>`;
@@ -543,6 +636,7 @@
     // ← / → don't switch tabs while an event's card or the form is open (Esc goes back from it first)
     usesArrows() { return !!detail || !!form; },
     update() { render(); refreshCards(); },
+    onSettings() { render(); refreshCards(); },
     card(el, size) {
       const slot = { el, size, day: sod(Date.now()) };
       cards.add(slot);

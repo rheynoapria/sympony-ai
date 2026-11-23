@@ -838,8 +838,8 @@ function AiSection({ settings, set, part }: CustomPartProps) {
             icon="Globe"
             tone="sky"
             title={t("Search the web")}
-            summary={t("With Claude Code, its own web search; the other agents search when they see fit.")}
-            tryIt={[t("AI news today")]}
+            summary={t("With Claude Code, live WebSearch & WebFetch with cited summaries; other agents search when supported.")}
+            tryIt={[t("AI news today"), t("gold price now")]}
             control={<Switch checked={Boolean(settings.chatWebSearch)} aria-label={t("Search the web")} onCheckedChange={(checked) => void set({ chatWebSearch: checked })} />}
           />
         )}
@@ -858,11 +858,11 @@ function AiSection({ settings, set, part }: CustomPartProps) {
         <PonyAskAi settings={settings} set={set} />
       </AbilityGroup>
       <AbilityGroup title={t("On your Mac")} hint={t("work Pony does or hands off")}>
-        {api ? (
+        {api || chat?.tools ? (
           <PonyHands settings={settings} set={set} />
         ) : (
           <p className="px-4 py-3.5 text-[12px] leading-relaxed text-muted-foreground">
-            {t("Commands & files work when Pony thinks with Sympony AI or your own server (Brain tab).")}
+            {t("Commands & files work with Sympony AI, your own server, or Claude Code (Brain tab).")}
           </p>
         )}
         <OtherAgents />

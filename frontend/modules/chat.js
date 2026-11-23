@@ -1046,7 +1046,12 @@
   const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|toml|ini|html?|css|m?js|tsx?|jsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|sql)$/i;
   const IMG_EXT = /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i;
   let attach = []; // { id, kind: 'image'|'text'|'bad', name, size, data?, thumb?, text?, why? }
-  const canSee = () => ['sympony', 'api'].includes((st.settings || {}).ponyBrain);
+  const canSee = () => {
+    const s = st.settings || {};
+    if (['sympony', 'api'].includes(s.ponyBrain)) return true;
+    const a = N.aiAgent ? N.aiAgent('chatAgent') : null;
+    return !!(a && a.id === 'claude');
+  };
   const kb = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   function fileLook(name) {
     const ext = ((String(name).match(/\.([a-z0-9]+)$/i) || [])[1] || '').toLowerCase();

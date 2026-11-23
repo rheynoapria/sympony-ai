@@ -6,7 +6,7 @@
   const cur = $('cur');
   const label = $('label');
   const t = (s, v) => (typeof window._t === 'function' ? window._t(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => (v && v[k]) || ''));
-  const VERB = { click: 'Clicking {x}', fill: 'Typing in {x}', choose: 'Choosing in {x}', scroll: 'Scrolling' };
+  const VERB = { click: 'Clicking {x}', double_click: 'Opening {x}', fill: 'Typing in {x}', choose: 'Choosing in {x}', slide: 'Sliding {x}', drag: 'Dragging {x}', scroll: 'Scrolling' };
   const words = (d) => (d.kind === 'point' || !VERB[d.kind] ? d.label || '' : t(VERB[d.kind], { x: d.label ? `“${d.label}”` : '' }).trim());
   let pony = null;
   let hideTimer = 0;

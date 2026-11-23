@@ -1,6 +1,6 @@
 import type { OS } from "./registry.ts";
 
-export const MODULES_KEYS = ["notchView", "modules", "defaultTab", "rememberTab"] as const;
+export const MODULES_KEYS = ["notchView", "modules", "defaultTab", "rememberTab", "cardStyle", "moduleStyles"] as const;
 
 export interface ModuleMeta {
   icon: string;

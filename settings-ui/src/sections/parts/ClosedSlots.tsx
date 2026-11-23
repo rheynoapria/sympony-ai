@@ -216,8 +216,32 @@ export function ClosedSlotsPart({ settings, set, row, os, part }: CustomPartProp
   const idleRight = String(settings.idleRight || "none");
   const idleClock = String(settings.idleClock || "time");
   const clockSize = String(settings.clockSize || "normal");
-
   const h = Math.max(28, Math.min(44, Number(settings.notchHeight) || 32));
+  const notchLook = String(settings.notchLook || "black");
+  const notchColor =
+    typeof settings.notchColor === "string" && /^#[0-9a-f]{6}$/i.test(settings.notchColor)
+      ? settings.notchColor
+      : "#1c2b4d";
+  const isLightColor =
+    notchLook === "color" &&
+    (() => {
+      const n = parseInt(notchColor.slice(1), 16);
+      const r = (n >> 16) & 255;
+      const g = (n >> 8) & 255;
+      const b = n & 255;
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.65;
+    })();
+  const previewStyle =
+    notchLook === "glass"
+      ? {
+          height: `${h + 8}px`,
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06)), rgba(22,24,32,0.72)",
+          backdropFilter: "blur(14px)",
+        }
+      : notchLook === "color"
+        ? { height: `${h + 8}px`, background: notchColor }
+        : { height: `${h + 8}px` };
   const scale = { small: 0.85, normal: 1, large: 1.25, xlarge: 1.5 }[clockSize] ?? 1;
   const baseFs = Math.max(10, Math.min(14, h * 0.38));
   const clockFs =
@@ -278,8 +302,17 @@ export function ClosedSlotsPart({ settings, set, row, os, part }: CustomPartProp
         className="flex flex-col items-center gap-2 rounded-[10px] border border-border bg-muted/40 px-4 py-4"
       >
         <div
-          className="inline-flex items-center gap-1 rounded-b-[16px] rounded-t-[8px] bg-black px-2 text-[11.5px] text-white shadow-sm ring-1 ring-white/10"
-          style={{ height: `${h + 8}px` }}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-b-[16px] rounded-t-[8px] px-2 text-[11.5px] shadow-sm transition-colors",
+            notchLook === "glass"
+              ? "text-white ring-1 ring-white/25"
+              : notchLook === "color"
+                ? isLightColor
+                  ? "text-zinc-900 ring-1 ring-black/15"
+                  : "text-white ring-1 ring-white/15"
+                : "bg-black text-white ring-1 ring-white/10"
+          )}
+          style={previewStyle}
         >
           {(["left", "middle", "right"] as const).map((p) => {
             const active = openPart === p;
@@ -294,9 +327,13 @@ export function ClosedSlotsPart({ settings, set, row, os, part }: CustomPartProp
                 className={cn(
                   "inline-flex h-7 min-w-12 cursor-pointer items-center justify-center rounded-[7px] px-2.5 transition-colors",
                   active
-                    ? "bg-primary/25 text-white ring-1 ring-primary"
-                    : "text-white/90 hover:bg-white/10",
-                  !meta.content && "text-white/40"
+                    ? isLightColor
+                      ? "bg-primary/20 text-zinc-900 ring-1 ring-primary"
+                      : "bg-primary/25 text-white ring-1 ring-primary"
+                    : isLightColor
+                      ? "text-zinc-900/90 hover:bg-black/10"
+                      : "text-white/90 hover:bg-white/10",
+                  !meta.content && (isLightColor ? "text-zinc-900/40" : "text-white/40")
                 )}
               >
                 {meta.content ?? <Plus className="size-3.5" aria-hidden="true" />}

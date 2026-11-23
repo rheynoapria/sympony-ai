@@ -19,8 +19,6 @@ const classicSrc = fs.readFileSync(
 
 // Deliberately dropped keys (with reason):
 const DROPPED: readonly string[] = [
-  // Notch spec §10: Look / color picker removed; classic still has dead renderNotchColor
-  "notchColor",
   // Dashboard removed: Ringkas derives directly from Settings → Modules order
   "dashboardWidgets",
   "glanceSlots",

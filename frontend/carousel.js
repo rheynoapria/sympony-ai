@@ -72,6 +72,9 @@
     cup: '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>',
     vol: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/>',
     volMute: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="m22 9-6 6M16 9l6 6"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+    micOff: '<line x1="2" y1="2" x2="22" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" y1="19" x2="12" y2="22"/>',
+    contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
     pods: '<path d="M7 4a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3v6"/><path d="M17 4a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3v6"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
@@ -370,7 +373,41 @@
     }, ms);
   }
 
+  function frameForModule(modId, maxW, maxH) {
+    const s = st.settings || {};
+    const expW = Number(s.expandedWidth) || 660;
+    const capW = Number.isFinite(maxW) ? maxW : 780;
+    const capH = Number.isFinite(maxH) ? maxH : 340;
+    if (!modId || !window.StyleLib || !window.NotchKit || !NotchKit.resolveModuleFrame) {
+      const h = Math.min(capH, 272);
+      return { styleId: 'bento', surface: 'oled', width: Math.min(expW, capW), height: h, stageH: Math.max(96, h - 54) };
+    }
+    return NotchKit.resolveModuleFrame({
+      styleDef: StyleLib.styleDefFor(s, modId),
+      pref: StyleLib.prefFor(s, modId),
+      expandedWidth: expW,
+      maxW: capW,
+      maxH: capH,
+    });
+  }
+
+  function applyPageStyleAttrs(pageEl, modId) {
+    if (!pageEl || !modId) return;
+    const f = frameForModule(modId, 780, 340);
+    pageEl.dataset.modStyle = f.styleId;
+    pageEl.dataset.modSurface = f.surface;
+  }
+
+  function syncAllPageStyleAttrs() {
+    $$('.tab-page', openEl).forEach((el) => {
+      const id = el.id && el.id.startsWith('page-') ? el.id.slice(5) : '';
+      if (id && !['drop', 'snap'].includes(id)) applyPageStyleAttrs(el, id);
+    });
+  }
+
   function hydrateSection(modId) {
+    const pageEl = $('#page-' + modId);
+    if (pageEl) applyPageStyleAttrs(pageEl, modId);
     if (modId === 'home') { N.renderMusic(true); N.renderCalendar(); if (N.renderHomeSection) N.renderHomeSection(); }
     else if (modId === 'shelf' && N.renderShelfSection) N.renderShelfSection();
     else if (modId === 'stats') N.drawStats();
@@ -519,7 +556,8 @@
     }
 
     cs.modIds = [];
-    cs.pages = NotchKit.packCards(ids, { hitl });
+    const customSizes = window.StyleLib ? StyleLib.gridSizesMap(st.settings) : null;
+    cs.pages = NotchKit.packCards(ids, { hitl, sizes: customSizes });
     if (!cs.pages.length) cs.pages = [{ cards: [{ id: 'home', x: 0, y: 0, w: 4, h: 2 }] }];
 
     const single = cs.pages.length <= 1;
@@ -653,6 +691,7 @@
 
     const pageEl = N.ensurePage(moduleId);
     if (!pageEl) return;
+    applyPageStyleAttrs(pageEl, moduleId);
 
     const order = dockModules();
     const prevIdx = prevMod ? order.indexOf(prevMod) : -1;
@@ -873,9 +912,30 @@
     }
   }
 
-  // Fixed open height: 40 top + 218 stage + 14 bottom = 272 (dock moved to separate #pill below)
+  function activeStyledModule() {
+    if (cs.special) return null;
+    if (cs.fullMod) return cs.fullMod;
+    if (cs.view === 'modules') return cs.modIds[cs.idx] || null;
+    return null;
+  }
+
+  // Dynamic open width & height: follows the active module's Style & Size override (Dashboard grid stays 272 px).
+  function width(maxW) {
+    const s = st.settings || {};
+    const expW = Number(s.expandedWidth) || 660;
+    const modId = activeStyledModule();
+    if (!modId) return Math.min(expW, maxW);
+    return frameForModule(modId, maxW, 340).width;
+  }
+
   function height(maxH) {
-    return Math.min(maxH, 272);
+    const modId = activeStyledModule();
+    if (!modId) return Math.min(maxH, 272);
+    let h = frameForModule(modId, 780, maxH).height;
+    if (modId === 'home' && N.homeNeedsTall && N.homeNeedsTall()) h = Math.max(h, 236);
+    else if (modId === 'control' && N.controlNeedsTall && N.controlNeedsTall()) h = Math.max(h, 232);
+    else if (modId === 'calendar' && N.calendarNeedsTall && N.calendarNeedsTall()) h = Math.max(h, 232);
+    return Math.min(maxH, h);
   }
 
   function renderTop() {
@@ -943,7 +1003,7 @@
 
   viewEl.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || cs.fullMod || cs.special) return;
-    if (e.target.closest('button, a, input, textarea, select, [contenteditable], .bar, .mc-sl-bar, .vsl, .wk-strip, [data-mseek], [draggable=true]')) return;
+    if (e.target.closest('button, a, input, textarea, select, [contenteditable], .bar, .mc-sl-bar, .vsl, .hsl, .wk-strip, [data-mseek], [draggable=true]')) return;
     const scx = e.target.closest('.sc-x');
     if (scx && scx.scrollWidth > scx.clientWidth + 2) return;
     cs.drag = { x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId };
@@ -1065,8 +1125,10 @@
     fullModule: () => cs.fullMod,
     activeModule: () => (cs.fullMod || (cs.view === 'modules' ? cs.modIds[cs.idx] || null : null)),
     viewMode: () => cs.view,
+    width,
     height,
     syncWidth,
+    syncStyleAttrs: syncAllPageStyleAttrs,
     renderTop,
     renderDock,
     hideDockTip,

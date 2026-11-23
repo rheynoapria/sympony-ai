@@ -323,14 +323,20 @@ function layout() {
 
   let tiny = false;
   if (shell === 'open') {
-    w = Math.min(s.expandedWidth, window.innerWidth - 40);
+    const maxW = window.innerWidth - 40;
+    w = (window.N && N.carousel && N.carousel.width) ? N.carousel.width(maxW) : Math.min(s.expandedWidth, maxW);
     if (window.N && N.carousel) N.carousel.syncWidth(w);
     // (room under it for its shadow, ~50 px, and a haptic bump: wm.rs WIN_H)
     const maxH = window.innerHeight - 70 - gap;
     h = (window.N && N.carousel) ? N.carousel.height(maxH) : Math.min(isTall(st.page) ? s.expandedHeightTall : s.expandedHeight, maxH);
-    r = formCls === 'f-top' ? 38 : 28;
-    ear = (formCls === 'f-top' && !floating) ? 22 : 0;
+    const topInset = cam ? Math.max(40, Math.ceil(cam.h) + 4) : 40;
+    const botInset = h <= 148 ? 10 : 14;
+    const stageH = Math.max(60, h - topInset - botInset);
+    r = formCls === 'f-top' ? Math.min(38, Math.max(20, Math.round(h * 0.16))) : 24;
+    ear = (formCls === 'f-top' && !floating) ? Math.min(22, Math.max(14, Math.round(r * 0.6))) : 0;
+    notchEl.style.setProperty('--stage-top', topInset + 'px');
     notchEl.style.setProperty('--open-h', h + 'px');
+    notchEl.style.setProperty('--stage-h', stageH + 'px');
   } else if (shell === 'handle') {
     w = 5; h = 64; r = 3; ear = 0; tiny = true;
   } else if (shell === 'tuck') {
@@ -343,8 +349,16 @@ function layout() {
   } else {
     const act = currentActivity();
     const side = closedSide(act);
-    w = cam ? camWidth(act, side, cam) : closedMid(act, side) + side * 2;
-    notchEl.classList.toggle('cam-tight', !!cam && !side && !camClockShown(act) && !ponyIdleOn());
+    let camRes = null;
+    if (cam) {
+      camRes = camLayoutFor(act, side, cam);
+      w = camRes.width;
+      st.camClockOk = camRes.showClock;
+    } else {
+      st.camClockOk = true;
+      w = closedWidthFlat(act, side);
+    }
+    notchEl.classList.toggle('cam-tight', !!cam && !side && !(camRes && camRes.showClock) && !ponyIdleOn());
     h = rowH;
     // under-camera alert row (#below: prayer, device/charging, meeting, toast/todo alerts)
     const belowExtra = st.below && st.below.extra ? st.below.extra : 0;
@@ -390,7 +404,15 @@ function layout() {
     const expandedClosed = belowExtra > 0 || h > rowH;
     r = formCls === 'f-island' ? (expandedClosed ? 26 : 18) : floating ? Math.round(rowH / 2) : expandedClosed ? 26 : 16;
     ear = (formCls === 'f-top' && !floating) ? (expandedClosed ? 18 : 14) : 0;
-    if (cam) placeCamClock(act, side, cam, w);
+    if (cam && camRes) {
+      notchEl.style.setProperty('--clock-l', camRes.clockL + 'px');
+      notchEl.style.setProperty('--clock-w', camRes.clockW + 'px');
+      const clockEl = $('#idleClock');
+      if (clockEl && !camRes.showClock && clockEl.classList.contains('show')) {
+        clockEl.classList.remove('show');
+        clockKey = '';
+      }
+    }
   }
   if (shell === 'open' || shell === 'tuck' || shell === 'handle' || shell === 'hidden' || ts) progTop = -1;
 
@@ -593,11 +615,40 @@ function asideHover(inside) {
   if (st.nearIn && stepAsideOn()) later('rearm', 700, () => { if (st.nearIn && !st.hover && !st.near) { st.near = true; layout(); } });
 }
 
-// ================================================================== look (one look: pure OLED black)
+// ================================================================== look (black, glass, color)
 let progTop = -1; // where the song's progress line goes (layout); -1: along the bottom edge, as it always was
-function lookOf() { return 'black'; }
-function applyLook() {
+function lookOf(s) {
+  const raw = (s || st.settings || {}).notchLook;
+  return raw === 'glass' || raw === 'color' ? raw : 'black';
+}
+function hexToRgb(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [28, 43, 77];
+}
+function applyLook(s) {
+  const cfg = s || st.settings || {};
+  const look = lookOf(cfg);
   if (window.Tint) Tint.wall(false);
+  notchEl.dataset.look = look;
+  if (bubbleEl) bubbleEl.dataset.look = look;
+  if (look === 'color') {
+    const col = /^#[0-9a-f]{6}$/i.test(cfg.notchColor || '') ? cfg.notchColor.toLowerCase() : '#1c2b4d';
+    notchEl.style.setProperty('--notch-color', col);
+    if (bubbleEl) bubbleEl.style.setProperty('--notch-color', col);
+    const rgb = hexToRgb(col);
+    const light = window.Tint && typeof Tint.darkInk === 'function'
+      ? Tint.darkInk(rgb)
+      : (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.65;
+    notchEl.classList.toggle('look-light', light);
+    if (bubbleEl) bubbleEl.classList.toggle('look-light', light);
+  } else {
+    notchEl.style.removeProperty('--notch-color');
+    notchEl.classList.remove('look-light');
+    if (bubbleEl) {
+      bubbleEl.style.removeProperty('--notch-color');
+      bubbleEl.classList.remove('look-light');
+    }
+  }
   notchEl.style.removeProperty('--bg');
 }
 if (window.Tint) Tint.onChange((what) => { if (what === 'warm') paintAccent(); });
@@ -703,8 +754,8 @@ function closeNotch() {
       N.carousel.goTo(st.settings.defaultTab || 0, { instant: true, silent: true });
     }
   }
-  layout();
   renderClosed();
+  layout();
 }
 
 // "Reopen on the last tab" (Settings → Modules → Default): the page you last picked is kept in localStorage.
@@ -1061,8 +1112,34 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
-  if (!st.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !st.settings || st.settings.moduleShortcuts === false) return;
+  if (!st.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
   if (isEditableFocused(e.target) || arrowsBusy()) return;
+  // YouTube video mode: let ←/→ (5s), J/L (10s), Space/K control playback instead of sliding the notch (Shift+←/→ still slides).
+  if (isYtActive()) {
+    if (!e.shiftKey && (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L')) {
+      e.preventDefault();
+      ytSeekBy(e.key === 'ArrowRight' ? 5 : 10);
+      return;
+    }
+    if (!e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J')) {
+      e.preventDefault();
+      ytSeekBy(e.key === 'ArrowLeft' ? -5 : -10);
+      return;
+    }
+    if (!e.shiftKey && (e.key === ' ' || e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      cmd('toggle');
+      return;
+    }
+    if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      if (st.settings && st.settings.moduleShortcuts !== false) {
+        e.preventDefault();
+        arrowTab(e.key === 'ArrowRight' ? 1 : -1);
+      }
+      return;
+    }
+  }
+  if (!st.settings || st.settings.moduleShortcuts === false) return;
   const arrow = !e.shiftKey && (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
   if (arrow) {
     e.preventDefault();
@@ -1084,7 +1161,8 @@ const NO_ARROW_PAGES = ['drop', 'snap'];
 let arrowsAsked = false; let hoverKeys = false;
 function syncArrows() {
   const s = st.settings;
-  const want = !!(s && s.moduleShortcuts !== false && st.open && !st.typing && !NO_ARROW_PAGES.includes(st.page) && (st.hover || st.keyOpen));
+  const ytOn = isYtActive();
+  const want = !!(st.open && !st.typing && !NO_ARROW_PAGES.includes(st.page) && (st.hover || st.keyOpen) && (ytOn || (s && s.moduleShortcuts !== false)));
   if (want !== arrowsAsked) { arrowsAsked = want; api.setArrows(want); }
   const ccKeys = !!(claudeShowing() && st.hover && !st.typing);
   const kb = (want || ccKeys) && st.hover && !st.typing;
@@ -1104,7 +1182,11 @@ function arrowTab(dir) {
     if (N.carousel.flashPill) N.carousel.flashPill(1200);
   }
 }
-api.on('notch:arrow', (dir) => { if (!isEditableFocused(null)) arrowTab(dir); });
+api.on('notch:arrow', (dir) => {
+  if (isEditableFocused(null)) return;
+  if (isYtActive()) { ytSeekBy(dir * 5); return; }
+  arrowTab(dir);
+});
 
 // ================================================================== live activities (closed state)
 function showActivity(kind, ms, data) {
@@ -3218,7 +3300,7 @@ const slotProbe = document.createElement('div');
 slotProbe.id = 'slotProbe'; slotProbe.setAttribute('aria-hidden', 'true');
 notchEl.appendChild(slotProbe);
 const slotSizes = new Map(); // html → its width
-let slotFit = { key: '', w: 0 };
+let slotFit = { key: '', l: 0, r: 0, w: 0 };
 function slotSize(html) {
   const key = (notchEl.classList.contains('cam') ? 'cam|' : '') + html;
   let w = slotSizes.get(key);
@@ -3232,12 +3314,18 @@ function slotSize(html) {
   slotSizes.set(key, w);
   return w;
 }
-function slotsWidth(L, R) {
+function slotsMeasure(L, R) {
   const s = st.settings;
-  const w = Math.max(L ? slotSize(L) : 0, R ? slotSize(R) : 0);
-  const key = [s.idleLeft, s.idleRight, s.clock24h, s.showBatteryPercent, s.batteryStyle, Math.floor(Date.now() / 60000)].join('|');
-  slotFit = key === slotFit.key ? { key, w: Math.max(slotFit.w, w) } : { key, w };
-  return slotFit.w;
+  const lw = L ? slotSize(L) : 0;
+  const rw = R ? slotSize(R) : 0;
+  const key = [notchEl.classList.contains('cam') ? '1' : '0', s.idleLeft, s.idleRight, s.clock24h, s.showBatteryPercent, s.batteryStyle, Math.floor(Date.now() / 60000)].join('|');
+  slotFit = key === slotFit.key
+    ? { key, l: Math.max(slotFit.l, lw), r: Math.max(slotFit.r, rw), w: Math.max(slotFit.w, lw, rw) }
+    : { key, l: lw, r: rw, w: Math.max(lw, rw) };
+  return { leftW: slotFit.l, rightW: slotFit.r, side: slotFit.w };
+}
+function slotsWidth(L, R) {
+  return slotsMeasure(L, R).side;
 }
 let lastSlotSig = '';
 function slotHtml(kind) {
@@ -3311,7 +3399,7 @@ function slotHtml(kind) {
 }
 function idleSlots() {
   const s = st.settings;
-  if (!s || st.open) return { L: '', R: '', side: 0 };
+  if (!s || st.open) return { L: '', R: '', leftW: 0, rightW: 0, side: 0 };
   if (ponyIdleOn()) {
     if (camera()) {
       const lCustom = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
@@ -3319,28 +3407,55 @@ function idleSlots() {
       const outer = lCustom || rCustom
         ? Math.max(slotsWidth(lCustom, rCustom), clockWidth('time'))
         : clockWidth('time');
-      return { L: '', R: '', side: Math.max(48, outer + 18) };
+      const side = Math.max(48, outer + 18);
+      return { L: '', R: '', leftW: side, rightW: side, side };
     }
     const L = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
     const R = s.idleRight && s.idleRight !== 'none' && s.idleRight !== 'battery' ? slotHtml(s.idleRight) : '';
-    return { L, R, side: L || R ? slotsWidth(L, R) : 0 };
+    const m = L || R ? slotsMeasure(L, R) : { leftW: 0, rightW: 0, side: 0 };
+    return { L, R, ...m };
   }
   const L = slotHtml(s.idleLeft); const R = slotHtml(s.idleRight);
-  return { L, R, side: L || R ? slotsWidth(L, R) : 0 };
+  const m = L || R ? slotsMeasure(L, R) : { leftW: 0, rightW: 0, side: 0 };
+  return { L, R, ...m };
 }
-// The middle of the closed notch: General → Size → Width, or wider while nothing else is going on when the time
-// (or the day and time) needs more, so the slots never run into it: 10 px from each, 12 px from the edges
-function closedMid(act, side) {
+function clockAllowedWith(act) {
+  if (!act) return true;
+  if (!st.settings || st.settings.clockWithActivities === false) return false;
+  if (st.activity && st.activity.until > Date.now()) return false;
+  return window.NotchKit && typeof NotchKit.isClockActivity === 'function'
+    ? NotchKit.isClockActivity(act.kind)
+    : ['music', 'pomodoro', 'timer', 'stopwatch'].includes(act.kind);
+}
+// Closed-notch width on a display without a physical camera cutout: fits the time and sides cleanly without stacking
+// an empty `notchWidth` middle on top of `side * 2`.
+function closedWidthFlat(act, side) {
   const s = st.settings; const mode = s.idleClock || 'time';
+  const maxW = Math.max(320, window.innerWidth - 80);
   if (st.open) return s.notchWidth;
-  if (ponyIdleOn()) return Math.max(s.notchWidth, 168);
-  if (act && act.kind === 'music' && !camera() && !lyricsInline() && st.media.title) return Math.max(s.notchWidth, 168);
-  if (mode === 'off') return s.notchWidth;
-  if (act) return Math.max(s.notchWidth, clockBeside(act, side, mode));
-  const need = clockWidth(mode) + (side ? 40 : 24);
-  // the keyboard language's mark at the right edge (the AI usage ring's at the left), and as much on the other side so
-  // the time stays in the middle
-  return Math.max(s.notchWidth, need + (!side ? Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom()) * 2 : 0));
+  if (ponyIdleOn()) {
+    const mid = Math.max(168, s.notchWidth - side * 2);
+    return Math.min(maxW, Math.max(s.notchWidth, mid + side * 2));
+  }
+  if (act && act.kind === 'music' && !camera() && !lyricsInline() && st.media.title) {
+    return window.NotchKit && NotchKit.closedWidthNoCam
+      ? NotchKit.closedWidthNoCam({ notchWidth: s.notchWidth, midNeed: 168, side, pad: 0, maxW })
+      : Math.min(maxW, Math.max(s.notchWidth, 168 + side * 2));
+  }
+  const marks = !side ? Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom()) * 2 : 0;
+  let midNeed = 0;
+  if (mode !== 'off') {
+    if (act) {
+      midNeed = clockAllowedWith(act) ? Math.max(clockBeside(act, side, mode), clockWidth('time') + 24) : 0;
+    } else {
+      midNeed = clockWidth(mode) + (side ? 24 : 0) + marks;
+    }
+  } else {
+    midNeed = marks;
+  }
+  return window.NotchKit && NotchKit.closedWidthNoCam
+    ? NotchKit.closedWidthNoCam({ notchWidth: s.notchWidth, midNeed, side, pad: 28, maxW })
+    : Math.min(maxW, Math.max(s.notchWidth, midNeed + 28 + side * 2));
 }
 // how wide the time (or the day and time) is in the closed notch, every digit counted as a 0
 function clockWidth(mode) {
@@ -3350,38 +3465,76 @@ function clockWidth(mode) {
   return Math.ceil(day + textWidth([n(hm(now))], `600 ${fs}px`));
 }
 
-// Over a MacBook's camera (camera()): the camera's width in the middle, then a side on each hand, both as wide, so
-// Sympony stays centred on the camera. The time takes a side too: the right one when nothing shows there, otherwise the
-// left, after what shows there.
+// Over a MacBook's camera (camera()): the camera's width in the middle, then balanced wings on each side so Sympony
+// stays centred on the camera. The time goes on the empty or narrower wing (and during music/timers uses compact time).
+function camClockMode(act) {
+  const mode = (st.settings && st.settings.idleClock) || 'time';
+  if (mode === 'off') return 'off';
+  return act ? 'time' : mode;
+}
 function camClockShown(act) {
   const s = st.settings;
   if (ponyIdleOn()) return false;
   if ((s.idleClock || 'time') === 'off' || st.open || lyricsInline()) return false;
   if (claudeShowing() || notifShowing()) return false;
   if (voiceActive()) return false; // dictating: the sides are the mic, timer and language, never the time
-  return !act || (s.clockWithActivities !== false && !(st.activity && st.activity.until > Date.now()));
+  return clockAllowedWith(act);
 }
 // (the marks at the edges, Caps Lock, AI usage, keyboard language: their room as closedSide made it, or with nothing
 // on the sides as closedMid gives it)
-function camPad(act, side) {
+function camPad(act, side, clockShown) {
   const marks = side > 0 ? parseFloat(notchEl.style.getPropertyValue('--mark-pad')) || 0 : Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom());
   // ponytail: nothing beside the camera but the edge marks (or nothing at all): hug the camera. The marks move to
   // 4 px from the edge (.cam-tight in notch.css) and keep 4 px to the camera: 4 + mark + 4 a side.
-  if (!side && !camClockShown(act)) return marks && marks - 4;
-  return (act && act.kind === 'music' ? 10 : 9) + marks;
+  if (!side && !clockShown) return marks && marks - 4;
+  return 8 + marks;
 }
-function camWidth(act, side, cam) {
+function camSideWidths(act, side) {
+  if (!act && !ponyIdleOn() && !claudeShowing() && !notifShowing()) {
+    const sl = idleSlots();
+    return { leftW: sl.leftW, rightW: sl.rightW };
+  }
+  if (ponyIdleOn()) return { leftW: side, rightW: side };
+  const lHtml = $('#closedLeft') ? $('#closedLeft').innerHTML : '';
+  const rHtml = $('#closedRight') ? $('#closedRight').innerHTML : '';
+  let leftW = lHtml ? slotSize(lHtml) : 0;
+  let rightW = rHtml ? slotSize(rHtml) : 0;
+  if (act) {
+    if (act.kind === 'music') {
+      leftW = Math.max(leftW, 24);
+      rightW = Math.max(rightW, showMiniControls() ? 70 : 26);
+    } else if (act.kind === 'pomodoro' || act.kind === 'timer' || act.kind === 'stopwatch') {
+      leftW = Math.max(leftW, 20);
+      rightW = Math.max(rightW, 42);
+    } else {
+      leftW = lHtml ? Math.max(leftW, Math.min(side, leftW)) : side;
+      rightW = rHtml ? Math.max(rightW, Math.min(side, rightW)) : side;
+    }
+  }
+  return { leftW, rightW };
+}
+function camLayoutFor(act, side, cam) {
   const s = st.settings;
-  const clock = camClockShown(act) ? clockWidth(s.idleClock || 'time') : 0;
-  const wing = side + (clock ? clock + (side ? 8 : 4) : 0);
-  return Math.max(s.notchWidth, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + camPad(act, side)) * 2));
-}
-function placeCamClock(act, side, cam, w) {
-  const pad = camPad(act, side);
-  const hasL = !!$('#closedLeft').innerHTML; const hasR = !!$('#closedRight').innerHTML;
-  const [a, b] = !hasR ? [w / 2 + cam.w / 2 + CAM_MARGIN, w - pad] : [pad + (hasL ? side + 4 : 0), w / 2 - cam.w / 2 - CAM_MARGIN];
-  notchEl.style.setProperty('--clock-l', Math.round(a) + 'px');
-  notchEl.style.setProperty('--clock-w', Math.max(0, Math.round(b - a)) + 'px');
+  const wantClock = camClockShown(act);
+  const mode = camClockMode(act);
+  const clockW = wantClock && mode !== 'off' ? clockWidth(mode) : 0;
+  const { leftW, rightW } = camSideWidths(act, side);
+  const pad = camPad(act, Math.max(leftW, rightW, side), clockW > 0);
+  const maxW = Math.min(window.innerWidth - 80, Math.max(Math.ceil(cam.w) + 260, 480));
+  if (window.NotchKit && typeof NotchKit.camClosedLayout === 'function') {
+    return NotchKit.camClosedLayout({
+      camW: cam.w + CAM_MARGIN * 2,
+      leftW,
+      rightW,
+      clockW,
+      pad,
+      notchWidth: s.notchWidth,
+      maxW,
+    });
+  }
+  const wing = Math.max(leftW, rightW) + (clockW ? clockW + 6 : 0);
+  const width = Math.min(maxW, Math.max(s.notchWidth, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + pad) * 2)));
+  return { width, showClock: clockW > 0, clockRight: !rightW, clockL: pad, clockW };
 }
 // Settings → General → Clock size: the closed Sympony's time follows its Height. Normal is the size it always had (38 % of
 // the Height, 10 to 14 px), Small a little under it; Large and Extra large grow past 14 px, never over 70 % of the Height.
@@ -3426,15 +3579,16 @@ function renderClock() {
   }
   const mode = s.idleClock || 'time';
   const el = $('#idleClock');
-  const html = (mode === 'date' ? `<span class="d">${esc(now.toLocaleDateString(_tLocale(), { weekday: 'short', day: 'numeric' }))}</span>` : '') + `<span>${esc(hm(now))}</span>`;
   const act = currentActivity();
-  const brief = !!(st.activity && st.activity.until > Date.now());
   const cam = !!camera();
+  const dispMode = cam && act ? 'time' : mode;
+  const html = (dispMode === 'date' ? `<span class="d">${esc(now.toLocaleDateString(_tLocale(), { weekday: 'short', day: 'numeric' }))}</span>` : '') + `<span>${esc(hm(now))}</span>`;
   const hasMid = !!($('#closedMid') && $('#closedMid').innerHTML);
   const long = !cam && !!act && $$('#closed .act-text[style*="max-width"]').some((t) => t.scrollWidth > parseFloat(t.style.maxWidth) + 1);
   $('#closed').classList.toggle('roomy', long && !hasMid);
   let idle = mode !== 'off' && !st.open && !st.hudOnly && !lyricsInline() && !ponyIdleOn() && !hasMid && !claudeShowing() && !notifShowing() && !voiceActive()
-    && (!act || (s.clockWithActivities !== false && !brief && !long));
+    && (!cam || st.camClockOk !== false)
+    && (!act || (clockAllowedWith(act) && !long));
   if (idle && act && !cam) { if (el.innerHTML !== html) el.innerHTML = html; idle = clockFits(el); }
   const key = [html, idle, s.headerClock !== false].join('|');
   if (key === clockKey) return;
@@ -4377,6 +4531,10 @@ function onMedia(m) {
 
 function cmd(action, value) {
   if (action === 'toggle') { st.media.playing = !st.media.playing; st.media.position = mediaPosition(); st.media.positionUpdated = Date.now(); renderMusic(); renderClosed(); layout(); }
+  else if (action === 'seek' && Number.isFinite(Number(value))) {
+    st.media.position = Math.max(0, Number(value));
+    st.media.positionUpdated = Date.now();
+  }
   api.helper({ cmd: 'media', action, value });
 }
 $('#btnPlay').onclick = () => cmd('toggle');
@@ -5921,6 +6079,59 @@ function previewSize(prev, s) {
   later('close', 1500, () => { st.previewing = false; if (!st.hover && !st.typing) closeNotch(); });
 }
 
+function applyCardStyle(s) {
+  if (!window.StyleLib) return;
+  const cs = StyleLib.cardStyleOf(s);
+  notchEl.dataset.cardSurface = cs.surface;
+  notchEl.dataset.cardRadius = cs.radius;
+  notchEl.dataset.cardDensity = cs.density;
+  if (window.N && N.carousel && N.carousel.syncStyleAttrs) N.carousel.syncStyleAttrs();
+}
+
+function previewStyleChange(prev, s) {
+  const prevMap = (prev && prev.moduleStyles) || {};
+  const nextMap = (s && s.moduleStyles) || {};
+  const prevGrid = window.StyleLib ? JSON.stringify(StyleLib.gridSizesMap(prev)) : '';
+  const nextGrid = window.StyleLib ? JSON.stringify(StyleLib.gridSizesMap(s)) : '';
+  if (prevGrid !== nextGrid && window.N && N.carousel) N.carousel.rebuild();
+
+  const keys = new Set([...Object.keys(prevMap), ...Object.keys(nextMap)]);
+  const changedMods = [];
+  for (const k of keys) {
+    if (JSON.stringify(prevMap[k] || null) !== JSON.stringify(nextMap[k] || null)) changedMods.push(k);
+  }
+  const cardChanged = JSON.stringify(prev && prev.cardStyle) !== JSON.stringify(s && s.cardStyle);
+  if (!changedMods.length && !cardChanged) return;
+
+  if (changedMods.includes('home')) renderHomeSection();
+  if (st.open && !st.previewing) return;
+
+  let target = null;
+  if (changedMods.length === 1) {
+    const id = changedMods[0];
+    // If only gridSize changed in dashboard mode, keep dashboard visible; otherwise open that module directly.
+    const onlyGrid = prevMap[id] && nextMap[id]
+      && prevMap[id].style === nextMap[id].style
+      && prevMap[id].size === nextMap[id].size
+      && prevMap[id].width === nextMap[id].width
+      && prevMap[id].height === nextMap[id].height
+      && prevMap[id].surface === nextMap[id].surface
+      && prevMap[id].gridSize !== nextMap[id].gridSize;
+    if (!onlyGrid) target = id;
+  } else if (changedMods.length > 1) {
+    const cur = window.N && N.carousel ? N.carousel.activeModule() : null;
+    target = (cur && changedMods.includes(cur)) ? cur : changedMods[0];
+  }
+  st.previewing = true;
+  if (target) {
+    openNotch(target);
+    if (window.N && N.openModule) N.openModule(target);
+  } else {
+    openNotch();
+  }
+  later('close', 2600, () => { st.previewing = false; if (!st.hover && !st.typing) closeNotch(); });
+}
+
 function applySettings(s) {
   const prev = st.settings;
   st.settings = s;
@@ -5928,6 +6139,7 @@ function applySettings(s) {
   notchEl.classList.toggle('glow-on', !!s.colorGlow);
   notchEl.classList.toggle('no-tab-slide', s.fxTabSlide === false);
   applyWaveStyle(s);
+  applyCardStyle(s);
   $('#mirror').classList.toggle('hidden', !s.mirrorEnabled);
   $('#mirror').classList.toggle('circle', s.mirrorShape === 'circle');
   if (!s.mediaEnabled) st.media = { active: false };
@@ -5953,7 +6165,10 @@ function applySettings(s) {
     later('glowPreview', 1950, outlineSync);
     outlineSync();
   }
-  if (prev) previewSize(prev, s);
+  if (prev) {
+    previewSize(prev, s);
+    previewStyleChange(prev, s);
+  }
 }
 api.onSettings(applySettings);
 
@@ -6054,6 +6269,45 @@ function ytShows(m) {
   if (NotchKit.ytView(m, st.settings, yt.blocked, yt.dismissed)) return yt.want || !!yt.frame;
   return !!m.active && !m.video && NotchKit.ytGrace(!!yt.frame, Date.now() - yt.videoAt);
 }
+function isYtActive() {
+  const mod = (window.N && N.carousel) ? (N.carousel.fullModule() || N.carousel.activeModule()) : st.page;
+  return !!(st.open && mod === 'home' && ytShows(st.media || {}));
+}
+let ytToastTimer = null;
+function ytFlash(text) {
+  const box = $('#page-home .mc-video');
+  const toastEl = box && $('.mc-v-toast', box);
+  if (!toastEl) return;
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  if (ytToastTimer) clearTimeout(ytToastTimer);
+  ytToastTimer = setTimeout(() => { toastEl.classList.remove('show'); ytToastTimer = null; }, 700);
+}
+function ytSeekBy(deltaSec) {
+  const m = st.media || {};
+  const d = Number(m.duration) || 0;
+  const cur = mediaPosition();
+  const target = d > 0 ? Math.max(0, Math.min(d - 0.5, cur + deltaSec)) : Math.max(0, cur + deltaSec);
+  cmd('seek', target);
+  if (yt.frame && yt.ready) {
+    ytPost({ type: 'seek', at: target });
+    yt.t = target;
+    yt.seekAt = Date.now();
+  }
+  const box = $('#page-home .mc-video');
+  if (box && d > 0) {
+    const frac = Math.max(0, Math.min(1, target / d));
+    const th = $('.mc-v-thin i', box);
+    if (th) th.style.transform = `scaleX(${frac.toFixed(4)})`;
+    const barI = $('[data-mseek] i', box);
+    if (barI) barI.style.transform = `scaleX(${frac.toFixed(4)})`;
+    const elT = $('.mc-p-el', box);
+    const remT = $('.mc-p-rem', box);
+    if (elT) elT.textContent = fmt(target);
+    if (remT) remT.textContent = '-' + fmt(Math.max(0, d - target));
+  }
+  ytFlash(deltaSec > 0 ? `+${Math.round(deltaSec)}s »` : `« ${Math.round(deltaSec)}s`);
+}
 function ytPost(msg) {
   if (yt.frame && yt.frame.contentWindow) yt.frame.contentWindow.postMessage(msg, new URL(yt.url).origin);
 }
@@ -6067,7 +6321,7 @@ function ytPaint(el, m) {
     ytTeardown();
     el.className = 'c bare mc-music mc-video';
     el.innerHTML = '<img class="mc-v-glow" alt=""><iframe class="mc-v-frame" allow="autoplay; encrypted-media"></iframe><img class="mc-v-thumb" alt="">'
-      + '<span class="mc-app-chip mc-v-chip"></span><div class="mc-v-thin"><i></i></div><div class="mc-v-ov"></div>';
+      + '<span class="mc-app-chip mc-v-chip"></span><div class="mc-v-toast" aria-live="polite"></div><div class="mc-v-thin"><i></i></div><div class="mc-v-ov"></div>';
     yt.frame = $('.mc-v-frame', el);
     yt.frame.src = yt.url;
   }
@@ -6087,26 +6341,41 @@ function ytPaint(el, m) {
   const frac = d ? Math.max(0, Math.min(1, pos / d)) : 0;
   const ic = N.ic || (() => '');
   const fill = !!(st.settings && st.settings.ytVideoFill);
+  const rate = Number(m.rate) || 1;
+  const canSeek = !!(d && m.canSeek !== false);
+  const leftBadge = rate !== 1
+    ? `<span class="mc-v-badge" title="${esc(_t('Playback speed'))}">${esc(Number(rate.toFixed(2)))}×</span>`
+    : `<span class="mc-v-badge" title="${esc('← / → (±5s) · Shift + ← / →')}" style="opacity:0.78">← / → 5s</span>`;
   $('.mc-v-ov', el).innerHTML = `<div class="mc-v-ttl t1" dir="auto">${esc(m.title || '')}</div><div class="mc-v-sub t1" dir="auto">${esc(m.artist || '')}</div>`
     + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(d ? fmt(pos) : '0:00')}</span>`
     + `<div class="bar${d ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
     + `<span class="n mc-p-rem" style="font-size:11px">${esc(d ? '-' + fmt(Math.max(0, d - pos)) : '0:00')}</span></div>`
-    + `<div class="mc-v-ctl"><span></span><div class="mc-v-mid">`
-    + `<button type="button" class="mc-m-btn" data-mc="prev" ${m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
+    + `<div class="mc-v-ctl"><div class="mc-v-left">${leftBadge}</div><div class="mc-v-mid">`
+    + `<button type="button" class="mc-m-btn" data-mc="prev" ${m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:17px;height:17px')}</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="-10" ${canSeek ? '' : 'disabled'} title="-10s (← / J)">−10s</button>`
     + `<button type="button" class="mc-m-btn play" data-mc="toggle" title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="10" ${canSeek ? '' : 'disabled'} title="+10s (→ / L)">+10s</button>`
+    + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
     + `</div><div class="mc-v-right">`
     + `<button type="button" class="mc-round-btn" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}</button>`
     + `<button type="button" class="mc-round-btn" data-mfill="1" title="${esc(fill ? _t('Fit') : _t('Fill'))}">${fa(fill ? 'compress' : 'expand')}</button>`
     + `<button type="button" class="mc-round-btn" data-mmusic="1" title="${esc(_t('Back to the music'))}">${ic('music')}</button>`
     + `</div></div>`;
   $$('[data-mc]', el).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); cmd(b.dataset.mc); }; });
+  $$('[data-yskip]', el).forEach((b) => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      ytSeekBy(Number(b.dataset.yskip) || 0);
+    };
+  });
   const seekBar = $('[data-mseek]', el);
-  if (seekBar && d && m.canSeek !== false) {
+  if (seekBar && canSeek) {
     seekBar.onclick = (e) => {
       e.stopPropagation();
       const r = seekBar.getBoundingClientRect();
-      api.helper({ cmd: 'media.seek', position: Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width))) * d });
+      const target = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width))) * d;
+      cmd('seek', target);
+      if (yt.frame && yt.ready) { ytPost({ type: 'seek', at: target }); yt.t = target; yt.seekAt = Date.now(); }
     };
   }
   $('[data-mout]', el).onclick = (e) => { e.stopPropagation(); N.openModule('control'); callModule('control', 'showSound'); };
@@ -6216,29 +6485,71 @@ function paintMusicPlayer(el, inSection) {
     ? `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'mirror' ? ' on' : ''}" data-mmirror="1" title="${esc(_t('Mirror'))}">${ic('cam')}</button>`
     : '';
 
+  const homeStyle = inSection && window.StyleLib ? StyleLib.styleIdFor(st.settings, 'home') : 'bento';
   el.className = 'c bare mc-music';
-  el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
-    + `<div class="mc-m-col">`
-    + `<div class="row" style="gap:10px"><div style="min-width:0;flex:1" data-mopen="1">`
-    + `<div class="t1" dir="auto" style="font-size:21px;font-weight:700;letter-spacing:-0.02em">${esc(titleStr)}</div>`
-    + `<div class="sub t1" dir="auto" style="font-size:13px">${esc(artistStr)}</div></div>${eqHtml}</div>`
-    + lyricHtml
-    + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
-    + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
-    + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
-    + `<div class="row mc-m-ctls"><div class="row" style="gap:4px">`
-    + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
-    + `</div><div class="row" style="gap:6px">`
-    + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
-    + mirrorBtn
-    + (inSection && m.video && yt.dismissed.has(m.video) && !yt.blocked.has(m.video) && st.settings && st.settings.ytVideo !== false
-      ? `<button type="button" class="mc-round-btn" data-myt="1" title="${esc(_t('Show the video'))}">${fa('play')}</button>` : '')
-    + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
-    + `</div></div></div>`;
+  if (homeStyle === 'strip') {
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-strip-mid">`
+      + `<div style="min-width:0" data-mopen="1">`
+      + `<div class="t1" dir="auto" style="font-size:16px;font-weight:700;letter-spacing:-0.02em;line-height:1.2">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:12px;line-height:1.25">${esc(artistStr)}</div></div>`
+      + `<div class="row mc-m-prog" style="margin-top:0"><span class="n mc-p-el" style="font-size:10.5px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:10.5px">${esc(remStr)}</span></div></div>`
+      + `<div class="mc-strip-right">`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:16px;height:16px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:16px;height:16px')}</button>`
+      + `${eqHtml}`
+      + `${mirrorBtn}`
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div>`;
+  } else if (homeStyle === 'cover') {
+    const oneLyr = has3Lyr && curL ? `<div class="t1 sub" style="font-size:11.5px;color:var(--text);opacity:0.78" data-mlyr="1">♪ ${esc(curL)}</div>` : '';
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-cover-col">`
+      + `<div class="row" style="gap:10px;align-items:flex-start"><div style="min-width:0;flex:1" data-mopen="1">`
+      + `<div class="t1 mc-cover-ttl" dir="auto">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:13px;margin-top:1px">${esc(artistStr)}</div></div>${eqHtml}</div>`
+      + `${oneLyr}`
+      + `<div class="row mc-m-prog" style="margin-top:0"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
+      + `<div class="row mc-m-ctls" style="margin-top:0"><div class="row" style="gap:4px">`
+      + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
+      + `</div><div class="row" style="gap:6px">`
+      + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
+      + `${mirrorBtn}`
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div></div></div>`;
+  } else {
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-m-col">`
+      + `<div class="row" style="gap:10px"><div style="min-width:0;flex:1" data-mopen="1">`
+      + `<div class="t1" dir="auto" style="font-size:21px;font-weight:700;letter-spacing:-0.02em">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:13px">${esc(artistStr)}</div></div>${eqHtml}</div>`
+      + lyricHtml
+      + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
+      + `<div class="row mc-m-ctls"><div class="row" style="gap:4px">`
+      + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
+      + `</div><div class="row" style="gap:6px">`
+      + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
+      + mirrorBtn
+      + (inSection && m.video && yt.dismissed.has(m.video) && !yt.blocked.has(m.video) && st.settings && st.settings.ytVideo !== false
+        ? `<button type="button" class="mc-round-btn" data-myt="1" title="${esc(_t('Show the video'))}">${fa('play')}</button>` : '')
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div></div></div>`;
+  }
 
   scrollPlainPlayer(el, true);
   $$('[data-mc]', el).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); cmd(b.dataset.mc); }; });
@@ -6247,18 +6558,18 @@ function paintMusicPlayer(el, inSection) {
       e.stopPropagation();
       if (st.settings && !st.settings.lyricsEnabled) api.setSettings({ lyricsEnabled: true, homeLyrics: true });
       else if (st.settings && !st.settings.homeLyrics) api.setSettings({ homeLyrics: true });
-      if (inSection && homeSecSub === 'lyrics') { homeSecSub = 'music'; renderHomeSection(); }
-      else { homeSecSub = 'lyrics'; N.openModule('home'); renderHomeSection(); }
+      if (inSection && homeSecSub === 'lyrics') { homeSecSub = 'music'; renderHomeSection(); layout(); }
+      else { homeSecSub = 'lyrics'; N.openModule('home'); renderHomeSection(); layout(); }
     };
   });
   const ytBtn = $('[data-myt]', el);
-  if (ytBtn) ytBtn.onclick = (e) => { e.stopPropagation(); yt.dismissed.delete(m.video); renderHomeSection(); };
+  if (ytBtn) ytBtn.onclick = (e) => { e.stopPropagation(); yt.dismissed.delete(m.video); renderHomeSection(); layout(); };
   const mBtn = $('[data-mmirror]', el);
   if (mBtn) {
     mBtn.onclick = (e) => {
       e.stopPropagation();
-      if (inSection && homeSecSub === 'mirror') { homeSecSub = 'music'; stopMirror(); renderHomeSection(); }
-      else { homeSecSub = 'mirror'; N.openModule('home'); renderHomeSection(); startMirror(); }
+      if (inSection && homeSecSub === 'mirror') { homeSecSub = 'music'; stopMirror(); renderHomeSection(); layout(); }
+      else { homeSecSub = 'mirror'; N.openModule('home'); renderHomeSection(); startMirror(); layout(); }
     };
   }
   const outBtn = $('[data-mout]', el);
@@ -6281,9 +6592,15 @@ function paintMusicPlayer(el, inSection) {
       e.stopPropagation();
       const r = seekBar.getBoundingClientRect();
       const f = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
-      api.helper({ cmd: 'media.seek', position: f * d });
+      cmd('seek', f * d);
+      const barI = $('i', seekBar);
+      if (barI) barI.style.transform = `scaleX(${f.toFixed(4)})`;
     };
   }
+}
+
+function homeNeedsTall() {
+  return homeSecSub === 'lyrics' || homeSecSub === 'mirror' || ytShows(st.media || {});
 }
 
 function renderHomeSection() {
@@ -7057,7 +7374,7 @@ window.N = {
     peekHandle: () => ponyPeekHandle,
   },
   handleToggle, devShell: { set: setDevShell, reset: () => setDevShell(null) },
-  ensurePage, callModule, enabledTabs, moduleOf, moduleEnabled, drawStats, renderMusic, renderCalendar, renderShelfSection, renderHomeSection, renderStatsSection, stopMirror, endTyping, isTall, syncArrows, arrowsBusy, notifBellOn,
+  ensurePage, callModule, enabledTabs, moduleOf, moduleEnabled, drawStats, renderMusic, renderCalendar, renderShelfSection, renderHomeSection, homeNeedsTall, renderStatsSection, stopMirror, endTyping, isTall, syncArrows, arrowsBusy, notifBellOn,
   focusField(el) { beginTyping(); setTimeout(() => el.focus(), 30); },
   async boot() {
     paintIcons();

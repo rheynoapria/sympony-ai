@@ -1,14 +1,18 @@
 //! AI through the agents installed on the Mac (services::agents): found on the login shell's PATH, run once per answer
 //! in read-only mode from an empty folder, killed after 3 minutes. AI Chat, Translate and the lyrics' extras.
 use serde_json::{json, Value};
-use services::agents::{answer, args, chat_rules_for, env, supported, tools_for, with_tools, lines_answer, lines_prompt, needs_update, prompt, signed_in, translate_prompt, AGENTS};
+use services::agents::{
+    answer, args, chat_rules_with_caps, claude_user_message, env, lines_answer, lines_prompt,
+    needs_update, prompt, signed_in, supported, tools_for, translate_prompt, with_stream,
+    with_tools, ClaudeEvent, ClaudeStream, AGENTS,
+};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::App;
 
@@ -175,23 +179,155 @@ fn pick(app: &AppHandle, key: &str) -> Option<Value> {
     all.iter().find(|a| a["id"] == want.as_str() && usable(a)).or_else(|| all.iter().filter(usable).find(|a| a["signedIn"] == true)).cloned()
 }
 
-/// One answer from the agent `key` names (chatAgent / translateAgent). Err: what to show.
-fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, web: bool) -> Result<String, String> {
-    ask_in(app, key, prompt_text, &[], system, web, None, None, false)
+/// Runs Claude Code in `--output-format stream-json --verbose --include-partial-messages` mode,
+/// emitting live `agent:delta` text chunks and `agent:step` web search/fetch chips (plus marking the MCP session
+/// tainted whenever WebSearch/WebFetch runs). Optional `stdin_line` delivers multimodal user JSON on stdin.
+fn run_claude_stream(
+    app: &AppHandle,
+    session: &str,
+    cmd: &mut Command,
+    stdin_line: Option<String>,
+    limit: Duration,
+    started: Option<&Mutex<Option<u32>>>,
+) -> Result<(Result<String, String>, Vec<Value>, Vec<String>), String> {
+    use std::os::unix::process::CommandExt;
+    cmd.stdin(if stdin_line.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let pid = child.id();
+    if let Some(slot) = started {
+        *slot.lock().unwrap() = Some(pid);
+    }
+    if let (Some(line), Some(mut stdin)) = (stdin_line, child.stdin.take()) {
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(line.as_bytes());
+            let _ = stdin.write_all(b"\n");
+            let _ = stdin.flush();
+        });
+    }
+    let stderr_rx = {
+        let mut r = child.stderr.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = vec![];
+            let _ = (&mut r).take(1 << 20).read_to_end(&mut buf);
+            let _ = tx.send(String::from_utf8_lossy(&buf).to_string());
+        });
+        rx
+    };
+    let stdout_rx = {
+        let r = child.stdout.take().unwrap();
+        let app = app.clone();
+        let sess = session.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut parser = ClaudeStream::default();
+            let mut shown = Instant::now() - Duration::from_secs(1);
+            let mut last_round = 0u32;
+            let mut pending_delta: Option<(u32, String)> = None;
+            let emit_delta = |app: &AppHandle, sess: &str, round: u32, text: &str| {
+                let _ = app.emit_to(crate::notch::LABEL, "agent:delta", json!({"session": sess, "round": round, "text": text}));
+            };
+            for line in BufReader::new(r).lines().map_while(Result::ok) {
+                for ev in parser.feed(&line) {
+                    match ev {
+                        ClaudeEvent::Delta { round, text } => {
+                            if round != last_round || shown.elapsed() >= Duration::from_millis(50) {
+                                last_round = round;
+                                shown = Instant::now();
+                                emit_delta(&app, &sess, round, &text);
+                                pending_delta = None;
+                            } else {
+                                pending_delta = Some((round, text));
+                            }
+                        }
+                        ClaudeEvent::Step { kind, detail, taints } => {
+                            if taints && !sess.is_empty() {
+                                app.state::<crate::mcp::Mcp>().mark_tainted(&sess);
+                            }
+                            let _ = app.emit("agent:step", json!({
+                                "session": sess,
+                                "kind": kind,
+                                "detail": detail.chars().take(60).collect::<String>(),
+                            }));
+                        }
+                        ClaudeEvent::Sources { query, sources } => {
+                            let _ = app.emit("agent:step", json!({
+                                "session": sess,
+                                "kind": "web",
+                                "detail": query.chars().take(60).collect::<String>(),
+                                "update": true,
+                                "sources": sources,
+                            }));
+                        }
+                    }
+                }
+            }
+            if let Some((round, text)) = pending_delta {
+                emit_delta(&app, &sess, round, &text);
+            }
+            let _ = tx.send(parser);
+        });
+        rx
+    };
+    let kill_group = || {
+        if let Ok(pgid) = i32::try_from(pid) {
+            if pgid > 0 {
+                // SAFETY: sending SIGKILL to the child's own dedicated process group (`process_group(0)`).
+                unsafe { libc::kill(-pgid, libc::SIGKILL) };
+            }
+        }
+    };
+    let start = Instant::now();
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            break st;
+        }
+        if start.elapsed() > limit || started.is_some_and(|s| *s.lock().unwrap() != Some(pid)) {
+            kill_group();
+            let _ = child.wait();
+            return Err(if start.elapsed() > limit { "timeout".into() } else { "stopped".into() });
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let parser = stdout_rx.recv_timeout(Duration::from_secs(5)).unwrap_or_default();
+    let err_out = stderr_rx.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
+    kill_group();
+    let sources = parser.sources.clone();
+    let searched = parser.searched.clone();
+    Ok((parser.finish(&err_out, status.success()), sources, searched))
 }
 
-/// `session`: a chat run that gets Sympony's tools (when its agent can take them).
-/// `images`: pictures the user attached (data URLs); only Pony's own engine takes them.
-fn ask_in(app: &AppHandle, key: &str, prompt_text: &str, images: &[String], system: &str, web: bool, slot: Option<&Mutex<Option<u32>>>, session: Option<&str>, brief: bool) -> Result<String, String> {
+/// One answer from the agent `key` names (chatAgent / translateAgent). Err: what to show.
+fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, web: bool) -> Result<String, String> {
+    ask_in(app, key, prompt_text, &[], system, web, None, None, false).map(|(t, _, _)| t)
+}
+
+/// `session`: a chat run that gets Sympony's tools (when its agent can take them) and live streaming (Claude Code).
+/// `images`: pictures the user attached (data URLs); supported by Pony's own engine and Claude Code.
+fn ask_in(
+    app: &AppHandle,
+    key: &str,
+    prompt_text: &str,
+    images: &[String],
+    system: &str,
+    web: bool,
+    slot: Option<&Mutex<Option<u32>>>,
+    session: Option<&str>,
+    brief: bool,
+) -> Result<(String, Vec<Value>, Vec<String>), String> {
     if crate::brain::on(app) {
-        return crate::brain::ask(app, &[json!({"role": "user", "content": prompt_text})], images, system, session, brief);
-    }
-    if !images.is_empty() {
-        return Err("Pictures need Sympony AI or your own server: switch in Settings → Pony Assistant".into());
+        let t = crate::brain::ask(app, &[json!({"role": "user", "content": prompt_text})], images, system, session, brief)?;
+        return Ok((t, vec![], vec![]));
     }
     let a = pick(app, key).ok_or("No AI agent is set up on this Mac: install one (Settings → Pony Assistant)")?;
     let id = a["id"].as_str().unwrap_or("");
     let name = a["name"].as_str().unwrap_or(id).to_string();
+    if !images.is_empty() && id != "claude" {
+        return Err("Pictures need Sympony AI, your own server, or Claude Code: switch in Settings → Pony Assistant".into());
+    }
     let s = app.state::<App>().settings.get();
     let model = s["agentModels"][id].as_str().map(String::from);
     let session = session.filter(|_| tools_for(id));
@@ -219,18 +355,53 @@ fn ask_in(app: &AppHandle, key: &str, prompt_text: &str, images: &[String], syst
         envs = w.env;
         app.state::<crate::mcp::Mcp>().open(s, brief);
     }
+    let stream_claude = id == "claude" && (session.is_some() || !images.is_empty());
+    let stdin_line = if stream_claude && !images.is_empty() {
+        Some(claude_user_message(prompt_text, images))
+    } else {
+        None
+    };
+    if stream_claude {
+        argv = with_stream(id, argv, stdin_line.is_some());
+    }
     let mut cmd = Command::new(a["path"].as_str().unwrap_or(""));
     cmd.args(argv).current_dir(&dir).env("PATH", path()).env("NO_COLOR", "1");
     for (k, v) in envs {
         cmd.env(k, v);
     }
     let started = Instant::now();
+    let log = |m: &str| app.state::<App>().log.line(&format!("ai: {id}: {m} ({:.1} s)", started.elapsed().as_secs_f32()));
+    if stream_claude {
+        let r = run_claude_stream(app, session.unwrap_or(""), &mut cmd, stdin_line, LIMIT, slot);
+        if let Some(s) = session {
+            app.state::<crate::mcp::Mcp>().close(s);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        return match r {
+            Err(e) if e == "stopped" => Err(e),
+            Err(e) if e == "timeout" => {
+                log("no answer in time");
+                Err(format!("{name} didn’t answer within 3 minutes"))
+            }
+            Err(e) => {
+                log(&e);
+                Err(format!("Couldn’t start {name}: {e}"))
+            }
+            Ok((Ok(t), sources, searched)) => {
+                log("answered");
+                Ok((t, sources, searched))
+            }
+            Ok((Err(e), _, _)) => {
+                log(&format!("failed: {e}"));
+                Err(format!("{name}: {e}"))
+            }
+        };
+    }
     let r = run_capture_in(&mut cmd, LIMIT, slot);
     if let Some(s) = session {
         app.state::<crate::mcp::Mcp>().close(s);
         let _ = std::fs::remove_dir_all(&dir);
     }
-    let log = |m: &str| app.state::<App>().log.line(&format!("ai: {id}: {m} ({:.1} s)", started.elapsed().as_secs_f32()));
     match r {
         Err(e) if e == "stopped" => Err(e),
         Err(e) if e == "timeout" => {
@@ -244,7 +415,7 @@ fn ask_in(app: &AppHandle, key: &str, prompt_text: &str, images: &[String], syst
         Ok((ok, out, err)) => match answer(id, &out, &err, ok) {
             Ok(t) => {
                 log("answered");
-                Ok(t)
+                Ok((t, vec![], vec![]))
             }
             Err(e) => {
                 log(&format!("failed: {e}"));
@@ -314,9 +485,49 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let facts_list = services::pony::facts(&crate::pony::memory_file());
         let facts_blk = services::pony::facts_block(&facts_list);
         let persona = services::pony::persona_block(pony_name, pony_preset, pony_text);
-        // (Pony's own engine: its tools are its limits; a CLI agent keeps the chat's)
-        let rules = if crate::brain::on(&h) { services::agents::engine_rules("") } else { chat_rules_for("", tools) };
-        let system = services::pony::system_prompt(&rules, &persona, &skills_block, &facts_blk, &now);
+        let own = crate::brain::on(&h);
+        // Active abilities for MCP-wired CLI agents (Claude Code): full parity with Pony's own engine!
+        let cli_caps = !own && tools && !brief;
+        let exec_on = cli_caps && crate::exec::on(&h);
+        let eyes_on = cli_caps && crate::eyes::available(&h);
+        let hands_on = eyes_on && crate::hands::available(&h);
+        let askai_on = cli_caps && crate::askai::available(&h);
+        let agents_on = cli_caps && crate::bridge::available(&h);
+        let outside_on = cli_caps && !crate::mcp_out::tools(&h).0.is_empty();
+
+        // (Pony's own engine: its tools are its limits; an MCP-wired CLI agent gets its active abilities' rules too)
+        let rules = if own {
+            services::agents::engine_rules("")
+        } else {
+            chat_rules_with_caps("", tools, web, exec_on, eyes_on)
+        };
+        let mut system = services::pony::system_prompt(&rules, &persona, &skills_block, &facts_blk, &now);
+        if cli_caps {
+            if exec_on {
+                system.push_str("\n\n");
+                system.push_str(services::exec::RULES);
+            }
+            if outside_on {
+                system.push_str("\n\n");
+                system.push_str(crate::brain::OUTSIDE_RULES);
+            }
+            if agents_on {
+                system.push_str("\n\n");
+                system.push_str(crate::brain::AGENT_RULES);
+            }
+            if eyes_on {
+                system.push_str("\n\n");
+                system.push_str(services::eyes::RULES);
+            }
+            if hands_on {
+                system.push_str("\n\n");
+                system.push_str(services::hands::BRIEF);
+            }
+            if askai_on {
+                system.push_str("\n\n");
+                system.push_str(services::askai::RULES);
+            }
+        }
         let trimmed = services::pony::trim_history(&msgs, services::pony::HISTORY_MSGS, services::pony::HISTORY_CHARS);
 
         // (pictures attached to this message: data URLs, at most 4)
@@ -332,7 +543,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         if let Some(s) = session {
             crate::brain::set_chat(&h, s, Some(chat));
         }
-        let own = crate::brain::on(&h);
+        let mut cli_sources: Vec<Value> = vec![];
+        let mut cli_searched: Vec<String> = vec![];
         let r = if session.is_some_and(|s| crate::brain::stopped(&h, s)) { Err("stopped".to_string()) }
             // (Pony's own engine: the conversation as real turns, the day and the chat's notes in the system prompt)
             else if own {
@@ -343,7 +555,16 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     sys.push_str(&format!("\n\nEarlier in this chat (your notes; those messages aren't shown any more):\n{notes}"));
                 }
                 crate::brain::ask(&h, &services::brain::turns(&trimmed), &images, &sys, session, brief)
-            } else { ask_in(&h, "chatAgent", &prompt(context, &trimmed), &images, &system, web, session.map(|_| &*slot), session, brief) };
+            } else {
+                match ask_in(&h, "chatAgent", &prompt(context, &trimmed), &images, &system, web, session.map(|_| &*slot), session, brief) {
+                    Ok((t, srcs, srch)) => {
+                        cli_sources = srcs;
+                        cli_searched = srch;
+                        Ok(t)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
         if let Some(s) = session {
             h.state::<Agents>().chat_runs.lock().unwrap().remove(s);
             crate::brain::forget_stop(&h, s);
@@ -356,8 +577,12 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                 crate::brain::upkeep(&h, chat, all);
             }
         }
-        // (what Pony's own engine found on the web: the chat lists it under the answer, numbered as the text cites it)
-        let (sources, searched) = session.filter(|_| crate::brain::on(&h)).map(|s| crate::brain::take_web(&h, s)).unwrap_or_default();
+        // (what Pony's own engine or Claude Code found on the web: the chat lists it under the answer)
+        let (sources, searched) = if own {
+            session.map(|s| crate::brain::take_web(&h, s)).unwrap_or_default()
+        } else {
+            (cli_sources, cli_searched)
+        };
         Ok(match r {
             Ok(t) => json!({"ok": true, "text": t, "sources": sources, "searched": searched,
                 "unread": session.map(|s| crate::brain::take_unread(&h, s)).unwrap_or_default()}),
@@ -426,7 +651,7 @@ fn lyric_lines(app: &AppHandle, kind: &str, lines: &[String], what: &str) -> Opt
     }
     let slot = if kind == "roman" { &st.roman_run } else { &st.trans_run };
     *slot.lock().unwrap() = None; // (stops the run of this kind going on: it isn't the song playing now)
-    let t = ask_in(app, "translateAgent", &lines_prompt(lines, what), &[], "You transform song lyrics line by line and reply with JSON only.", false, Some(slot), None, false).ok()?;
+    let (t, _, _) = ask_in(app, "translateAgent", &lines_prompt(lines, what), &[], "You transform song lyrics line by line and reply with JSON only.", false, Some(slot), None, false).ok()?;
     let v = Value::from(lines_answer(&t, lines.len())?);
     let mut cache = st.lyrics.lock().unwrap();
     if cache.len() > 500 {

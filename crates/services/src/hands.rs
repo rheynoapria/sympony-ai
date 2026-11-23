@@ -10,25 +10,39 @@ pub const MAX_STEPS: usize = 6;
 pub const MAX_ACTIONS: usize = 40;
 
 pub const RULES: &str = "How to act here: screen_do(steps) acts on the numbers above, several steps in one call when you know them \
-(fill a form, then press its button): click {n}, fill {n, text} (no click needed first), choose {n, option}, key {keys: \"cmd+s\"}, scroll {direction, n?}, \
-click {spot: \"t3\"} for an ocr text spot, menu {path: [\"File\", \"Save\"]} (the menu bar: often the quickest and surest way), \
+(fill a form, then press its button): click {n, at?} (optional at: 0..100 clicks that horizontal % across a bar/timeline), \
+double_click {n} or double_click {spot: \"t3\"} (opens a file/folder in Finder or list item), \
+fill {n, text} (no click needed first), choose {n, option}, \
+slide {n, value} or slide {n, percent} (sets a slider/video timeline/scrubber to an exact value inside its range or 0..100%), \
+drag {n, to_n | percent | dx, dy} (drags a slider/handle/control smoothly across the screen), \
+key {keys: \"cmd+s\", repeat?} (e.g. space, right, left, enter, cmd+o, cmd+f; optional repeat 1..20), \
+scroll {direction, n?}, click {spot: \"t3\"} for an ocr text spot, \
+menu {path: [\"File\", \"Save\"]} (the menu bar: often the quickest and surest way), \
 point {n, say} (only shows the user where). It stops at a step that fails and answers with what changed and the new numbers: use \
 those. When that answer shows the request is done, it is: don't read the screen again to check. If nothing changed, don't repeat \
 the step: try another way or tell the user. Act only on what the user asked; sending, buying, paying or deleting asks the user first.";
 /// In the system prompt while Hands are on (the rules come with the first screen read of a run).
-pub const BRIEF: &str = "Hands: YOU CAN DO MULTI-STEP UI AUTOMATION on desktop apps and browser websites using screen_read + screen_do (clicking buttons/links/videos, typing in search fields, pressing Enter, scrolling, using menus). \
-If the app or website the user asks to automate isn't in front yet, open or focus it first (e.g. via exec: `open \"https://...\" && sleep 2` or `open -a \"AppName\" && sleep 1`), then call screen_read (mode \"elements\", or \"ocr\" if elements are sparse/unlabeled), then call screen_do to act across steps until the task is done. \
-Do NOT claim you cannot read or automate a website or app (like YouTube) when screen_read and screen_do are in your tools—even if earlier chat messages said Eyes/Hands were off, use your active tools now. Detailed step syntax comes with your first screen_read.";
+pub const BRIEF: &str = "Hands: YOU CAN DO FULL VISUAL MULTI-STEP UI AUTOMATION on desktop apps (Finder, QuickTime Player, System Settings, etc.) and browser websites using screen_read + screen_do with a visible glowing screen aurora and Pony's live cursor. \
+IMPORTANT — PREFER INTERACTIVE UI AUTOMATION OVER OSASCRIPT/SHELL: Whenever the user asks to open or operate a desktop app, browse Finder, open/play/seek a video (QuickTime, YouTube, VLC), or interact with on-screen UI, ALWAYS use screen_read(app: \"...\") + screen_do (click, double_click, slide, drag, fill, key, menu) so the user sees your live cursor performing the steps interactively—do NOT bypass Hands with background `osascript` / AppleScript (`tell application ...`) or shell shortcuts unless UI automation genuinely fails. \
+Pass `app` directly to `screen_read` (e.g. `screen_read(mode: \"elements\", app: \"Finder\")` or `screen_read(app: \"QuickTime Player\")`) to open/focus that exact app cleanly without needing `run_command`. \
+Do NOT claim you cannot read or automate an app, slider, timeline, or website when screen_read and screen_do are in your tools—even if earlier chat messages or memory claimed otherwise, use your active tools now. Detailed step syntax comes with your first screen_read.";
 
 pub fn tools() -> Vec<Value> {
     json!([{"name": "screen_do", "description": "Acts on the window the user is looking at, using the numbers from the last screen_read: one or more steps, in order.",
         "inputSchema": {"type": "object", "properties": {"routine": {"type": "string", "description": "instead of steps: replay a routine that worked (its id, like r3)"}, "texts": {"type": "array", "items": {"type": "string"}, "description": "with routine: new text for its fill steps, in order (else last time's text)"}, "steps": {"type": "array", "maxItems": MAX_STEPS, "items": {"type": "object", "required": ["do"], "properties": {
-            "do": {"type": "string", "enum": ["click", "fill", "choose", "key", "scroll", "menu", "point"]},
+            "do": {"type": "string", "enum": ["click", "double_click", "fill", "choose", "slide", "drag", "key", "scroll", "menu", "point"]},
             "n": {"type": "integer", "description": "element number"},
-            "spot": {"type": "string", "description": "click: a text spot from screen_read mode ocr, like t3 (instead of n)"},
+            "at": {"type": "number", "description": "click: optional horizontal position 0..100 (%) across element n (useful for timelines/progress bars)"},
+            "spot": {"type": "string", "description": "click/double_click: a text spot from screen_read mode ocr, like t3 (instead of n)"},
             "text": {"type": "string", "description": "fill: the field's new text"},
             "option": {"type": "string", "description": "choose: the option's name"},
-            "keys": {"type": "string", "description": "key: like cmd+s, enter, tab, esc, down"},
+            "value": {"type": "number", "description": "slide: exact numeric value inside the slider's (range min..max), e.g. 10 for second 10"},
+            "percent": {"type": "number", "description": "slide or drag: target position 0..100 (%) along the slider/element"},
+            "to_n": {"type": "integer", "description": "drag: destination element number"},
+            "dx": {"type": "number", "description": "drag: horizontal pixel offset from element n"},
+            "dy": {"type": "number", "description": "drag: vertical pixel offset from element n"},
+            "keys": {"type": "string", "description": "key: like cmd+s, space, enter, tab, esc, left, right, up, down"},
+            "repeat": {"type": "integer", "description": "key: optional repeat count (1..20)"},
             "direction": {"type": "string", "enum": ["up", "down"]},
             "path": {"type": "array", "items": {"type": "string"}, "description": "menu: menu bar path, like [\"File\", \"Export…\"]"},
             "say": {"type": "string", "description": "point: a short instruction for the user"}}}}}}}])
@@ -143,20 +157,20 @@ fn key_code(k: &str) -> Option<u16> {
         });
     }
     Some(match k {
-        "enter" | "return" => 36,
+        "enter" | "return" | "ret" | "cr" => 36,
         "tab" => 48,
-        "space" => 49,
-        "delete" | "backspace" => 51,
+        "space" | "spacebar" | " " => 49,
+        "delete" | "backspace" | "bksp" | "bs" => 51,
         "esc" | "escape" => 53,
-        "left" => 123,
-        "right" => 124,
-        "down" => 125,
-        "up" => 126,
-        "pageup" => 116,
-        "pagedown" => 121,
+        "left" | "arrowleft" | "leftarrow" | "left_arrow" | "left arrow" => 123,
+        "right" | "arrowright" | "rightarrow" | "right_arrow" | "right arrow" => 124,
+        "down" | "arrowdown" | "downarrow" | "down_arrow" | "down arrow" => 125,
+        "up" | "arrowup" | "uparrow" | "up_arrow" | "up arrow" => 126,
+        "pageup" | "pgup" | "page_up" | "page up" => 116,
+        "pagedown" | "pgdn" | "pgdown" | "page_down" | "page down" => 121,
         "home" => 115,
         "end" => 119,
-        "forwarddelete" => 117,
+        "forwarddelete" | "del" => 117,
         _ => return None,
     })
 }
@@ -191,10 +205,19 @@ mod tests {
         assert_eq!(keys("cmd+shift+t"), Some((17, 0x0012_0000)));
         assert_eq!(keys("Enter"), Some((36, 0)));
         assert_eq!(keys("down"), Some((125, 0)));
+        assert_eq!(keys("ArrowRight"), Some((124, 0)));
+        assert_eq!(keys("left_arrow"), Some((123, 0)));
+        assert_eq!(keys("spacebar"), Some((49, 0)));
         assert_eq!(keys("cmd+?"), None);
         assert!(risky("Send message") && risky("Kirim") && risky("Hapus pesan") && risky("Place order") && risky("Bayar sekarang"));
         assert!(!risky("New chat") && !risky("Search") && !risky("Sender name"));
-        assert_eq!(functions().len(), 1);
+        let fns = functions();
+        assert_eq!(fns.len(), 1);
+        let actions = fns[0]["function"]["parameters"]["properties"]["steps"]["items"]["properties"]["do"]["enum"]
+            .as_array()
+            .unwrap();
+        assert!(actions.iter().any(|v| v == "slide"));
+        assert!(actions.iter().any(|v| v == "drag"));
     }
 }
 

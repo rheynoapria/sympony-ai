@@ -240,6 +240,7 @@ pub fn helper_state(
 pub async fn helper_cmd(handle: tauri::AppHandle, cmd: Value) {
     match cmd["cmd"].as_str().unwrap_or("") {
         "media" => crate::media::command(&handle, cmd["action"].as_str().unwrap_or(""), &cmd["value"]),
+        "media.seek" => crate::media::command(&handle, "seek", &cmd["position"]),
         _ if crate::watchers::command(&cmd) => {}
         other => {
             let app = handle.state::<App>();

@@ -1,8 +1,10 @@
 import { t } from "@/lib/i18n";
 import { notch } from "@/lib/notch";
+import { Rows } from "@/rows/Rows";
 import type { CustomPartProps, SectionBody } from "@/rows/types";
 import { WEATHER_ROWS } from "./features.rows";
 import { LocatePart } from "./parts/Locate";
+import { ModuleStyleCard } from "./parts/ModuleStyleCard";
 import { placeName, type PlaceLike } from "./parts/logic";
 import { PlaceSearch } from "./parts/PlaceSearch";
 
@@ -40,11 +42,28 @@ function WeatherLocatePart({ settings }: CustomPartProps) {
   );
 }
 
+const CUSTOMS = {
+  wxLocation: WeatherLocationPart,
+  locate: WeatherLocatePart,
+};
+
 export const weather: SectionBody = {
   id: "weather",
   rows: [...WEATHER_ROWS],
-  customs: {
-    wxLocation: WeatherLocationPart,
-    locate: WeatherLocatePart,
-  },
+  customs: CUSTOMS,
+  render: (props) => (
+    <div className="flex flex-col gap-4">
+      <ModuleStyleCard moduleId="weather" settings={props.settings} set={props.set} />
+      <Rows
+        sectionId="weather"
+        rows={WEATHER_ROWS}
+        customs={CUSTOMS}
+        settings={props.settings}
+        set={props.set}
+        os={props.os}
+        part={props.part}
+        onNavigate={props.onNavigate}
+      />
+    </div>
+  ),
 };

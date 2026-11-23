@@ -34,6 +34,7 @@ unsafe extern "C" {
     fn CGWindowListCopyWindowInfo(option: u32, relative: u32) -> *mut c_void;
     fn CGEventSetFlags(ev: *mut c_void, flags: u64);
     fn CGEventCreateMouseEvent(source: *mut c_void, kind: u32, at: Pt, button: u32) -> *mut c_void;
+    fn CGEventSetIntegerValueField(ev: *mut c_void, field: u32, value: i64);
     fn CGEventCreateScrollWheelEvent(source: *mut c_void, units: u32, count: u32, wheel1: i32, ...) -> *mut c_void;
     fn CGEventSetLocation(ev: *mut c_void, at: Pt);
     fn CGPreflightScreenCaptureAccess() -> bool;
@@ -127,6 +128,9 @@ impl El {
     pub fn flag(&self, name: &str) -> Option<bool> {
         self.raw(name).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.as_bool())
     }
+    pub fn number(&self, name: &str) -> Option<f64> {
+        self.raw(name).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.as_f64())
+    }
     pub fn url(&self) -> String {
         self.raw("AXURL").and_then(|v| v.downcast::<NSURL>().ok()).and_then(|u| u.absoluteString()).map(|s| s.to_string()).unwrap_or_default()
     }
@@ -173,6 +177,14 @@ impl El {
         let n = ns(name);
         unsafe { AXUIElementSetAttributeValue(self.0, Retained::as_ptr(&n) as Ref, Retained::as_ptr(&v) as Ref) == 0 }
     }
+    pub fn set_number(&self, name: &str, value: f64) -> bool {
+        if self.0.is_null() {
+            return false;
+        }
+        let v = NSNumber::new_f64(value);
+        let n = ns(name);
+        unsafe { AXUIElementSetAttributeValue(self.0, Retained::as_ptr(&n) as Ref, Retained::as_ptr(&v) as Ref) == 0 }
+    }
     pub fn act(&self, action: &str) -> bool {
         if self.0.is_null() {
             return false;
@@ -184,10 +196,55 @@ impl El {
 
 pub use crate::ax::Node;
 
+/// Finds a running GUI app by localized name or bundle id (exact match first, then case-insensitive substring):
+/// `(pid, localized_name, bundle_id)`. Never matches `me`.
+pub fn find_running_app(query: &str, me: i32) -> Option<(i32, String, String)> {
+    let q = query.trim().to_ascii_lowercase();
+    if q.is_empty() {
+        return None;
+    }
+    objc2::rc::autoreleasepool(|_| {
+        let apps = NSWorkspace::sharedWorkspace().runningApplications();
+        let mut partial: Option<(i32, String, String)> = None;
+        for a in apps.iter() {
+            let pid = a.processIdentifier();
+            if pid == me {
+                continue;
+            }
+            let name = a.localizedName().map(|s| s.to_string()).unwrap_or_default();
+            let bid = a.bundleIdentifier().map(|s| s.to_string()).unwrap_or_default();
+            let nl = name.to_ascii_lowercase();
+            let bl = bid.to_ascii_lowercase();
+            if nl == q || bl == q || format!("{nl}.app") == q {
+                return Some((pid, name, bid));
+            }
+            if partial.is_none() && (nl.contains(&q) || bl.contains(&q)) {
+                partial = Some((pid, name, bid));
+            }
+        }
+        partial
+    })
+}
+
 /// The front window of the topmost app that isn't Sympony (`me`): (pid, app name, bundle id).
 pub fn front_app(me: i32) -> Option<(i32, String, String)> {
     objc2::rc::autoreleasepool(|_| {
-        // (the window list is front to back: the first ordinary window not ours)
+        // Prefer the truly focused app from LaunchServices when it's not Sympony and has a window.
+        let apps = NSWorkspace::sharedWorkspace().runningApplications();
+        if let Some(fpid) = focused_pid() {
+            if fpid != me {
+                for a in apps.iter() {
+                    if a.processIdentifier() == fpid {
+                        let name = a.localizedName().map(|s| s.to_string()).unwrap_or_default();
+                        let bid = a.bundleIdentifier().map(|s| s.to_string()).unwrap_or_default();
+                        if !bid.is_empty() && window(fpid).is_some() {
+                            return Some((fpid, name, bid));
+                        }
+                    }
+                }
+            }
+        }
+        // (fallback: the window list is front to back: the first ordinary window not ours)
         let list = unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) }; // on screen only, excluding desktop
         if list.is_null() {
             return None;
@@ -195,7 +252,6 @@ pub fn front_app(me: i32) -> Option<(i32, String, String)> {
         let arr: Retained<NSArray> = unsafe { Retained::from_raw(list as *mut NSArray)? };
         let k_layer = ns("kCGWindowLayer");
         let k_pid = ns("kCGWindowOwnerPID");
-        let apps = NSWorkspace::sharedWorkspace().runningApplications();
         for w in arr.iter() {
             let Ok(d) = w.downcast::<objc2_foundation::NSDictionary>() else { continue };
             let num = |k: &NSString| d.objectForKey(k).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.as_i64());
@@ -238,9 +294,9 @@ pub fn window(pid: i32) -> Option<El> {
 /// trip per element (all its attributes at once), and parts of the page far out of view are skipped.
 pub fn read(win: &El, max: usize) -> (Vec<Node>, Vec<El>) {
     objc2::rc::autoreleasepool(|_| {
-        const NAMES: [&str; 13] = [
+        const NAMES: [&str; 15] = [
             "AXRole", "AXSubrole", "AXDescription", "AXTitle", "AXPlaceholderValue", "AXValue", "AXEnabled", "AXFocused",
-            "AXPosition", "AXSize", "AXChildren", "AXDOMClassList", "AXURL",
+            "AXPosition", "AXSize", "AXChildren", "AXDOMClassList", "AXURL", "AXMinValue", "AXMaxValue",
         ];
         let names: Vec<Retained<NSString>> = NAMES.iter().map(|n| ns(n)).collect();
         let refs: Vec<&NSString> = names.iter().map(|n| &**n).collect();
@@ -292,6 +348,8 @@ pub fn read(win: &El, max: usize) -> (Vec<Node>, Vec<El>) {
                 }
                 // (a password field's value is never read; a checkbox's value is a number)
                 let value = if subrole == "AXSecureTextField" { String::new() } else { num(5).map(|n| n.stringValue().to_string()).unwrap_or_else(|| text(5)) };
+                let min_val = if role == "AXSlider" || role == "AXIncrementor" { num(13).map(|n| n.as_f64()) } else { None };
+                let max_val = if role == "AXSlider" || role == "AXIncrementor" { num(14).map(|n| n.as_f64()) } else { None };
                 let classes = get(11).downcast::<NSArray>().map(|a| a.iter().filter_map(|c| c.downcast::<NSString>().ok().map(|s| s.to_string())).collect()).unwrap_or_default();
                 let url = if role == "AXWebArea" { get(12).downcast::<NSURL>().ok().and_then(|u| u.absoluteString()).map(|s| s.to_string()).unwrap_or_default() } else { String::new() };
                 let kids: Vec<El> = get(10).downcast::<NSArray>().map(|a| a.iter().map(|c| El(unsafe { CFRetain(Retained::as_ptr(&c) as Ref) })).collect()).unwrap_or_default();
@@ -306,6 +364,8 @@ pub fn read(win: &El, max: usize) -> (Vec<Node>, Vec<El>) {
                     subrole,
                     label,
                     value,
+                    min_val,
+                    max_val,
                 });
                 els.push(e);
                 // (children in reading order: pushed last-first)
@@ -489,8 +549,21 @@ pub fn press_combo(code: u16, flags: u64) {
     }
 }
 
-/// A left click at a point on screen (the pointer goes there).
+/// Moves the real mouse pointer to a point on screen (wakes hover-only UI like QuickTime/YouTube controls).
+pub fn mouse_move(x: f64, y: f64) {
+    unsafe {
+        let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), 5, Pt { x, y }, 0); // kCGEventMouseMoved = 5
+        if !ev.is_null() {
+            CGEventPost(0, ev);
+            CFRelease(ev);
+        }
+    }
+}
+
+/// A left click at a point on screen (hovers there first so floating player controls wake up).
 pub fn click_at(x: f64, y: f64) {
+    mouse_move(x, y);
+    std::thread::sleep(std::time::Duration::from_millis(35));
     for kind in [1u32, 2] {
         unsafe {
             let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), kind, Pt { x, y }, 0);
@@ -500,6 +573,64 @@ pub fn click_at(x: f64, y: f64) {
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(40));
+    }
+}
+
+/// A native double-click at `(x, y)` (for opening files/folders in Finder and list items).
+pub fn double_click_at(x: f64, y: f64) {
+    mouse_move(x, y);
+    std::thread::sleep(std::time::Duration::from_millis(35));
+    for click_state in [1i64, 2] {
+        for kind in [1u32, 2] {
+            unsafe {
+                let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), kind, Pt { x, y }, 0);
+                if !ev.is_null() {
+                    CGEventSetIntegerValueField(ev, 1, click_state); // kCGMouseEventClickState = 1
+                    CGEventPost(0, ev);
+                    CFRelease(ev);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        if click_state == 1 {
+            std::thread::sleep(std::time::Duration::from_millis(45));
+        }
+    }
+}
+
+/// Smooth left-mouse drag from `(x1, y1)` to `(x2, y2)` (for sliders, scrubbars, and draggable controls).
+pub fn drag(x1: f64, y1: f64, x2: f64, y2: f64) {
+    mouse_move(x1, y1);
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    unsafe {
+        let down = CGEventCreateMouseEvent(std::ptr::null_mut(), 1, Pt { x: x1, y: y1 }, 0); // LeftMouseDown = 1
+        if !down.is_null() {
+            CGEventPost(0, down);
+            CFRelease(down);
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(35));
+    let steps = 14usize;
+    for i in 1..=steps {
+        let t = i as f64 / steps as f64;
+        let x = x1 + (x2 - x1) * t;
+        let y = y1 + (y2 - y1) * t;
+        unsafe {
+            let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), 6, Pt { x, y }, 0); // LeftMouseDragged = 6
+            if !ev.is_null() {
+                CGEventPost(0, ev);
+                CFRelease(ev);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(14));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(25));
+    unsafe {
+        let up = CGEventCreateMouseEvent(std::ptr::null_mut(), 2, Pt { x: x2, y: y2 }, 0); // LeftMouseUp = 2
+        if !up.is_null() {
+            CGEventPost(0, up);
+            CFRelease(up);
+        }
     }
 }
 

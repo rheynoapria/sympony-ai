@@ -237,3 +237,129 @@ describe('final review fixes', () => {
     expect(K.ytGrace(false, 0)).toBe(false);
   });
 });
+
+describe('closed notch sizing (13-inch MacBook camera + non-camera)', () => {
+  test('only playback and timer activities keep the clock beside them', () => {
+    for (const k of ['music', 'pomodoro', 'timer', 'stopwatch']) {
+      expect(K.isClockActivity(k)).toBe(true);
+    }
+    for (const k of ['event-soon', 'todo-due', 'prayer-soon', 'sys', 'fps', 'hud-volume']) {
+      expect(K.isClockActivity(k)).toBe(false);
+    }
+  });
+
+  test('places clock on empty side instead of adding side + clock on both wings', () => {
+    // Default idle: right=battery (46px), middle=time (40px), left=empty on 220px MacBook camera
+    const r = K.camClosedLayout({ camW: 220, leftW: 0, rightW: 46, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(true);
+    expect(r.clockRight).toBe(false);
+    expect(r.width).toBe(328); // was 426px before fix!
+    expect(r.clockL).toBe(8);
+    expect(r.clockW).toBeGreaterThanOrEqual(40);
+  });
+
+  test('places clock on narrower side when both wings have content', () => {
+    // Left=prayer (85px), right=battery (46px), middle=time (40px)
+    const r = K.camClosedLayout({ camW: 220, leftW: 85, rightW: 46, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(true);
+    expect(r.clockRight).toBe(true);
+    expect(r.width).toBe(424); // was 504px before fix!
+    expect(r.clockW).toBeGreaterThanOrEqual(40);
+  });
+
+  test('keeps pomodoro/music + clock compact using actual per-side widths', () => {
+    // Pomodoro: 20px ring on left, 42px timer on right, 40px clock
+    const pomo = K.camClosedLayout({ camW: 220, leftW: 20, rightW: 42, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(pomo.showClock).toBe(true);
+    expect(pomo.clockRight).toBe(false);
+    expect(pomo.width).toBe(372); // was 482px before fix!
+    expect(pomo.clockL).toBe(34);
+    expect(pomo.clockW).toBeGreaterThanOrEqual(40);
+
+    // Music with hover controls (70px on right, 24px album art on left, 40px clock)
+    const music = K.camClosedLayout({ camW: 220, leftW: 24, rightW: 70, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(music.showClock).toBe(true);
+    expect(music.clockRight).toBe(false);
+    expect(music.width).toBe(380); // was 504px before fix!
+  });
+
+  test('drops clock if adding it exceeds maxW budget on compact screens', () => {
+    const r = K.camClosedLayout({ camW: 220, leftW: 110, rightW: 100, clockW: 90, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(false);
+    expect(r.width).toBe(456);
+  });
+
+  test('hugs camera when all closed slots are empty', () => {
+    const r = K.camClosedLayout({ camW: 220, leftW: 0, rightW: 0, clockW: 0, pad: 0, notchWidth: 80, maxW: 480 });
+    expect(r.width).toBe(220);
+    expect(r.showClock).toBe(false);
+  });
+
+  test('closedWidthNoCam does not stack empty notchWidth on top of side * 2', () => {
+    // notchWidth=200, battery=46px, time=40px (+24 gap) + 28 pad => fits inside 200px!
+    expect(K.closedWidthNoCam({ notchWidth: 200, midNeed: 64, side: 46, pad: 28, maxW: 460 })).toBe(200);
+    // Wider side (85px prayer): expands only to fit content cleanly (262px instead of 370px)
+    expect(K.closedWidthNoCam({ notchWidth: 200, midNeed: 64, side: 85, pad: 28, maxW: 460 })).toBe(262);
+  });
+});
+
+describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid sizes)', () => {
+  test('auto size uses style natural height and global expandedWidth', () => {
+    const f = K.resolveModuleFrame({
+      styleDef: { id: 'timeline', height: 188, surface: 'borderless' },
+      pref: { style: 'timeline', size: 'auto' },
+      expandedWidth: 660,
+      maxW: 780,
+      maxH: 340,
+    });
+    expect(f).toEqual({
+      styleId: 'timeline',
+      sizeMode: 'auto',
+      width: 660,
+      height: 188,
+      stageH: 134,
+      surface: 'borderless',
+    });
+  });
+
+  test('size presets and custom W×H clamp safely to screen bounds', () => {
+    const compact = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled' },
+      pref: { size: 'compact', surface: 'outline' },
+      expandedWidth: 700,
+    });
+    expect(compact.height).toBe(148);
+    expect(compact.stageH).toBe(98);
+    expect(compact.surface).toBe('outline');
+
+    const slim = K.resolveModuleFrame({
+      styleDef: { id: 'strip', height: 124, surface: 'borderless' },
+      pref: { style: 'strip', size: 'auto' },
+      expandedWidth: 660,
+    });
+    expect(slim.height).toBe(124);
+    expect(slim.stageH).toBe(74);
+
+    const custom = K.resolveModuleFrame({
+      styleDef: { id: 'timeline', height: 160, surface: 'borderless' },
+      pref: { size: 'custom', width: 999, height: 90 },
+      expandedWidth: 660,
+      maxW: 740,
+      maxH: 300,
+    });
+    expect(custom.width).toBe(740);
+    expect(custom.height).toBe(116);
+    expect(custom.stageH).toBe(66);
+  });
+
+  test('packCards respects custom per-module gridSize overrides', () => {
+    const pages = K.packCards(['weather', 'prayer'], {
+      sizes: { weather: '2x2', prayer: '2x1' },
+    });
+    expect(pages.length).toBe(1);
+    expect(pages[0].cards).toEqual([
+      { id: 'weather', x: 0, y: 0, w: 2, h: 2 },
+      { id: 'prayer', x: 2, y: 0, w: 2, h: 1 },
+    ]);
+  });
+});

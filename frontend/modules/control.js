@@ -165,6 +165,83 @@
     });
   }
 
+  // Horizontal slider: left = 0, right = 1; draggable, scrollable (wheel), and keyboard accessible.
+  function bindHorizSlider(el, initFrac, onVal) {
+    if (!el || el.classList.contains('na')) return;
+    let cur = Math.max(0, Math.min(1, Number(initFrac) || 0));
+    let dragging = false;
+
+    const apply = (f, commit = true) => {
+      cur = Math.max(0, Math.min(1, f));
+      const pct = Math.round(cur * 100);
+      el.style.setProperty('--v', cur.toFixed(4));
+      el.classList.toggle('low', cur < 0.18);
+      el.classList.toggle('hi', cur >= 0.84);
+      el.setAttribute('aria-valuenow', String(pct));
+      const bEl = $('b', el);
+      if (bEl) bEl.textContent = pct + '%';
+      if (commit) onVal(cur);
+    };
+    const fromPointer = (e) => {
+      const r = el.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+    };
+
+    el.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = true;
+      el.classList.add('drag');
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      apply(fromPointer(e));
+    };
+    el.onpointermove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      apply(fromPointer(e));
+    };
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('drag');
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+    el.onpointerup = end;
+    el.onpointercancel = end;
+    el.onclick = (e) => e.stopPropagation();
+
+    el.addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaY) < 1 && Math.abs(e.deltaX) < 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? -e.deltaY : e.deltaX;
+      apply(cur + (delta > 0 ? 0.04 : -0.04));
+    }, { passive: false });
+
+    el.addEventListener('keydown', (e) => {
+      let next = null;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = cur + 0.05;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = cur - 0.05;
+      else if (e.key === 'PageUp') next = cur + 0.15;
+      else if (e.key === 'PageDown') next = cur - 0.15;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = 1;
+      if (next == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      apply(next);
+    });
+  }
+
+  function setView(nextView) {
+    if (view === nextView) return;
+    view = nextView;
+    renderSection();
+    if (N.layout) N.layout();
+  }
+
   async function loadDevices() {
     devsLoaded = true;
     const [out, inp] = await Promise.all([api.svc('audio', 'devices', false).catch(() => []), api.svc('audio', 'devices', true).catch(() => [])]);
@@ -194,7 +271,7 @@
       + `<div class="c sc-y" style="padding:10px;gap:2px">${N.hd('sliders', _t('Microphone'))}<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">${rowHtml(devs.in, true)}</div></div>`
       + `</div></div>`;
 
-    $('#ctlBack', page).onclick = () => { view = 'main'; renderSection(); };
+    $('#ctlBack', page).onclick = () => setView('main');
     const mBtn = $('#ctlMic', page);
     if (mBtn) mBtn.onclick = () => api.helper({ cmd: 'mic.toggle' });
     $$('[data-dev]', page).forEach((b) => {
@@ -207,20 +284,20 @@
 
   function renderMore() {
     const shown = EXTRA_TILES.filter((t) => !t.winOnly || (!N.MAC && !N.LINUX));
-    page.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%">`
+    page.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%;min-height:0">`
       + `<div class="row" style="justify-content:space-between;flex:none">`
       + `<button type="button" class="sbtn" id="ctlBack" style="height:26px">${N.ic('left', 'width:12px;height:12px')}${esc(_t('Control'))}</button>`
       + `<span class="sub">${esc(_t('Quick actions'))}</span></div>`
-      + `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1;align-content:start">`
+      + `<div class="sc-y" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;flex:1;min-height:0;align-content:start">`
       + shown.map((t) => {
         const on = t.on();
         const icoName = typeof t.icon === 'function' ? t.icon() : t.icon;
-        return `<button type="button" class="tg${on ? ' on' : ''}" data-tgl="${t.id}" style="--a:#4361ff;height:64px">`
-          + `<span style="width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;background:${on ? '#4361ff' : 'var(--pill-hi)'};color:#fff">${fa(icoName)}</span>`
+        return `<button type="button" class="tg${on ? ' on' : ''}" data-tgl="${t.id}" style="--a:#4361ff;height:52px">`
+          + `<span style="width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;background:${on ? '#4361ff' : 'var(--pill-hi)'};color:#fff">${fa(icoName)}</span>`
           + `<b class="t1" style="font-size:12px">${esc(t.label())}</b></button>`;
       }).join('')
       + `</div></div>`;
-    $('#ctlBack', page).onclick = () => { view = 'main'; renderSection(); };
+    $('#ctlBack', page).onclick = () => setView('main');
     $$('[data-tgl]', page).forEach((b) => {
       b.onclick = () => api.svc('system', 'toggle', b.dataset.tgl).then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));
     });
@@ -230,10 +307,12 @@
     if (!page) return;
     if (view === 'sound') { renderSound(); return; }
     if (view === 'more') { renderMore(); return; }
-    // Don't tear down vertical sliders mid-drag
-    if ($('.vsl.drag', page)) return;
-    const focusId = document.activeElement && page.contains(document.activeElement) && document.activeElement.classList.contains('vsl')
-      ? document.activeElement.id : '';
+    // Don't tear down sliders mid-drag
+    if ($('.vsl.drag, .hsl.drag', page)) return;
+    const focusEl = document.activeElement && page.contains(document.activeElement)
+      && (document.activeElement.classList.contains('vsl') || document.activeElement.classList.contains('hsl'))
+      ? document.activeElement : null;
+    const focusId = focusEl ? focusEl.id : '';
 
     const wifiOn = radio('wifi');
     const btOn = radio('bluetooth');
@@ -251,6 +330,112 @@
     const volFrac = volPct / 100;
 
     const outs = Array.isArray(devs.out) ? devs.out : [];
+    const curOut = outs.find((d) => d.default) || outs[0] || null;
+    const curOutName = curOut ? split(curOut.name)[0] : _t('Sound output');
+    const curOutBat = curOut ? devBattery(curOut.name) : null;
+    const style = window.StyleLib ? StyleLib.styleIdFor(st.settings, 'control') : 'minimal';
+
+    const bindCommonToggles = () => {
+      $$('[data-tgl]', page).forEach((btn) => {
+        btn.onclick = () => {
+          const id = btn.dataset.tgl;
+          if (id === 'focus') { toggleFocus(); return; }
+          api.svc('system', 'toggle', id).then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));
+        };
+      });
+      $$('[data-chip]', page).forEach((btn) => {
+        btn.onclick = () => {
+          const c = btn.dataset.chip;
+          if (c === 'dark') api.svc('system', 'toggle', 'dark').then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));
+          else if (c === 'warm') api.setSettings({ warmNight: !(st.settings && st.settings.warmNight) });
+          else if (c === 'mic') api.helper({ cmd: 'mic.toggle' });
+        };
+      });
+      const sndBtn = $('#ctlSoundBtn', page);
+      if (sndBtn) sndBtn.onclick = () => { loadDevices(); setView('sound'); };
+      const moreBtn = $('#ctlMoreBtn', page);
+      if (moreBtn) moreBtn.onclick = () => setView('more');
+      if (focusId) {
+        const f = $('#' + focusId, page);
+        if (f) f.focus({ preventScroll: true });
+      }
+    };
+
+    if (style === 'minimal') {
+      const icoToggles = [
+        { attr: 'data-tgl="wifi"', ico: 'wifi', on: wifiOn, col: '#4361ff', tip: `Wi‑Fi · ${wifiSub()}` },
+        { attr: 'data-tgl="bluetooth"', ico: 'bt', on: btOn, col: '#4361ff', tip: `Bluetooth · ${btSub()}` },
+        { attr: 'data-tgl="focus"', ico: 'moonz', on: dndOn, col: '#8fa2ff', tip: `${_t('Focus')} · ${dndOn ? _t('On') : _t('Off')}` },
+        { attr: 'data-tgl="keepAwake"', ico: 'cup', on: awakeOn, col: '#fbbf24', fg: '#000', tip: `${_t('Keep awake')} · ${awakeOn ? _t('On') : _t('Off')}` },
+        { attr: 'data-chip="dark"', ico: 'contrast', on: darkOn, col: '#e4e4ec', fg: '#000', tip: `${_t('Dark mode')} · ${darkOn ? _t('On') : _t('Off')}` },
+        { attr: 'data-chip="warm"', ico: 'sun', on: warmOn, col: '#fb923c', fg: '#000', tip: `${_t('Night Shift')} · ${warmOn ? _t('On') : _t('Off')}` },
+        { attr: 'data-chip="mic"', ico: micMuted ? 'micOff' : 'mic', on: !micMuted, col: '#34d399', fg: '#000', tip: micMuted ? _t('Mic muted') : _t('Microphone') },
+      ];
+      const batTag = curOutBat != null
+        ? `<span class="ctl-out-bat n" style="color:${N.meter(curOutBat, true)}">${curOutBat}%</span>`
+        : '';
+      page.innerHTML = `<div class="ctl-min-wrap sl-pane">`
+        + `<div class="ctl-min-top">`
+        + `<div class="ctl-min-togs">`
+        + icoToggles.map((t) => `<button type="button" class="ctl-ico-btn${t.on ? ' on' : ''}" ${t.attr} title="${esc(t.tip)}" aria-label="${esc(t.tip)}" aria-pressed="${t.on}" style="${t.on ? `--a:${t.col};--afg:${t.fg || '#fff'}` : ''}">${N.ic(t.ico, 'width:15px;height:15px')}</button>`).join('')
+        + `</div>`
+        + `<div class="row" style="gap:6px;min-width:0;flex:none">`
+        + `<button type="button" class="ctl-out-pill" id="ctlSoundBtn" title="${esc(_t('Sound output'))}">`
+        + `${N.ic(curOut ? devSvg(curOut.name) : 'vol', 'width:13px;height:13px;flex:none')}`
+        + `<span class="t1">${esc(curOutName)}</span>${batTag}`
+        + `${N.ic('right', 'width:11px;height:11px;opacity:0.55;flex:none')}</button>`
+        + `<button type="button" class="ctl-ico-btn" id="ctlMoreBtn" title="${esc(_t('Quick actions'))}" aria-label="${esc(_t('Quick actions'))}">${N.ic('sliders', 'width:14px;height:14px')}</button>`
+        + `</div></div>`
+        + `<div class="ctl-min-sliders">`
+        + `<div class="hsl${briOk ? '' : ' na'}${briFrac < 0.18 ? ' low' : ''}${briFrac >= 0.84 ? ' hi' : ''}" id="ctlBriHsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
+        + `<i></i><span>${N.ic('sun', 'width:15px;height:15px')}</span><b>${briOk ? briPct + '%' : '–'}</b></div>`
+        + `<div class="hsl${volFrac < 0.18 ? ' low' : ''}${volFrac >= 0.84 ? ' hi' : ''}" id="ctlVolHsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
+        + `<i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:15px;height:15px')}</span><b>${volPct}%</b></div>`
+        + `</div></div>`;
+
+      bindCommonToggles();
+      bindHorizSlider($('#ctlBriHsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
+      bindHorizSlider($('#ctlVolHsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
+      return;
+    }
+
+    if (style === 'compact') {
+      const pills = [
+        ['wifi', 'wifi', 'Wi‑Fi', wifiSub(), wifiOn ? '#4361ff' : '', '#fff'],
+        ['bluetooth', 'bt', 'Bluetooth', btSub(), btOn ? '#4361ff' : '', '#fff'],
+        ['focus', 'moonz', _t('Focus'), dndOn ? _t('On') : _t('Off'), dndOn ? '#8fa2ff' : '', '#fff'],
+        ['keepAwake', 'cup', _t('Keep awake|short'), awakeOn ? _t('On') : _t('Off'), awakeOn ? '#fbbf24' : '', '#000'],
+      ];
+      const batTag = curOutBat != null
+        ? `<span class="ctl-out-bat n" style="color:${N.meter(curOutBat, true)}">${curOutBat}%</span>`
+        : '';
+      page.innerHTML = `<div class="ctl-cmp-wrap sl-pane">`
+        + `<div class="ctl-cmp-grid">`
+        + pills.map(([id, ico, name, sub, col, fg]) => `<button type="button" class="ctl-cmp-pill${col ? ' on' : ''}" data-tgl="${id}" style="${col ? `--a:${col};--afg:${fg}` : ''}">`
+          + `<span class="dot">${N.ic(ico, 'width:13px;height:13px')}</span>`
+          + `<span style="min-width:0;flex:1"><b class="t1">${esc(name)}</b><small class="t1">${esc(sub)}</small></span></button>`).join('')
+        + `</div>`
+        + `<div class="ctl-cmp-right">`
+        + `<div class="hsl sm${briOk ? '' : ' na'}${briFrac < 0.18 ? ' low' : ''}${briFrac >= 0.84 ? ' hi' : ''}" id="ctlBriHsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
+        + `<i></i><span>${N.ic('sun', 'width:14px;height:14px')}</span><b>${briOk ? briPct + '%' : '–'}</b></div>`
+        + `<div class="hsl sm${volFrac < 0.18 ? ' low' : ''}${volFrac >= 0.84 ? ' hi' : ''}" id="ctlVolHsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
+        + `<i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:14px;height:14px')}</span><b>${volPct}%</b></div>`
+        + `<div class="ctl-cmp-foot">`
+        + `<button type="button" class="ctl-out-pill sm" id="ctlSoundBtn" title="${esc(_t('Sound output'))}">`
+        + `${N.ic(curOut ? devSvg(curOut.name) : 'vol', 'width:13px;height:13px;flex:none')}`
+        + `<span class="t1" style="flex:1;text-align:start">${esc(curOutName)}</span>${batTag}`
+        + `${N.ic('right', 'width:11px;height:11px;opacity:0.55;flex:none')}</button>`
+        + `<button type="button" class="ctl-ico-btn sm${darkOn ? ' on' : ''}" data-chip="dark" title="${esc(_t('Dark mode'))}" style="${darkOn ? '--a:#e4e4ec;--afg:#000' : ''}">${N.ic('contrast', 'width:13px;height:13px')}</button>`
+        + `<button type="button" class="ctl-ico-btn sm${warmOn ? ' on' : ''}" data-chip="warm" title="${esc(_t('Night Shift'))}" style="${warmOn ? '--a:#fb923c;--afg:#000' : ''}">${N.ic('sun', 'width:13px;height:13px')}</button>`
+        + `<button type="button" class="ctl-ico-btn sm${!micMuted ? ' on' : ''}" data-chip="mic" title="${esc(micMuted ? _t('Mic muted') : _t('Microphone'))}" style="${!micMuted ? '--a:#34d399;--afg:#000' : ''}">${N.ic(micMuted ? 'micOff' : 'mic', 'width:13px;height:13px')}</button>`
+        + `<button type="button" class="ctl-ico-btn sm" id="ctlMoreBtn" title="${esc(_t('Quick actions'))}">${N.ic('sliders', 'width:13px;height:13px')}</button>`
+        + `</div></div></div>`;
+
+      bindCommonToggles();
+      bindHorizSlider($('#ctlBriHsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
+      bindHorizSlider($('#ctlVolHsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
+      return;
+    }
 
     const tiles = [
       ['wifi', 'wifi', 'Wi‑Fi', wifiSub(), wifiOn ? '#4361ff' : ''],
@@ -275,19 +460,19 @@
       : `<div class="sub" style="padding:8px 4px">${esc(_t('No sound output'))}</div>`;
 
     page.innerHTML = `<div style="display:grid;grid-template-columns:200px 132px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
-      + `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-width:0">`
+      + `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-width:0;min-height:0">`
       + tiles.map(([id, ico, name, sub, col]) => `<button type="button" class="tg2${col ? ' on' : ''}" data-tgl="${id}" style="--a:${col || '#1d1d24'}">`
         + `<span class="dot2" style="background:${col || '#1d1d24'};color:${col === '#fbbf24' ? '#000' : col ? '#fff' : 'var(--dim)'}">${N.ic(ico, 'width:17px;height:17px')}</span>`
         + `<b class="t1">${esc(name)}</b><span class="t1">${esc(sub)}</span></button>`).join('')
       + `</div>`
-      + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0">`
+      + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0;min-height:0">`
       + `<div class="vsl big${briOk ? '' : ' na'}${briFrac < 0.22 ? ' low' : ''}${briFrac >= 0.86 ? ' hi' : ''}" id="ctlBriVsl" role="slider" tabindex="0" aria-label="${esc(_t('Brightness'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${briPct}" style="--v:${briFrac}">`
       + `<b class="n">${briOk ? briPct : '–'}</b><i></i><span>${N.ic('sun', 'width:18px;height:18px')}</span></div>`
       + `<div class="vsl big${volFrac < 0.22 ? ' low' : ''}${volFrac >= 0.86 ? ' hi' : ''}" id="ctlVolVsl" role="slider" tabindex="0" aria-label="${esc(_t('Volume'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${volPct}" style="--v:${volFrac}">`
       + `<b class="n">${volPct}</b><i></i><span>${N.ic(v.muted || volPct === 0 ? 'volMute' : 'vol', 'width:18px;height:18px')}</span></div>`
       + `</div>`
       + `<div style="display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0">`
-      + `<div class="c grow sc-y" style="padding:10px;gap:2px">`
+      + `<div class="c grow sc-y" style="padding:10px;gap:2px;min-height:0">`
       + `<div class="row" style="justify-content:space-between;gap:4px;flex:none">`
       + `${N.hd('vol', _t('Sound output'))}`
       + `<div class="row" style="gap:4px;flex:none">`
@@ -296,18 +481,12 @@
       + `</div></div>`
       + `<div style="display:flex;flex-direction:column;gap:2px;margin-top:6px">${outRowsHtml}</div></div>`
       + `<div class="row" style="gap:6px;flex:none">`
-      + `<button type="button" class="chip2${darkOn ? ' on' : ''}" data-chip="dark">${N.ic('moonz', 'width:12px;height:12px')}<span class="t1">${esc(_t('Dark mode'))}</span></button>`
+      + `<button type="button" class="chip2${darkOn ? ' on' : ''}" data-chip="dark">${N.ic('contrast', 'width:12px;height:12px')}<span class="t1">${esc(_t('Dark mode'))}</span></button>`
       + `<button type="button" class="chip2${warmOn ? ' on' : ''}" data-chip="warm">${N.ic('sun', 'width:12px;height:12px')}<span class="t1">${esc(_t('Night Shift'))}</span></button>`
-      + `<button type="button" class="chip2${!micMuted ? ' on' : ''}" data-chip="mic" style="flex:0 0 auto;padding:0 10px">${N.ic(micMuted ? 'volMute' : 'vol', 'width:12px;height:12px')}<span class="t1">${esc(_t('Mic'))}</span></button>`
+      + `<button type="button" class="chip2${!micMuted ? ' on' : ''}" data-chip="mic" style="flex:0 0 auto;padding:0 10px">${N.ic(micMuted ? 'micOff' : 'mic', 'width:12px;height:12px')}<span class="t1">${esc(_t('Mic'))}</span></button>`
       + `</div></div></div>`;
 
-    $$('[data-tgl]', page).forEach((btn) => {
-      btn.onclick = () => {
-        const id = btn.dataset.tgl;
-        if (id === 'focus') { toggleFocus(); return; }
-        api.svc('system', 'toggle', id).then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));
-      };
-    });
+    bindCommonToggles();
     bindVertSlider($('#ctlBriVsl', page), briFrac, (f) => api.helper({ cmd: 'brightness.set', value: Math.round(f * 100) }));
     bindVertSlider($('#ctlVolVsl', page), volFrac, (f) => api.helper({ cmd: 'volume.set', value: Math.round(f * 100) }));
     $$('[data-out]', page).forEach((btn) => {
@@ -316,22 +495,6 @@
         setTimeout(loadDevices, 250);
       };
     });
-    $$('[data-chip]', page).forEach((btn) => {
-      btn.onclick = () => {
-        const c = btn.dataset.chip;
-        if (c === 'dark') api.svc('system', 'toggle', 'dark').then(() => setTimeout(() => { renderSection(); refreshCards(); }, 350));
-        else if (c === 'warm') api.setSettings({ warmNight: !(st.settings && st.settings.warmNight) });
-        else if (c === 'mic') api.helper({ cmd: 'mic.toggle' });
-      };
-    });
-    const sndBtn = $('#ctlSoundBtn', page);
-    if (sndBtn) sndBtn.onclick = () => { view = 'sound'; loadDevices(); renderSection(); };
-    const moreBtn = $('#ctlMoreBtn', page);
-    if (moreBtn) moreBtn.onclick = () => { view = 'more'; renderSection(); };
-    if (focusId) {
-      const f = $('#' + focusId, page);
-      if (f) f.focus({ preventScroll: true });
-    }
   }
 
   // ------------------------------------------------------------ 2×1 Control Card (matches modules.html)
@@ -407,6 +570,8 @@
     }
   }
 
+  N.controlNeedsTall = () => view !== 'main';
+
   N.register({
     id: 'control',
     tall: true,
@@ -420,8 +585,8 @@
       clearInterval(poll);
       poll = setInterval(() => { loadDevices(); loadWifi(); loadDnd(); }, 4000);
     },
-    showSound() { view = 'sound'; renderSection(); loadDevices(); },
-    hide() { clearInterval(poll); },
+    showSound() { view = 'sound'; renderSection(); loadDevices(); if (N.layout) N.layout(); },
+    hide() { view = 'main'; clearInterval(poll); },
     update() { renderSection(); refreshCards(); },
     onSettings() { renderSection(); refreshCards(); },
     card(el, size) {

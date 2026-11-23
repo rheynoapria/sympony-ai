@@ -374,13 +374,13 @@ export const SECTIONS: readonly SectionMeta[] = [
 // Copied verbatim from frontend/settings.js:939-971
 export const SEARCH_WORDS: Readonly<Record<string, string>> = {
   general: "color colour picker eyedropper pipette hex rgb hsl screen pixel ambil warna pipet",
-  modules: "tabs order default module remember last turn on off teleprompter prompter autocue script read camera naskah glance ringkas notch view per modul dashboard tampilan",
-  calendar: "google outlook icloud ical ics link feeds local events meeting reminder show calendar refresh",
-  weather: "city location unit celsius fahrenheit forecast show weather detect my location gps lokasi",
-  prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk",
+  modules: "tabs order default module remember last turn on off teleprompter prompter autocue script read camera naskah glance ringkas notch view per modul dashboard tampilan style layout library bento compact minimal oled card size grid",
+  calendar: "google outlook icloud ical ics link feeds local events meeting reminder show calendar refresh style layout compact today week strip",
+  weather: "city location unit celsius fahrenheit forecast show weather detect my location gps lokasi style layout horizon minimal",
+  prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk style layout timeline bento focus",
   dropactions: "drop actions shelf files convert compress image pdf share clipboard copy copied paste history pin remember salin tempel riwayat phone mobile qr code wi-fi wifi send receive hp ponsel kirim terima app launcher apps",
   snap: "snap zones window layouts drag halves thirds",
-  hud: "volume brightness hud style panel caps num scroll lock keyboard indicator airplane microphone mic mute touchpad windows pop-up osd input language layout fullscreen full screen game games video",
+  hud: "volume brightness hud style panel caps num scroll lock keyboard indicator airplane microphone mic mute touchpad windows pop-up osd input language layout fullscreen full screen game games video control minimal compact sliders layout",
   dock: "search button find magnifier magnifying glass windows+s cari pencarian calendar date today day icon tanggal hari ini",
   effects: "animation animations effects motion glow light outline border timer genie popup window minimize restore confetti celebrate karaoke lyrics swipe stack notifications bounce volume slide tabs shelf fly",
   wallpaper: "wallpaper background desktop live moving animated video mp4 mkv webm picture image photo lively wallpaper engine fit fill stretch center pause fullscreen game battery latar belakang bergerak",

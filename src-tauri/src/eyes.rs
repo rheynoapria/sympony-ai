@@ -24,15 +24,61 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
     if ax::secure_input() {
         return Err("A password field is active on the screen, so nothing was read.".into());
     }
-    let Some((pid, name, bundle)) = ax::front_app(std::process::id() as i32) else {
-        return Err("There is no window in front to read.".into());
-    };
     let skip: Vec<String> = app.state::<App>().settings.get()["ponyEyesSkip"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
-    if services::eyes::skipped(&bundle, &skip) {
-        return Err(format!("{name} is never read (the user keeps it private)."));
-    }
-    let Some(win) = ax::window(pid) else {
-        return Err(format!("{name} shows no window Sympony can read."));
+    let me = std::process::id() as i32;
+    let wanted_app = args["app"].as_str().map(str::trim).filter(|s| !s.is_empty());
+
+    let (pid, name, bundle, win) = if let Some(req) = wanted_app {
+        if req.starts_with('-') || req.contains(['/', '\\', '\0', '\n', '\r']) || req.len() > 80 {
+            return Err("Invalid app name for screen_read.".into());
+        }
+        let low = req.to_ascii_lowercase();
+        if services::eyes::skipped(req, &skip)
+            || ["1password", "bitwarden", "keychain", "passwords", "keepass", "lastpass", "dashlane", "proton pass", "authy", "sympony"]
+                .iter()
+                .any(|p| low.contains(p))
+        {
+            return Err(format!("{req} is never read (kept private)."));
+        }
+        let mut found = ax::find_running_app(req, me);
+        let mut win = found.as_ref().and_then(|(p, _, _)| ax::window(*p));
+        if found.is_none() || win.is_none() {
+            let _ = std::process::Command::new("/usr/bin/open").args(["-a", req]).status();
+            for _ in 0..20 {
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                if let Some(f) = ax::find_running_app(req, me) {
+                    if let Some(w) = ax::window(f.0) {
+                        found = Some(f);
+                        win = Some(w);
+                        break;
+                    }
+                    found = Some(f);
+                }
+            }
+        }
+        let Some((pid, name, bundle)) = found else {
+            return Err(format!("Couldn't find or open \"{req}\"."));
+        };
+        if services::eyes::skipped(&bundle, &skip) {
+            return Err(format!("{name} is never read (the user keeps it private)."));
+        }
+        let Some(win) = win.or_else(|| ax::window(pid)) else {
+            return Err(format!("{name} shows no window Sympony can read."));
+        };
+        let _ = ax::bring(pid, &win);
+        std::thread::sleep(std::time::Duration::from_millis(180));
+        (pid, name, bundle, win)
+    } else {
+        let Some((pid, name, bundle)) = ax::front_app(me) else {
+            return Err("There is no window in front to read.".into());
+        };
+        if services::eyes::skipped(&bundle, &skip) {
+            return Err(format!("{name} is never read (the user keeps it private)."));
+        }
+        let Some(win) = ax::window(pid) else {
+            return Err(format!("{name} shows no window Sympony can read."));
+        };
+        (pid, name, bundle, win)
     };
     let title = win.text("AXTitle");
     let mode = args["mode"].as_str().unwrap_or("elements");

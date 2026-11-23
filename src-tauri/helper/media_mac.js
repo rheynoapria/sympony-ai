@@ -90,6 +90,12 @@ var CMD = { play: 0, pause: 1, toggle: 2, next: 4, prev: 5 };
 function command(req) {
   if (req.app !== 'spotify') {
     if (req.action === 'seek') { $.MRMediaRemoteSetElapsedTime(Math.max(0, num(req.value))); return { ok: true }; }
+    if (req.action === 'rate') {
+      var r = num(req.value);
+      if (r <= 0) return { ok: false };
+      var opts = $.NSDictionary.dictionaryWithObjectForKey($(r), $('kMRMediaRemoteOptionPlaybackRate'));
+      return { ok: !!$.MRMediaRemoteSendCommand(19, opts) };
+    }
     return { ok: req.action in CMD && !!$.MRMediaRemoteSendCommand(CMD[req.action], $()) };
   }
   var a = reach(req.pid);

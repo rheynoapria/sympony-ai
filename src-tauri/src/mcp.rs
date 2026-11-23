@@ -190,6 +190,14 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
         let eyes = crate::eyes::available(app);
         let askai = crate::askai::available(app);
         let hands = eyes && crate::hands::available(app);
+        let exec_on = crate::exec::on(app);
+        if kind == "out" && exec_on && services::exec::NAMES.contains(&call["name"].as_str().unwrap_or("")) {
+            let tool_name = call["name"].as_str().unwrap_or("");
+            return match crate::exec::run(app, &session, m.is_tainted(&session), tool_name, &call["arguments"]) {
+                Ok(text) => json!({"ok": true, "text": text}),
+                Err(e) => json!({"ok": false, "error": e}),
+            };
+        }
         if kind == "out" && hands && services::routines::NAMES.contains(&call["name"].as_str().unwrap_or("")) {
             return match crate::hands::save_routine(app, &session, &call["arguments"]) {
                 Ok(text) => json!({"ok": true, "text": text}),
@@ -230,6 +238,9 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
         }
         let (mut tools, targets) = crate::mcp_out::tools(app);
         if kind == "out_list" {
+            if exec_on {
+                tools.extend(services::exec::mcp_tools());
+            }
             if agents {
                 tools.extend(crate::bridge::tools());
             }

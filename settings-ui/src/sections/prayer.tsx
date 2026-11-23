@@ -4,6 +4,7 @@ import type { CustomPart, CustomPartProps, Row, SectionBody } from "@/rows/types
 import { PRAYER_ROWS } from "./features.rows";
 import { AdhanPart } from "./parts/Adhan";
 import { LocatePart } from "./parts/Locate";
+import { ModuleStyleCard } from "./parts/ModuleStyleCard";
 import { showKemenag } from "./parts/logic";
 import { PrayerCityPart } from "./parts/PrayerCity";
 import { PrayerTodayPart } from "./parts/PrayerToday";
@@ -49,16 +50,19 @@ function PrayerSection(props: CustomPartProps) {
   );
 
   return (
-    <Rows
-      sectionId="prayer"
-      rows={rows}
-      customs={CUSTOMS}
-      settings={props.settings}
-      set={props.set}
-      os={props.os}
-      part={props.part}
-      onNavigate={props.onNavigate}
-    />
+    <div className="flex flex-col gap-4">
+      <ModuleStyleCard moduleId="prayer" settings={props.settings} set={props.set} />
+      <Rows
+        sectionId="prayer"
+        rows={rows}
+        customs={CUSTOMS}
+        settings={props.settings}
+        set={props.set}
+        os={props.os}
+        part={props.part}
+        onNavigate={props.onNavigate}
+      />
+    </div>
   );
 }
 

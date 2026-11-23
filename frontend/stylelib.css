@@ -1,0 +1,922 @@
+/* Sympony Module Styling Library — global card tokens + 18 visual layout styles across 6 core modules */
+
+/* ============================================================ Global Card Style Tokens (Dashboard + Defaults) */
+#notch[data-card-radius="sharp"] { --card-r: 12px; }
+#notch[data-card-radius="rounded"] { --card-r: 20px; }
+#notch[data-card-radius="soft"] { --card-r: 26px; }
+
+#notch[data-card-density="compact"] { --card-gap: 7px; --card-pad: 9px 11px; }
+#notch[data-card-density="balanced"] { --card-gap: 10px; --card-pad: 12px 14px; }
+#notch[data-card-density="airy"] { --card-gap: 13px; --card-pad: 14px 16px; }
+
+.c {
+  border-radius: var(--card-r, 20px);
+  padding: var(--card-pad, 12px 14px);
+}
+
+#notch[data-card-surface="borderless"] .page:not(.mod-page) .c:not(.bare) {
+  background: transparent;
+  box-shadow: none;
+}
+#notch[data-card-surface="borderless"] .page:not(.mod-page) .c:not(.bare):hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+#notch[data-card-surface="outline"] .page:not(.mod-page) .c:not(.bare) {
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+#notch[data-card-surface="outline"] .page:not(.mod-page) .c:not(.bare):hover {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+#notch[data-card-surface="glass"] .page:not(.mod-page) .c:not(.bare) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+#notch[data-card-surface="tinted"] .page:not(.mod-page) .c:not(.bare) {
+  background: color-mix(in srgb, var(--tint, #8fa2ff) 11%, var(--tile));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint, #8fa2ff) 24%, transparent);
+}
+
+/* ============================================================ Per-Module Surface Overrides (Full Module Pages) */
+.tab-page[data-mod-surface="borderless"] .c:not(.bare),
+.tab-page[data-mod-surface="borderless"] .sl-pane {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.tab-page[data-mod-surface="oled"] .sl-pane {
+  background: var(--tile);
+  border-radius: var(--card-r, 20px);
+  padding: 6px 10px;
+}
+.tab-page[data-mod-surface="outline"] .c:not(.bare),
+.tab-page[data-mod-surface="outline"] .sl-pane {
+  background: rgba(0, 0, 0, 0.28) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15) !important;
+  border-radius: var(--card-r, 20px);
+}
+.tab-page[data-mod-surface="outline"] .sl-pane { padding: 6px 10px; }
+.tab-page[data-mod-surface="glass"] .c:not(.bare),
+.tab-page[data-mod-surface="glass"] .sl-pane {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+  border-radius: var(--card-r, 20px);
+}
+.tab-page[data-mod-surface="glass"] .sl-pane { padding: 6px 10px; }
+
+/* ============================================================ Shared Compact OLED Helpers */
+.tab-page [hidden],
+#pomoBentoRoot[hidden],
+#pomoAltRoot[hidden] {
+  display: none !important;
+}
+.sl-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.sl-pane {
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.sl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sl-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+#notch.look-light .sl-pill {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+/* ============================================================ 1. PRAYER TIMES — Timeline, Minimal Focus & Bento */
+.prt-tl-wrap {
+  display: grid;
+  grid-template-columns: minmax(148px, 0.34fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.prt-tl-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+.prt-tl-name {
+  font-size: clamp(12px, calc(var(--stage-h, 106px) * 0.12), 14.5px);
+  font-weight: 700;
+  color: var(--emerald);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.prt-tl-cd {
+  font-family: var(--round);
+  font-size: clamp(20px, calc(var(--stage-h, 106px) * 0.27), 32px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.04;
+  color: var(--text);
+  margin-top: 2px;
+}
+.prt-tl-at {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 2px;
+}
+.prt-tl-at span { color: var(--dim); font-weight: 500; }
+.prt-tl-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: clamp(2px, calc(var(--stage-h, 106px) * 0.04), 6px);
+  color: var(--dim);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+}
+.prt-tl-loc:hover { color: var(--text); }
+.prt-tl-loc .edit-ico {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--pill);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--dim);
+}
+.prt-tl-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(6px, calc(var(--stage-h, 132px) * 0.085), 13px);
+  min-width: 0;
+  min-height: 0;
+}
+.prt-tl-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.prt-tl-meta-txt {
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.prt-tl-track {
+  position: relative;
+  padding-top: 16px;
+}
+.prt-tl-rail {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  margin: 0 10%;
+}
+#notch.look-light .prt-tl-rail { background: rgba(0, 0, 0, 0.14); }
+.prt-tl-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--emerald);
+}
+.prt-tl-now {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2.5px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--text);
+  z-index: 3;
+}
+.prt-tl-now b {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--round);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.prt-tl-now.edge-l b { transform: translateX(-12%); }
+.prt-tl-now.edge-r b { transform: translateX(-88%); }
+.prt-tl-dots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: -7.5px;
+  position: relative;
+  z-index: 2;
+}
+.prt-tl-pt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  min-width: 0;
+}
+.prt-tl-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #383842;
+  border: 2px solid #383842;
+  transition: transform 0.16s ease;
+}
+.prt-tl-pt.done .prt-tl-dot { background: var(--emerald); border-color: var(--emerald); }
+.prt-tl-pt.next .prt-tl-dot {
+  width: 13px;
+  height: 13px;
+  margin-top: -1px;
+  background: var(--shell-bg, #000);
+  border: 2.5px solid var(--emerald);
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.55);
+}
+.prt-tl-pt:hover .prt-tl-dot { transform: scale(1.18); }
+.prt-tl-pt .p-lbl { font-size: 11px; font-weight: 600; color: var(--dim); line-height: 1.1; white-space: nowrap; }
+.prt-tl-pt .p-tm { font-family: var(--round); font-size: 11.5px; font-weight: 700; color: var(--dim); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.prt-tl-pt.next .p-lbl,
+.prt-tl-pt.next .p-tm { color: var(--emerald); }
+.prt-tl-pt.future .p-tm { color: var(--text); }
+.prt-tl-pt.muted .p-lbl::after { content: ' · 🔕'; font-size: 9px; opacity: 0.65; }
+
+/* Prayer Style 3: Minimal Focus */
+.prt-fc-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  height: 100%;
+  width: 100%;
+  padding: 2px 4px;
+  gap: 4px;
+}
+.prt-fc-top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
+}
+.prt-fc-hero {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+  align-content: center;
+  flex-wrap: nowrap;
+}
+.prt-fc-big {
+  font-family: var(--round);
+  font-size: clamp(24px, calc(var(--stage-h, 116px) * 0.34), 40px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--emerald);
+}
+.prt-fc-strip {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  flex: none;
+}
+.prt-fc-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 0;
+}
+.prt-fc-chip.next {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--emerald);
+}
+.prt-fc-chip.done { opacity: 0.5; }
+#notch.look-light .prt-fc-chip { background: rgba(0, 0, 0, 0.05); }
+
+/* Prayer Bento shrink safety */
+.prt-bento-svg {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 36px;
+  max-height: 90px;
+  margin-top: 2px;
+  overflow: visible;
+}
+.prt-bento-cd {
+  font-size: clamp(20px, calc(var(--stage-h, 216px) * 0.14), 30px) !important;
+  color: #4ade80;
+  margin-top: 1px;
+}
+.prt-bento-qibla {
+  width: clamp(26px, calc(var(--stage-h, 216px) * 0.175), 38px);
+  height: clamp(26px, calc(var(--stage-h, 216px) * 0.175), 38px);
+}
+.prt-bento-row {
+  gap: 8px;
+  padding: clamp(1px, calc(var(--stage-h, 216px) * 0.015), 3px) 7px;
+  border-radius: 9px;
+}
+.prt-bento-ico {
+  width: clamp(16px, calc(var(--stage-h, 216px) * 0.1), 22px);
+  height: clamp(16px, calc(var(--stage-h, 216px) * 0.1), 22px);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.prt-bento-lbl {
+  flex: 1;
+  font-size: clamp(11px, calc(var(--stage-h, 216px) * 0.062), 13px);
+}
+.prt-bento-tm {
+  font-size: clamp(11.5px, calc(var(--stage-h, 216px) * 0.065), 14px);
+}
+.prt-bento-extra {
+  flex: 1;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 4px;
+  padding: clamp(3px, calc(var(--stage-h, 216px) * 0.022), 5px) 7px;
+  border-radius: 9px;
+  background: var(--tile);
+  white-space: nowrap;
+}
+
+/* ============================================================ 2. MUSIC / HOME — Compact Strip & Cover Focus */
+#page-home[data-mod-style="strip"] .mc-music:not(.mc-video) {
+  display: grid !important;
+  grid-template-columns: clamp(50px, calc(var(--stage-h, 82px) - 12px), 78px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 6px !important;
+  height: 100%;
+  box-sizing: border-box;
+}
+#page-home[data-mod-style="strip"] .mc-art-box {
+  width: clamp(50px, calc(var(--stage-h, 82px) - 12px), 78px) !important;
+  height: clamp(50px, calc(var(--stage-h, 82px) - 12px), 78px) !important;
+  border-radius: 13px !important;
+  margin-top: 0 !important;
+}
+#page-home[data-mod-style="strip"] .mc-app-chip { display: none; }
+#page-home[data-mod-style="strip"] .mc-strip-mid {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+#page-home[data-mod-style="strip"] .mc-strip-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+#page-home[data-mod-style="cover"] .mc-music:not(.mc-video) {
+  display: grid !important;
+  grid-template-columns: clamp(82px, calc(var(--stage-h, 158px) - 16px), 144px) minmax(0, 1fr);
+  align-items: center;
+  gap: 15px;
+  padding: 2px 6px !important;
+  height: 100%;
+  box-sizing: border-box;
+}
+#page-home[data-mod-style="cover"] .mc-art-box {
+  width: clamp(82px, calc(var(--stage-h, 158px) - 16px), 144px) !important;
+  height: clamp(82px, calc(var(--stage-h, 158px) - 16px), 144px) !important;
+  border-radius: 17px !important;
+  margin-top: 0 !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+}
+#page-home[data-mod-style="cover"] .mc-cover-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(4px, calc(var(--stage-h, 158px) * 0.04), 8px);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+#page-home[data-mod-style="cover"] .mc-cover-ttl {
+  font-size: clamp(16px, calc(var(--stage-h, 158px) * 0.12), 21px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+/* ============================================================ 3. WEATHER — Horizon, Minimal & Bento */
+.wx-hz-wrap {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.36fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.wx-hz-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  cursor: pointer;
+}
+.wx-hz-temp {
+  font-size: clamp(24px, calc(var(--stage-h, 102px) * 0.34), 40px) !important;
+  line-height: 0.95;
+}
+.wx-hz-ribbon {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  align-items: stretch;
+}
+.wx-hz-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 4px 3px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.045);
+}
+.wx-hz-slot.now {
+  background: rgba(96, 165, 250, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.3);
+}
+.wx-min-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  height: 100%;
+  width: 100%;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.wx-min-temp {
+  font-size: clamp(30px, calc(var(--stage-h, 86px) * 0.48), 52px) !important;
+  line-height: 0.9;
+}
+.wx-bento-temp {
+  font-size: clamp(32px, calc(var(--stage-h, 216px) * 0.24), 54px) !important;
+  margin-top: auto;
+  line-height: 0.95;
+}
+#notch.look-light .wx-hz-slot { background: rgba(0, 0, 0, 0.05); }
+
+/* ============================================================ 4. CALENDAR — Today, Week Strip & Bento */
+.cal-td-wrap {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.cal-td-badge {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 0;
+}
+#notch.look-light .cal-td-badge { border-right-color: rgba(0, 0, 0, 0.1); }
+.cal-td-daynum {
+  font-family: var(--round);
+  font-size: clamp(28px, calc(var(--stage-h, 110px) * 0.35), 44px);
+  font-weight: 800;
+  line-height: 0.92;
+  color: var(--red);
+  letter-spacing: -0.04em;
+}
+.cal-wk-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 100%;
+  width: 100%;
+  padding: 2px 4px;
+}
+.cal-wk-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) auto;
+  gap: 5px;
+  align-items: center;
+  flex: none;
+}
+.cal-wk-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  position: relative;
+}
+#notch.look-light .cal-wk-day { background: rgba(0, 0, 0, 0.05); }
+.cal-wk-day.today { background: rgba(255, 90, 82, 0.22); color: #ff7a73; }
+.cal-wk-day.sel { background: var(--pill-hi); color: var(--text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.cal-wk-day.today.sel { background: var(--red); color: #fff; box-shadow: none; }
+.cal-wk-day .wd-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sky);
+  position: absolute;
+  bottom: 2px;
+}
+.cal-td-wrap .calm-day-pane,
+.cal-wk-wrap .calm-day-pane {
+  padding: 0 2px !important;
+  gap: 4px;
+  min-height: 0;
+}
+.cal-td-wrap .calm-list,
+.cal-wk-wrap .calm-list {
+  margin-top: 2px !important;
+  min-height: 0;
+}
+.calm-day-pane .calf,
+.calm-day-pane .cald {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.calm-day-pane .calf::-webkit-scrollbar,
+.calm-day-pane .cald::-webkit-scrollbar { display: none; }
+
+/* ============================================================ 5. POMODORO — OLED Digital, Minimal Strip & Bento */
+.pomo-dig-wrap {
+  display: grid;
+  grid-template-columns: minmax(164px, 0.38fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.pomo-dig-time {
+  font-family: var(--round);
+  font-size: clamp(24px, calc(var(--stage-h, 98px) * 0.36), 42px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.pomo-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  min-width: 0;
+}
+.pomo-pills-row::-webkit-scrollbar { display: none; }
+.pomo-strip-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.pomo-strip-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  flex: none;
+  min-width: 0;
+}
+.pomo-strip-time {
+  font-family: var(--round);
+  font-size: clamp(22px, calc(var(--stage-h, 74px) * 0.42), 34px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.pomo-strip-bar {
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+#pomoBentoRoot {
+  display: grid;
+  grid-template-columns: clamp(148px, calc(var(--stage-h, 216px) * 0.92), 200px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  width: 100%;
+}
+#pomoLeftTile {
+  padding: clamp(4px, calc(var(--stage-h, 216px) * 0.04), 10px) !important;
+  min-height: 0;
+  justify-content: center;
+  align-items: center;
+}
+#pomoLeftTile .ring {
+  width: clamp(82px, calc(var(--stage-h, 216px) - 22px), 146px) !important;
+  height: clamp(82px, calc(var(--stage-h, 216px) - 22px), 146px) !important;
+}
+#pomoLeftTile .ring .big {
+  font-size: clamp(18px, calc(var(--stage-h, 216px) * 0.15), 34px) !important;
+  line-height: 1.05;
+}
+#pomoLeftTile .ring .sub {
+  font-size: clamp(9px, calc(var(--stage-h, 216px) * 0.05), 11px) !important;
+  max-width: 82%;
+  margin: 2px auto 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#pomoMidTile {
+  padding: clamp(6px, calc(var(--stage-h, 216px) * 0.05), 12px) 14px !important;
+  gap: clamp(2px, calc(var(--stage-h, 216px) * 0.025), 6px);
+  justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
+}
+#pomoMidTile .pomo-mid-task {
+  font-size: clamp(12px, calc(var(--stage-h, 216px) * 0.068), 15px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+#pomoActsRow .sbtn {
+  height: clamp(26px, calc(var(--stage-h, 216px) * 0.16), 34px);
+}
+
+/* ============================================================ 6. CONTROL — Minimal OLED, Compact Split & Bento */
+.ctl-min-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(6px, calc(var(--stage-h, 90px) * 0.085), 10px);
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.ctl-min-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.ctl-min-togs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.ctl-ico-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s var(--spring);
+}
+.ctl-ico-btn:hover { background: rgba(255, 255, 255, 0.14); color: var(--text); }
+.ctl-ico-btn:active { transform: scale(0.92); }
+.ctl-ico-btn.on {
+  background: var(--a, #4361ff);
+  color: var(--afg, #fff);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--a, #4361ff) 35%, transparent);
+}
+.ctl-ico-btn.sm { width: 28px; height: 28px; }
+#notch.look-light .ctl-ico-btn:not(.on) { background: rgba(0, 0, 0, 0.07); }
+#notch.look-light .ctl-ico-btn:not(.on):hover { background: rgba(0, 0, 0, 0.13); }
+
+.ctl-out-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.075);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 210px;
+  transition: background 0.16s ease;
+}
+.ctl-out-pill:hover { background: rgba(255, 255, 255, 0.14); }
+.ctl-out-pill.sm { height: 28px; padding: 0 9px; max-width: none; flex: 1; }
+.ctl-out-pill .ctl-out-bat { font-size: 10.5px; font-weight: 700; flex: none; }
+#notch.look-light .ctl-out-pill { background: rgba(0, 0, 0, 0.07); }
+#notch.look-light .ctl-out-pill:hover { background: rgba(0, 0, 0, 0.12); }
+
+.ctl-min-sliders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Sleek horizontal OLED capsule slider (Brightness & Volume) */
+.hsl {
+  position: relative;
+  height: 32px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 11px;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  min-width: 0;
+}
+.hsl.sm { height: 28px; border-radius: 10px; padding: 0 10px; }
+.hsl:focus-visible { box-shadow: inset 0 0 0 1.5px var(--klein); }
+.hsl.na { opacity: 0.4; pointer-events: none; }
+.hsl > i {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--v, 0));
+  pointer-events: none;
+  transition: transform 0.05s linear;
+}
+.hsl.drag > i { transition: none; }
+.hsl > span {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #000;
+  font-size: 11.5px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.hsl.low > span { color: var(--dim); }
+.hsl > b {
+  position: relative;
+  z-index: 1;
+  font-family: var(--round);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  pointer-events: none;
+}
+.hsl.hi > b { color: #000; }
+#notch.look-light .hsl { background: rgba(0, 0, 0, 0.1); }
+#notch.look-light .hsl > i { background: #18181f; }
+#notch.look-light .hsl > span { color: #fff; }
+#notch.look-light .hsl.low > span { color: var(--dim); }
+#notch.look-light .hsl.hi > b { color: #fff; }
+
+/* Control Style 2: Compact Split */
+.ctl-cmp-wrap {
+  display: grid;
+  grid-template-columns: minmax(196px, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding: 2px 6px;
+}
+.ctl-cmp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+.ctl-cmp-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  text-align: start;
+  cursor: pointer;
+  min-width: 0;
+  transition: background 0.16s ease;
+}
+.ctl-cmp-pill:hover { background: rgba(255, 255, 255, 0.1); }
+.ctl-cmp-pill .dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--dim);
+}
+.ctl-cmp-pill.on .dot {
+  background: var(--a, #4361ff);
+  color: var(--afg, #fff);
+}
+.ctl-cmp-pill b { font-size: 11.5px; color: var(--text); display: block; line-height: 1.15; }
+.ctl-cmp-pill small { font-size: 10px; color: var(--dim); display: block; line-height: 1.15; }
+#notch.look-light .ctl-cmp-pill { background: rgba(0, 0, 0, 0.055); }
+.ctl-cmp-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+.ctl-cmp-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Control Bento shrink safety */
+#page-control[data-mod-style="bento"] .tg2 {
+  padding: clamp(6px, calc(var(--stage-h, 216px) * 0.045), 10px) 10px;
+}
+#page-control[data-mod-style="bento"] .tg2 .dot2 {
+  width: clamp(24px, calc(var(--stage-h, 216px) * 0.15), 34px);
+  height: clamp(24px, calc(var(--stage-h, 216px) * 0.15), 34px);
+  margin-bottom: clamp(2px, calc(var(--stage-h, 216px) * 0.02), 6px);
+}

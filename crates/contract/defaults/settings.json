@@ -476,6 +476,12 @@
  "shellForm": "notch",
  "islandAnchor": "bottom",
  "drawerEdge": "right",
+ "cardStyle": {
+  "surface": "oled",
+  "radius": "rounded",
+  "density": "balanced"
+ },
+ "moduleStyles": {},
  "voiceEnabled": false,
  "voiceTier": "auto",
  "voiceLive": true,

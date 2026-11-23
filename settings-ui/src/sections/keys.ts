@@ -58,6 +58,7 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   general: rowKeys(GENERAL_ROWS, [
     "language",
     "notchPosition",
+    "notchColor",
     "idleLeft",
     "idleClock",
     "clockSize",

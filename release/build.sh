@@ -67,23 +67,30 @@ PY
   echo "Wrote $OUT/updater-${target}.json"
 }
 
-notarize_dmg() {
-  local dmg="$1"
-  local app_bundle="${2:-}"
-  local submit_args=()
-
+notary_auth_args() {
   if [ -n "${APPLE_API_KEY_PATH:-}" ] && [ -f "${APPLE_API_KEY_PATH}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
-    submit_args=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+    NOTARY_ARGS=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+    return 0
   elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ]; then
-    submit_args=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD")
-  else
-    echo "Apple Notarization: skipped (no App Store Connect API key or Apple ID credentials configured)"
+    NOTARY_ARGS=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD")
+    return 0
+  fi
+  NOTARY_ARGS=()
+  return 1
+}
+
+notarize_and_staple() {
+  local submit_file="$1"
+  local staple_target="$2"
+  local assess_type="${3:-exec}"
+  if ! notary_auth_args; then
+    echo "Apple Notarization: skipped for $staple_target (no App Store Connect API key or Apple ID credentials configured)"
     return 0
   fi
 
-  echo "Submitting $dmg to Apple Notary service..."
+  echo "Submitting $submit_file to Apple Notary service..."
   local out_json
-  out_json=$(xcrun notarytool submit "$dmg" "${submit_args[@]}" --wait --output-format json)
+  out_json=$(xcrun notarytool submit "$submit_file" "${NOTARY_ARGS[@]}" --wait --output-format json)
   echo "$out_json"
   local status id
   status=$(python3 -I -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("status",""))' <<< "$out_json")
@@ -91,27 +98,26 @@ notarize_dmg() {
   if [ "$status" != "Accepted" ]; then
     echo "Notarization failed with status: $status (id=$id). Fetching Apple notary log..."
     if [ -n "$id" ]; then
-      xcrun notarytool log "$id" "${submit_args[@]}" || true
+      xcrun notarytool log "$id" "${NOTARY_ARGS[@]}" || true
     fi
     exit 1
   fi
 
-  echo "Stapling notarization ticket to $dmg..."
-  xcrun stapler staple "$dmg"
-  xcrun stapler validate "$dmg"
-  spctl --assess --type open --context context:primary-signature -v "$dmg"
-  if [ -n "$app_bundle" ] && [ -d "$app_bundle" ]; then
-    echo "Stapling notarization ticket to $app_bundle..."
-    xcrun stapler staple "$app_bundle"
-    xcrun stapler validate "$app_bundle"
+  echo "Stapling notarization ticket to $staple_target..."
+  xcrun stapler staple "$staple_target"
+  xcrun stapler validate "$staple_target"
+  if [ "$assess_type" = "open" ]; then
+    spctl --assess --type open --context context:primary-signature -v "$staple_target"
+  else
+    spctl --assess --type exec -v "$staple_target"
   fi
 }
 
 case "$(uname -s)" in
   Darwin)
     # Strip Apple signing/notarization env vars during `cargo tauri build` so Tauri CLI does not
-    # run its built-in codesign/notarytool prematurely; tools/sign-mac.sh + notarize_dmg handle
-    # inside-out Developer ID signing, DMG packaging, Apple Notarization, and stapling cleanly.
+    # run its built-in codesign/notarytool prematurely; tools/sign-mac.sh + notarize_and_staple handle
+    # inside-out Developer ID signing, app notarization+stapling BEFORE DMG packing, and DMG notarization cleanly.
     env -u APPLE_SIGNING_IDENTITY -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID \
         -u APPLE_API_KEY -u APPLE_API_KEY_PATH -u APPLE_API_ISSUER -u APPLE_API_KEY_ID \
         cargo tauri build --bundles app
@@ -122,17 +128,26 @@ case "$(uname -s)" in
       x86_64) TAURI_ARCH="x86_64" ;;
       *) TAURI_ARCH="$RAW_ARCH" ;;
     esac
-    # Plain hdiutil dmg (app + /Applications link) so the signed .app goes in as-is
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
-    ditto "$B/macos/Sympony.app" "$STAGE/Sympony.app"; ln -s /Applications "$STAGE/Applications"
+    # Notarize and staple Sympony.app BEFORE packaging into the .dmg so users dragging the app out
+    # of the .dmg get an offline-verified stapled ticket (prevents slow online Gatekeeper hangs).
+    if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+      APP_ZIP="$STAGE/Sympony-app.zip"
+      ditto -c -k --sequesterRsrc --keepParent "$B/macos/Sympony.app" "$APP_ZIP"
+      notarize_and_staple "$APP_ZIP" "$B/macos/Sympony.app" exec
+      rm -f "$APP_ZIP"
+    fi
+    # Plain hdiutil dmg (already-stapled app + /Applications link) using HFS+ for fast universal mounting
+    DMG_ROOT="$STAGE/dmg"; mkdir -p "$DMG_ROOT"
+    ditto "$B/macos/Sympony.app" "$DMG_ROOT/Sympony.app"; ln -s /Applications "$DMG_ROOT/Applications"
     DMG="$OUT/Sympony_${V}_${RAW_ARCH}.dmg"
-    hdiutil create -volname Sympony -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+    hdiutil create -volname Sympony -srcfolder "$DMG_ROOT" -ov -format UDZO -fs HFS+ "$DMG"
     if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
       DMG_SIGN=(--force --timestamp -s "$APPLE_SIGNING_IDENTITY")
       if [ -n "${APPLE_KEYCHAIN:-}" ]; then DMG_SIGN+=(--keychain "$APPLE_KEYCHAIN"); fi
       codesign "${DMG_SIGN[@]}" "$DMG"
       codesign --verify --verbose=2 "$DMG"
-      notarize_dmg "$DMG" "$B/macos/Sympony.app"
+      notarize_and_staple "$DMG" "$DMG" open
     fi
     # Pack signed & stapled Sympony.app for in-app auto-updater
     TARBALL="$OUT/Sympony_${V}_${TAURI_ARCH}.app.tar.gz"

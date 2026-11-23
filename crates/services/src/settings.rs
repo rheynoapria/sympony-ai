@@ -47,13 +47,24 @@ const RETIRED_CAT_KEYS: &[&str] = &[
     "catSleep",
 ];
 
-/// Migrates legacy notch look/color, retires removed Dashboard/glanceSlots and legacy buddy (`cat*`) settings,
-/// and appends any newly added default modules missing from a saved `modules` list.
+/// Migrates unsupported legacy notch look/color values, retires removed Dashboard/glanceSlots and legacy buddy (`cat*`)
+/// settings, and appends any newly added default modules missing from a saved `modules` list.
 pub fn migrate_notch(saved: &mut Map<String, Value>) {
-    if saved.get("notchLook").and_then(Value::as_str).is_some_and(|v| v != "black") {
+    if saved
+        .get("notchLook")
+        .and_then(Value::as_str)
+        .is_some_and(|v| !matches!(v, "black" | "glass" | "color"))
+    {
         saved.remove("notchLook");
     }
-    saved.remove("notchColor");
+    if let Some(v) = saved.get("notchColor") {
+        let valid = v.as_str().is_some_and(|s| {
+            s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+        });
+        if !valid {
+            saved.remove("notchColor");
+        }
+    }
     saved.remove("glanceSlots");
     saved.remove("dashboardWidgets");
     for k in RETIRED_CAT_KEYS {
@@ -217,16 +228,20 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn migrate_notch_strips_non_black_look_and_notch_color() {
-        let mut m: Map<String, Value> =
-            serde_json::from_value(json!({"notchLook": "glass", "notchColor": "#123456"})).unwrap();
-        migrate_notch(&mut m);
-        assert!(!m.contains_key("notchLook"));
-        assert!(!m.contains_key("notchColor"));
+    fn migrate_notch_keeps_supported_looks_and_color_strips_legacy() {
+        for look in ["black", "glass", "color"] {
+            let mut m: Map<String, Value> =
+                serde_json::from_value(json!({"notchLook": look, "notchColor": "#1c2b4d"})).unwrap();
+            migrate_notch(&mut m);
+            assert_eq!(m.get("notchLook"), Some(&json!(look)));
+            assert_eq!(m.get("notchColor"), Some(&json!("#1c2b4d")));
+        }
 
-        let mut keep: Map<String, Value> = serde_json::from_value(json!({"notchLook": "black"})).unwrap();
-        migrate_notch(&mut keep);
-        assert_eq!(keep.get("notchLook"), Some(&json!("black")));
+        let mut legacy: Map<String, Value> =
+            serde_json::from_value(json!({"notchLook": "wallpaper", "notchColor": "not-a-hex"})).unwrap();
+        migrate_notch(&mut legacy);
+        assert!(!legacy.contains_key("notchLook"));
+        assert!(!legacy.contains_key("notchColor"));
     }
 
     #[test]

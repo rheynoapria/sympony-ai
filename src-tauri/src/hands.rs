@@ -89,6 +89,14 @@ fn center(n: &Node) -> (f64, f64) {
     (n.frame.0 + n.frame.2 / 2.0, n.frame.1 + n.frame.3 / 2.0)
 }
 
+/// Computes a horizontal point along `frame` for `frac` in `0.0..=1.0`, inset slightly from the edges.
+fn point_on_bar(frame: (f64, f64, f64, f64), frac: f64) -> (f64, f64) {
+    let f = frac.clamp(0.0, 1.0);
+    let pad = (frame.2 * 0.02).clamp(3.0, 10.0).min(frame.2 / 4.0);
+    let usable = (frame.2 - pad * 2.0).max(1.0);
+    (frame.0 + pad + usable * f, frame.1 + frame.3 / 2.0)
+}
+
 /// Whether node `i` is inside a web page (its editors want real keys, not a value set from outside).
 fn in_web(nodes: &[Node], i: usize) -> bool {
     let mut d = nodes[i].depth;
@@ -521,14 +529,19 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         None => None,
     };
     let label = target.as_ref().map(|t| t.1.label.clone()).unwrap_or_default();
-    let at = target.as_ref().map(|t| center(&t.1)).unwrap_or_else(|| {
-        let f = win.frame();
-        (f.0 + f.2 / 2.0, f.1 + f.3 / 2.0)
-    });
+    let click_at_pct = if kind == "click" { step["at"].as_f64() } else { None };
+    let at = match (&target, click_at_pct) {
+        (Some(t), Some(pct)) => point_on_bar(t.1.frame, pct / 100.0),
+        (Some(t), None) => center(&t.1),
+        (None, _) => {
+            let f = win.frame();
+            (f.0 + f.2 / 2.0, f.1 + f.3 / 2.0)
+        }
+    };
     let need = |what: &str| target.clone().ok_or(format!("{what} needs n"));
     // (sending, buying, paying, deleting: the user's OK first)
     let risky = match kind {
-        "click" | "choose" => h::risky(&label),
+        "click" | "double_click" | "choose" | "slide" | "drag" => h::risky(&label),
         "menu" => step["path"].as_array().and_then(|p| p.last()).and_then(Value::as_str).is_some_and(h::risky),
         "key" => {
             let k = step["keys"].as_str().unwrap_or("").to_lowercase();
@@ -546,7 +559,7 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
         };
         ask(app, session, format!("{app_name}\n{} {what}", kind))?;
     }
-    if kind != "menu" && kind != "key" {
+    if kind != "menu" && kind != "key" && kind != "slide" && kind != "drag" {
         let shown = if kind == "point" { step["say"].as_str().unwrap_or(&label).to_string() } else { label.chars().take(40).collect() };
         let (ox, oy) = to_overlay(app, at.0, at.1);
         show(app, json!({"do": if kind == "point" { "point" } else { "move" }, "x": ox, "y": oy, "kind": kind, "label": shown}));
@@ -557,8 +570,9 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             need("point")?;
             return Ok(format!("pointed at [{}]", n.unwrap_or(0)));
         }
-        "click" if step["spot"].is_string() => {
-            // (a text spot from an OCR read: check risky label, then a real click there)
+        "click" | "double_click" if step["spot"].is_string() => {
+            // (a text spot from an OCR read: check risky label, then a real click or double-click there)
+            let is_double = kind == "double_click";
             let k: usize = step["spot"].as_str().unwrap_or("").trim_start_matches('t').parse().map_err(|_| "spot is like t3".to_string())?;
             let (spot_label, px, py) = {
                 let st = app.state::<Hands>();
@@ -566,29 +580,147 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
                 views.get(session).and_then(|v| v.spots.get(k.wrapping_sub(1)).cloned()).ok_or(format!("There's no spot t{k}: read the screen with mode ocr again"))?
             };
             if h::risky(&spot_label) {
-                ask(app, session, format!("{app_name}\nclick “{spot_label}”"))?;
+                ask(app, session, format!("{app_name}\n{kind} “{spot_label}”"))?;
             }
             let (ox, oy) = to_overlay(app, px, py);
-            show(app, json!({"do": "move", "x": ox, "y": oy, "kind": "click", "label": spot_label.chars().take(40).collect::<String>()}));
+            show(app, json!({"do": "move", "x": ox, "y": oy, "kind": kind, "label": spot_label.chars().take(40).collect::<String>()}));
             std::thread::sleep(Duration::from_millis(320));
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
-            ax::click_at(px, py);
+            if is_double {
+                ax::double_click_at(px, py);
+            } else {
+                ax::click_at(px, py);
+            }
             show(app, json!({"do": "tap", "x": ox, "y": oy}));
             ax::settle(pid, win, 1500);
-            return Ok(format!("click t{k}"));
+            return Ok(format!("{kind} t{k}"));
+        }
+        "double_click" => {
+            let _ = need("double_click")?;
+            if !ax::bring(pid, win) {
+                return Err("the app couldn't come to the front".into());
+            }
+            ax::double_click_at(at.0, at.1);
+            true
         }
         "click" => {
             let (el, ..) = need("click")?;
-            // (pressing through Accessibility needs no pointer and no focus; a click where there's no press action)
-            el.act("AXPress") || {
+            if click_at_pct.is_some() {
                 if !ax::bring(pid, win) {
                     return Err("the app couldn't come to the front".into());
                 }
                 ax::click_at(at.0, at.1);
                 true
+            } else {
+                // (pressing through Accessibility needs no pointer and no focus; a click where there's no press action)
+                el.act("AXPress") || {
+                    if !ax::bring(pid, win) {
+                        return Err("the app couldn't come to the front".into());
+                    }
+                    ax::click_at(at.0, at.1);
+                    true
+                }
             }
+        }
+        "slide" => {
+            let (el, node, ..) = need("slide")?;
+            let min_v = node.min_val.or_else(|| el.number("AXMinValue"));
+            let max_v = node.max_val.or_else(|| el.number("AXMaxValue"));
+            let req_val = step["value"].as_f64();
+            let req_pct = step["percent"].as_f64();
+            if req_val.is_none() && req_pct.is_none() {
+                return Err("slide needs value or percent".into());
+            }
+            let (target_val, frac) = match (req_val, req_pct, min_v, max_v) {
+                (Some(v), _, Some(lo), Some(hi)) if hi > lo => {
+                    let clamped = v.clamp(lo, hi);
+                    (Some(clamped), (clamped - lo) / (hi - lo))
+                }
+                (Some(v), _, _, _) => (Some(v), (v / 100.0).clamp(0.0, 1.0)),
+                (None, Some(p), Some(lo), Some(hi)) if hi > lo => {
+                    let f = (p / 100.0).clamp(0.0, 1.0);
+                    (Some(lo + f * (hi - lo)), f)
+                }
+                (None, Some(p), _, _) => (None, (p / 100.0).clamp(0.0, 1.0)),
+                _ => (None, 0.5),
+            };
+            let (tx, ty) = point_on_bar(node.frame, frac);
+            let (ox, oy) = to_overlay(app, tx, ty);
+            show(app, json!({"do": "move", "x": ox, "y": oy, "kind": "slide", "label": label.chars().take(40).collect::<String>()}));
+            std::thread::sleep(Duration::from_millis(320));
+            // 1. Try native Accessibility numeric AXValue (exact for QuickTime timeline, volume/settings sliders, etc.)
+            let ax_ok = if let Some(tv) = target_val {
+                let set = el.set_number("AXValue", tv);
+                if set {
+                    std::thread::sleep(Duration::from_millis(80));
+                    match el.number("AXValue") {
+                        Some(now) => {
+                            let span = max_v.zip(min_v).map(|(h, l)| (h - l).abs()).unwrap_or(100.0).max(1.0);
+                            (now - tv).abs() <= (span * 0.08).max(1.5)
+                        }
+                        None => true,
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            let ok_slide = if ax_ok {
+                true
+            } else {
+                // 2. Fallback: bring app forward and click/scrub directly on the bar at the target position
+                if !ax::bring(pid, win) {
+                    return Err("the app couldn't come to the front".into());
+                }
+                ax::click_at(tx, ty);
+                true
+            };
+            show(app, json!({"do": "tap", "x": ox, "y": oy}));
+            ax::settle(pid, win, 1500);
+            if !ok_slide {
+                return Err("couldn't move slider".into());
+            }
+            let desc = match (target_val, req_pct) {
+                (Some(v), _) => format!("slide [{}] to {:.1}", n.unwrap_or(0), v),
+                (None, Some(p)) => format!("slide [{}] to {:.0}%", n.unwrap_or(0), p.clamp(0.0, 100.0)),
+                _ => format!("slide [{}]", n.unwrap_or(0)),
+            };
+            return Ok(desc);
+        }
+        "drag" => {
+            let (el, node, ..) = need("drag")?;
+            let min_v = node.min_val.or_else(|| el.number("AXMinValue"));
+            let max_v = node.max_val.or_else(|| el.number("AXMaxValue"));
+            let cur_v = el.number("AXValue").or_else(|| node.value.trim().parse::<f64>().ok());
+            let (sx, sy) = match (cur_v, min_v, max_v) {
+                (Some(c), Some(lo), Some(hi)) if hi > lo => point_on_bar(node.frame, (c - lo) / (hi - lo)),
+                _ => center(&node),
+            };
+            let (ex, ey) = if let Some(to_n) = step["to_n"].as_u64() {
+                let (_, dst, _) = element(app, session, to_n as usize)?;
+                center(&dst)
+            } else if let Some(pct) = step["percent"].as_f64() {
+                point_on_bar(node.frame, pct / 100.0)
+            } else if step["dx"].is_number() || step["dy"].is_number() {
+                (sx + step["dx"].as_f64().unwrap_or(0.0), sy + step["dy"].as_f64().unwrap_or(0.0))
+            } else {
+                return Err("drag needs to_n, percent, or dx/dy".into());
+            };
+            if !ax::bring(pid, win) {
+                return Err("the app couldn't come to the front".into());
+            }
+            let (osx, osy) = to_overlay(app, sx, sy);
+            let (oex, oey) = to_overlay(app, ex, ey);
+            show(app, json!({"do": "move", "x": osx, "y": osy, "kind": "drag", "label": label.chars().take(40).collect::<String>()}));
+            std::thread::sleep(Duration::from_millis(260));
+            show(app, json!({"do": "move", "x": oex, "y": oey, "kind": "drag", "label": label.chars().take(40).collect::<String>()}));
+            ax::drag(sx, sy, ex, ey);
+            show(app, json!({"do": "tap", "x": oex, "y": oey}));
+            ax::settle(pid, win, 1500);
+            return Ok(format!("drag [{}]", n.unwrap_or(0)));
         }
         "fill" => {
             let (el, node, web) = need("fill")?;
@@ -620,7 +752,13 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             if !ax::bring(pid, win) {
                 return Err("the app couldn't come to the front".into());
             }
-            ax::press_combo(code, flags);
+            let times = step["repeat"].as_u64().unwrap_or(1).clamp(1, 20);
+            for i in 0..times {
+                ax::press_combo(code, flags);
+                if i + 1 < times {
+                    std::thread::sleep(Duration::from_millis(55));
+                }
+            }
             true
         }
         "scroll" => {
