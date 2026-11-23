@@ -96,6 +96,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-rust-${{ matrix.os }}
+      - name: Cache sherpa-onnx Windows prebuilt libraries
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: target/sherpa-onnx-prebuilt
+          key: sherpa-onnx-win-${{ hashFiles('Cargo.lock') }}
+      - name: Ensure sherpa-onnx build script matches prebuilt cache (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
+            rm -rf target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
+          fi
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
@@ -200,6 +212,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-rust-${{ matrix.os }}
+      - name: Cache sherpa-onnx Windows prebuilt libraries
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: target/sherpa-onnx-prebuilt
+          key: sherpa-onnx-win-${{ hashFiles('Cargo.lock') }}
+      - name: Ensure sherpa-onnx build script matches prebuilt cache (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
+            rm -rf target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
+          fi
       - name: Linux desktop dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm

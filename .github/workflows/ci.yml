@@ -78,6 +78,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ci-rust-windows
+      - name: Cache sherpa-onnx Windows prebuilt libraries
+        uses: actions/cache@v4
+        with:
+          path: target/sherpa-onnx-prebuilt
+          key: sherpa-onnx-win-${{ hashFiles('Cargo.lock') }}
+      - name: Ensure sherpa-onnx build script matches prebuilt cache
+        run: |
+          if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
+            rm -rf target/*/build/sherpa-onnx-sys* target/*/.fingerprint/sherpa-onnx-sys* target/*/deps/libsherpa_onnx_sys*
+          fi
       - name: Rust workspace check (tests and examples too)
         run: cargo check --workspace --all-targets
       # (links the app itself: an extern that only exists on Unix shows here, not in check or the tests)

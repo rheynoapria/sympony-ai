@@ -164,7 +164,36 @@ case "$(uname -s)" in
       fi
     done ;;
   MINGW*|MSYS*|CYGWIN*)
-    cargo tauri build --bundles nsis
+    # Self-heal if Cargo cached sherpa-onnx-sys build script outputs without target/sherpa-onnx-prebuilt
+    if [ ! -d target/sherpa-onnx-prebuilt ] || [ -z "$(find target/sherpa-onnx-prebuilt -name 'sherpa-onnx-c-api.lib' 2>/dev/null)" ]; then
+      rm -rf target/release/build/sherpa-onnx-sys* target/release/.fingerprint/sherpa-onnx-sys* target/release/deps/libsherpa_onnx_sys*
+    fi
+    cargo build --release -p sympony
+    # Bundle sherpa-onnx / onnxruntime shared DLLs right alongside Sympony.exe inside the NSIS installer
+    DLL_STAGE="target/windows-dlls"
+    rm -rf "$DLL_STAGE" && mkdir -p "$DLL_STAGE"
+    find target/release -maxdepth 1 -name '*.dll' -exec cp {} "$DLL_STAGE/" \;
+    find target/sherpa-onnx-prebuilt -name '*.dll' -exec cp {} "$DLL_STAGE/" \; 2>/dev/null || true
+    if [ ! -f "$DLL_STAGE/sherpa-onnx-c-api.dll" ] || [ ! -f "$DLL_STAGE/onnxruntime.dll" ]; then
+      echo "ERROR: missing required Windows runtime DLLs in $DLL_STAGE" >&2
+      ls -la "$DLL_STAGE" >&2 || true
+      exit 1
+    fi
+    ls -lh "$DLL_STAGE"
+    WIN_CFG="target/tauri-windows-bundle.json"
+    "$PY" -I - "$DLL_STAGE" "$WIN_CFG" <<'PY'
+import json, os, sys
+dll_dir, out_path = sys.argv[1:3]
+resources = {"../crates/voice/data/**/*": "voice/data/"}
+for name in sorted(os.listdir(dll_dir)):
+    if name.lower().endswith(".dll"):
+        resources[f"../{dll_dir}/{name}"] = name
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump({"bundle": {"resources": resources}}, f, indent=2)
+    f.write("\n")
+print("Windows NSIS resource map:", json.dumps(resources, indent=2))
+PY
+    cargo tauri build --bundles nsis --config "$WIN_CFG"
     for exe in "$B"/nsis/*.exe; do
       if [ -f "$exe" ]; then
         cp "$exe" "$OUT/"
