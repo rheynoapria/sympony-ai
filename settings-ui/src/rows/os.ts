@@ -16,8 +16,6 @@ export const MAC_OFF: OsOff = {
     "reserveTop",
     "reserveBlur",
     "reserveMatch",
-    "toggleShortcut",
-    "moduleShortcuts",
     "snoozeShortcut",
     "snoozeMinutes",
     "fpsCounter",
@@ -74,6 +72,25 @@ function offFor(os: OS): OsOff | null {
 }
 
 const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
+  general: (rows) =>
+    rows.map((r) => {
+      if ("k" in r && r.k === "toggleShortcut") {
+        return {
+          ...r,
+          sub: "e.g. Option+N, Cmd+Shift+Space. Also brings Sympony back when tucked/hidden.",
+        };
+      }
+      if ("k" in r && r.k === "moduleShortcuts") {
+        return {
+          ...r,
+          sub: "While Sympony is open with the mouse on it, or opened with the shortcut.",
+        };
+      }
+      if ("k" in r && r.k === "clock24h") {
+        return { ...r, sub: "" };
+      }
+      return r;
+    }),
   media: (rows) =>
     rows.map((r) =>
       r.t === "lead"
@@ -126,6 +143,28 @@ const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
         ? { ...r, sub: "CPU, memory, network and disk" }
         : r
     ),
+  effects: (rows) =>
+    rows.map((r) => {
+      if (r.t === "lead") {
+        return {
+          ...r,
+          html: "Little animations around Sympony. Turn each one on or off here.",
+        };
+      }
+      if ("k" in r && r.k === "fxGlow") {
+        return {
+          ...r,
+          sub: "A thin glowing light runs round the closed Sympony for reminders, events, notifications, charging, Pony answers and low battery, in their color",
+        };
+      }
+      if ("k" in r && r.k === "fxHudBounce") {
+        return {
+          ...r,
+          sub: "When the volume reaches 0% or 100%, the HUD bar stretches a little and springs back",
+        };
+      }
+      return r;
+    }),
 };
 
 const LINUX_ROWS: Record<string, (rows: Row[]) => Row[]> = {

@@ -182,6 +182,7 @@
   function ponyMood(state) {
     const s = state || {};
     if (s.asking || s.cardWaiting) return 'attention';
+    if (s.listening) return 'listening';
     if (s.thinking) return 'think';
     const now = Number.isFinite(s.now) ? s.now : 0;
     if (Number.isFinite(s.doneUntil) && now < s.doneUntil) return 'done';

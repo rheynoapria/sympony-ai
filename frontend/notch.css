@@ -163,6 +163,11 @@ svg { display: block; }
   transition: opacity 0.18s ease;
 }
 #notch:not(.cam) #closed { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+#notch.cam #closed { padding: 0 calc(7px + var(--mark-pad, 0px)); }
+#notch.cam :is(#closed, #slotProbe) .act-text { font-size: 11px; letter-spacing: -0.01em; }
+#notch.cam :is(#closed, #slotProbe) .act-num { font-size: 11.5px; }
+#notch.cam :is(#closed, #slotProbe) .clk { font-size: 12px; }
+#notch.cam :is(#closed, #slotProbe) .batt-mini { font-size: 11px; }
 #notch:not(.cam) #closed.roomy { grid-template-columns: minmax(0, 1fr) 0px auto; }
 #notch.open #closed { opacity: 0; pointer-events: none; transition-duration: 0.08s; }
 #closed .side {
@@ -303,20 +308,31 @@ svg { display: block; }
 }
 
 /* Pony's face slot (§5): glowing cyan eyes — sole exception to the no-glow rule */
-.pony-side { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 8px; }
-.pony-outer { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.pony-side { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 5px; }
+.pony-outer { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 .pony-mid { display: flex; align-items: center; gap: 12px; }
 .eyew { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 34px; flex: none; transition: transform 0.35s var(--smooth); }
-.eyew.one { width: 16px; }
+.eyew.one { width: 12px; }
 .eye { width: 8px; height: 12px; border-radius: 4px; background: #d6fbff; box-shadow: 0 0 8px rgba(120, 230, 255, 0.8); animation: blink 4.8s infinite; display: block; transition: transform 0.22s ease, opacity 0.22s ease; }
 .eye-arc { width: 12px; height: 12px; display: block; filter: drop-shadow(0 0 6px rgba(120, 230, 255, 0.85)); }
 .pony-zzz { position: absolute; right: -7px; top: -4px; font: 700 9px/1 -apple-system, BlinkMacSystemFont, system-ui; color: #c7d2ff; opacity: 0.78; pointer-events: none; animation: ponyZzz 2.4s ease-in-out infinite; }
 .pony-note { position: absolute; right: -8px; top: -5px; font: 700 10px/1 -apple-system, BlinkMacSystemFont, system-ui; color: #a5b4fc; pointer-events: none; animation: ponyNote 1.1s ease-in-out infinite; }
 .eyew:nth-of-type(2) .eye, .eye + .eye { animation-delay: 0.02s; }
-#closed[data-pony-mood="think"] .eye { transform: translate(1.5px, -1px) scaleY(0.55); animation: none; }
+:is(#closed, #openVoice)[data-pony-mood="think"] .eye { transform: translate(1.5px, -1px) scale(1.04, 0.72); animation: ponyThink 1.4s ease-in-out infinite; }
+:is(#closed, #openVoice)[data-pony-mood="listening"] .eyew { animation: ponyListen 1.8s ease-in-out infinite; }
+:is(#closed, #openVoice)[data-pony-mood="listening"] .eye {
+  background: #e2fdff;
+  transform: translateY(calc(var(--v-energy, 0) * -1.8px)) scaleX(calc(1 + var(--v-energy, 0) * 0.16)) scaleY(calc(1.06 + var(--v-energy, 0) * 0.24));
+  box-shadow: 0 0 calc(8px + var(--v-energy, 0) * 8px) rgba(110, 238, 255, calc(0.84 + var(--v-energy, 0) * 0.16));
+  animation: none;
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
+}
+:is(#closed, #openVoice)[data-pony-mood="done"] .eye-arc { filter: drop-shadow(0 0 7px rgba(110, 245, 195, 0.92)); }
 #closed[data-pony-mood="attention"] .eye { transform: scale(1.08, 1.2); box-shadow: 0 0 10px rgba(255, 195, 110, 0.9); animation: none; }
 #closed[data-pony-mood="music"] .eyew { animation: ponyBeat 0.95s ease-in-out infinite; }
 @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.12); } }
+@keyframes ponyThink { 0%, 100% { transform: translate(-1.5px, -1px) scale(1.04, 0.72); } 50% { transform: translate(2px, -1.5px) scale(1.04, 0.68); } }
+@keyframes ponyListen { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-1.2px) rotate(3deg); } }
 @keyframes ponyZzz { 0%, 100% { opacity: 0.35; transform: translateY(1px); } 50% { opacity: 0.9; transform: translateY(-2px); } }
 @keyframes ponyNote { 0%, 100% { opacity: 0.65; transform: translateY(1px) rotate(-6deg); } 50% { opacity: 1; transform: translateY(-2px) rotate(6deg); } }
 @keyframes ponyBeat { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-1.5px) rotate(3deg); } }
@@ -480,7 +496,7 @@ svg { display: block; }
 .ch-ava { display: block; flex: none; object-fit: contain; }
 span.ch-ava { display: inline-grid; place-items: center; }
 @media (prefers-reduced-motion: reduce) {
-  .eye, .pony-zzz, .pony-note, #closed[data-pony-mood="music"] .eyew { animation: none !important; }
+  .eye, .pony-zzz, .pony-note, #closed[data-pony-mood="music"] .eyew, #closed[data-pony-mood="listening"] .eyew { animation: none !important; }
   #ponyPeek { display: none !important; }
 }
 
@@ -1375,11 +1391,11 @@ header { position: relative; }
 /* ------------------------------------------------------------ animations (Settings → Animations, notch.js) */
 /* the glowing outline and the timer outline: two halves of a thin line on the notch's edge, glowing in their color
    (the SVG's place, size and paths follow the notch's shape, outlineDraw) */
-#outlineFx { display: none; position: absolute; left: 0; top: 0; width: 0; height: 0; overflow: visible; pointer-events: none; z-index: 4; }
+#outlineFx { display: block; position: absolute; left: 0; top: 0; width: 0; height: 0; overflow: visible; pointer-events: none; z-index: 6; }
 #outlineFx g { opacity: 0; transition: opacity 0.3s ease; }
 #outlineFx g.on { opacity: 1; }
-#outlineFx path { fill: none; stroke: var(--ol-c); stroke-width: 2.3; stroke-linecap: round; }
-#outlineFx .ol-glow path { opacity: 0; }
+#outlineFx path { fill: none; stroke: var(--ol-c); stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 3px var(--ol-c)) drop-shadow(0 0 7px var(--ol-c)); }
+#outlineFx .ol-glow path { opacity: 0; stroke-dasharray: 100 200; stroke-dashoffset: 100; }
 #outlineFx .ol-timer path { transition: stroke-dasharray 1s linear, stroke 0.6s ease; }
 /* files fly into the Shelf: while files are dragged over Sympony its Shelf swells a little; a file dropped there shrinks
    into the Shelf's tab (.shelf-fly) and its count bumps */
@@ -1390,7 +1406,7 @@ header { position: relative; }
   background: #2c2c30; color: #fff; font-size: 18px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); pointer-events: none; }
 .shelf-fly svg { width: 20px; height: 20px; }
 .shelf-fly b { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--blue); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; }
-#shelfBadge.shelf-bump { animation: shelfBadgeBump 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
+#shelfBadge.shelf-bump, #dock button.shelf-bump { animation: shelfBadgeBump 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
 @keyframes shelfBadgeBump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
 /* a done day: confetti from Sympony (pieces animated by notch.js, gone when they land) */
 .day-confetti { position: absolute; inset: 0; z-index: 9; overflow: hidden; pointer-events: none; }
@@ -1586,6 +1602,32 @@ html.warm .ly-shift { --ly-sh-bg: color-mix(in srgb, var(--bg-warm) 88%, transpa
 @keyframes vDotPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.86); } }
 @keyframes vWordIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes vShimmer { from { transform: translateX(-110%); opacity: 0.6; } 50% { opacity: 1; } to { transform: translateX(260%); opacity: 0.6; } }
+/* Open-notch live voice pill (when dictating / speaking to Pony while the notch is already open) */
+#openVoice {
+  position: absolute; left: 50%; top: 42px; z-index: 25;
+  transform: translateX(-50%) translateY(-8px) scale(0.95);
+  min-width: 240px; max-width: calc(100% - 36px);
+  padding: 7px 12px; border-radius: 16px;
+  background: rgba(14, 15, 20, 0.94);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 0 0 1px rgba(90, 200, 250, 0.42), 0 10px 28px rgba(0, 0, 0, 0.65), 0 0 18px rgba(90, 200, 250, 0.22);
+  display: flex; flex-direction: column; gap: 5px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.34s var(--spring);
+}
+#openVoice.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); pointer-events: auto; }
+#openVoice.is-error { box-shadow: 0 0 0 1px rgba(255, 69, 58, 0.48), 0 10px 28px rgba(0, 0, 0, 0.65); }
+#openVoice.is-done { box-shadow: 0 0 0 1px rgba(48, 209, 88, 0.48), 0 10px 28px rgba(0, 0, 0, 0.65); }
+#openVoice .ov-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#openVoice .ov-bars { flex: 1; min-width: 72px; height: 18px; justify-content: center; gap: 2.5px; }
+#openVoice .ov-bars i { width: 2.5px; height: 16px; }
+#openVoice .v-time, #openVoice .v-status-lbl { margin-inline-start: 0; }
+#openVoice .v-live { text-align: center; font-size: 11.5px; }
+#openVoice .eyew { width: 28px; gap: 7px; }
+#openVoice .eye { width: 6.5px; height: 10px; border-radius: 3.5px; }
+#openVoice .eye-arc { width: 10px; height: 10px; }
+#notch:not(.open) #openVoice { opacity: 0 !important; pointer-events: none !important; }
+
 @media (prefers-reduced-motion: reduce) {
   .v-dot, .v-spin-dot, .v-w-new, .v-shimmer i { animation: none !important; }
   .v-bars i { transition: none !important; }

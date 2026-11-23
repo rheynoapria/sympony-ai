@@ -150,6 +150,7 @@ pub struct VoiceRuntime {
     download_cancel: Arc<AtomicBool>,
     active_download: Mutex<Option<ActiveDownload>>,
     light_suggested: AtomicBool,
+    ax_waiting: AtomicBool,
 }
 
 impl VoiceRuntime {
@@ -179,6 +180,7 @@ impl VoiceRuntime {
             download_cancel: Arc::new(AtomicBool::new(false)),
             active_download: Mutex::new(None),
             light_suggested: AtomicBool::new(light_suggested),
+            ax_waiting: AtomicBool::new(false),
         });
         Self::start_idle_reaper(Arc::clone(&rt));
         rt
@@ -452,7 +454,12 @@ impl VoiceRuntime {
                     }
                 });
             }
-            Err(e) => self.log(&format!("voice: can't watch {key_str}: {e:?}")),
+            Err(e) => {
+                self.log(&format!("voice: can't watch {key_str}: {e:?}"));
+                if !platform::macos::banners::trusted(false) {
+                    self.watch_for_accessibility();
+                }
+            }
         }
 
         let cmd_key = s
@@ -468,6 +475,7 @@ impl VoiceRuntime {
                 .start(VoiceKey::from_setting(&cmd_key), ctx)
                 .is_ok()
             {
+                self.log(&format!("voice: listening for command key {cmd_key}"));
                 let rt = Arc::clone(self);
                 thread::spawn(move || {
                     while let Ok(ev) = crx.recv() {
@@ -476,6 +484,38 @@ impl VoiceRuntime {
                 });
             }
         }
+    }
+
+    fn watch_for_accessibility(self: &Arc<Self>) {
+        if self
+            .ax_waiting
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let rt = Arc::clone(self);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(2));
+                let enabled = rt
+                    .settings()
+                    .get("voiceEnabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if !enabled {
+                    rt.ax_waiting.store(false, Ordering::SeqCst);
+                    break;
+                }
+                if platform::macos::banners::trusted(false) {
+                    rt.ax_waiting.store(false, Ordering::SeqCst);
+                    rt.log("voice: Accessibility granted — starting dictation trigger");
+                    rt.sync_triggers();
+                    let _ = rt.app.emit("voice:perm", json!({ "accessibility": "granted" }));
+                    break;
+                }
+            }
+        });
     }
 
     fn handle_trigger(self: &Arc<Self>, ev: TriggerEvent, mode: VoiceMode) {
@@ -832,6 +872,13 @@ impl VoiceRuntime {
                         "text": text,
                         "inserted": "command",
                         "corrections": corrections,
+                    }),
+                );
+                let _ = self.app.emit(
+                    "voice:state",
+                    json!({
+                        "state": "idle",
+                        "ms": self.now_ms(),
                     }),
                 );
             } else {

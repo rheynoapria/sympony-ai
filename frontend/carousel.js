@@ -20,6 +20,7 @@
   const prevBtn = $('#prev');
   const nextBtn = $('#next');
   const backBtn = $('#btnBack');
+  const hideBtn = $('#btnHide');
   const collapseBtn = $('#btnCollapse');
   const settingsBtn = $('#btnSettings');
   const topMetaEl = $('#topMeta');
@@ -74,6 +75,7 @@
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
     pods: '<path d="M7 4a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3v6"/><path d="M17 4a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3v6"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
+    eyeOff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
     right: '<path d="m9 18 6-6-6-6"/>',
     cam: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
@@ -136,6 +138,7 @@
   prevBtn.innerHTML = ic('left');
   nextBtn.innerHTML = ic('right');
   backBtn.innerHTML = ic('left', 'width:15px;height:15px');
+  if (hideBtn) hideBtn.innerHTML = ic('eyeOff');
   collapseBtn.innerHTML = ic('up');
   settingsBtn.innerHTML = ic('gear');
 
@@ -654,7 +657,8 @@
     const order = dockModules();
     const prevIdx = prevMod ? order.indexOf(prevMod) : -1;
     const nextIdx = order.indexOf(moduleId);
-    const dir = (prevMod && prevMod !== moduleId && !opts.silent)
+    const slideOn = !st.settings || st.settings.fxTabSlide !== false;
+    const dir = (prevMod && prevMod !== moduleId && !opts.silent && slideOn)
       ? (nextIdx >= prevIdx ? 1 : -1)
       : 0;
 
@@ -744,9 +748,10 @@
       st.tab = nextMod;
       st.page = nextMod;
 
-      if (opts.instant) trackEl.classList.add('drag');
+      const instant = !!opts.instant || (st.settings && st.settings.fxTabSlide === false);
+      if (instant) trackEl.classList.add('drag');
       trackEl.style.transform = `translate3d(${-k * cs.sw}px, 0, 0)`;
-      if (opts.instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
+      if (instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
 
       prevBtn.classList.toggle('end', k === 0 || cs.pages.length <= 1);
       nextBtn.classList.toggle('end', k === cs.pages.length - 1 || cs.pages.length <= 1);
@@ -774,9 +779,10 @@
     st.page = 'page-' + k;
     if (!opts.silent) tabMemory.set(k);
 
-    if (opts.instant) trackEl.classList.add('drag');
+    const instant = !!opts.instant || (st.settings && st.settings.fxTabSlide === false);
+    if (instant) trackEl.classList.add('drag');
     trackEl.style.transform = `translate3d(${-k * cs.sw}px, 0, 0)`;
-    if (opts.instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
+    if (instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
 
     prevBtn.classList.toggle('end', k === 0 || cs.pages.length <= 1);
     nextBtn.classList.toggle('end', k === cs.pages.length - 1 || cs.pages.length <= 1);
@@ -901,6 +907,12 @@
     topBarsEl.style.display = hasMedia ? '' : 'none';
     topBarsEl.classList.toggle('off', !m.playing);
 
+    if (hideBtn) {
+      const s = st.settings || {};
+      const showHide = s.hideButton !== false && !s.autoHide && s.shellForm !== 'hidden' && s.shellForm !== 'drawer';
+      hideBtn.hidden = !showHide;
+    }
+
     let title = '';
     if (cs.special === 'drop') title = _t('Drop actions');
     else if (cs.special === 'snap') title = _t('Snap zones');
@@ -919,6 +931,7 @@
   prevBtn.onclick = () => step(-1);
   nextBtn.onclick = () => step(1);
   backBtn.onclick = () => closeFull();
+  if (hideBtn) hideBtn.onclick = () => N.tuck();
   collapseBtn.onclick = () => N.closeNotch();
   settingsBtn.onclick = () => { api.openSettings(); N.closeNotch(); };
   topBarsEl.onclick = () => {

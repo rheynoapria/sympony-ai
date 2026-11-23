@@ -100,7 +100,7 @@ export const GENERAL_ROWS: readonly Row[] = [
     t: "toggle",
     k: "hideButton",
     label: "Hide button",
-    sub: "An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click or tap the handle to bring it back. Right-clicking Sympony twice does the same.",
+    sub: "An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click the handle, right-click twice, or press the Open / close Sympony shortcut (default Option+N / Alt+N) to bring it back.",
   },
   { t: "custom", id: "autoHideApps", windowsOnly: true },
   {
@@ -359,7 +359,7 @@ export const GENERAL_ROWS: readonly Row[] = [
     t: "range",
     k: "expandedWidth",
     label: "Expanded width",
-    min: 560,
+    min: 480,
     max: 780,
     step: 10,
     unit: "px",

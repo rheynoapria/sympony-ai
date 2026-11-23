@@ -193,7 +193,8 @@ function closedHeight() {
 // A MacBook's camera notch: main says where it is in this window (notch:camera, macOS). While Sympony hangs from the top
 // edge over it, Sympony takes the camera's middle and is at least as tall: the part over the camera stays empty and
 // black, what Sympony shows goes to the sides of it (the time too), and the open notch's top bar keeps it free.
-const CAM_MARGIN = 8; // empty black beside the camera on each side
+// macOS auxiliaryTopLeftArea..auxiliaryTopRightArea already includes horizontal buffer around the physical camera.
+const CAM_MARGIN = 0;
 function camera() { return gapSetting() > 0 ? null : camNear(); }
 // the camera, when Sympony (where main puts its middle) would be over it at all
 function camNear() {
@@ -607,7 +608,7 @@ function sendHit() {
 
 function sideWidth(act) {
   switch (act.kind) {
-    case 'music': return showMiniControls() ? 84 : 44;
+    case 'music': return showMiniControls() ? 84 : 36;
     case 'hud-volume': case 'hud-brightness': case 'hud-lock': return st.settings.hudStyle === 'panel' ? 34 : 104;
     case 'hud-airplane': return st.settings.hudStyle === 'panel' ? 34 : 128;
     case 'hud-switch': return st.settings.hudStyle === 'panel' ? 34 : 112;
@@ -665,6 +666,7 @@ function openNotch(page) {
     if (N.carousel.onOpen) N.carousel.onOpen();
   }
   layout();
+  renderOpenVoice();
   renderMusic(true);
   renderCalendar();
   if (typeof refreshStatsCards === 'function') refreshStatsCards();
@@ -764,7 +766,7 @@ function bump() {
 }
 
 function scheduleClose() {
-  if (st.open && !st.hover && !st.dragging && !st.ctxOpen && !st.seeking && !st.typing && !st.snap && !st.moving) {
+  if (st.open && !st.hover && !st.dragging && !st.ctxOpen && !st.seeking && !st.typing && !st.snap && !st.moving && !voiceActive()) {
     later('close', st.settings.closeDelay, closeNotch);
   }
 }
@@ -875,6 +877,14 @@ function tuck() {
 function untuck() { st.tucked = false; renderClosed(); layout(); }
 
 function handleToggle() {
+  if (st.tucked) {
+    st.tucked = false;
+    st.keyOpen = true;
+    openNotch();
+    st.openedByShortcut = true;
+    later('close', 5000, () => { if (st.openedByShortcut && !st.hover && !st.typing) closeNotch(); });
+    return;
+  }
   if (shellFormOf() === 'hidden') {
     if (st.open) {
       st.summoned = false;
@@ -1172,6 +1182,11 @@ api.on('notif', (n) => {
   // (Paseo's own notifications, an agent done or waiting, sound like the agents' cards do)
   if ((n.aumid === 'sh.paseo.desktop' || /^paseo$/i.test(n.app || '')) && st.settings.claudeSound !== false) chime();
   if (st.open) toast(n.icon ? `<img class="act-app" src="${esc(n.icon)}" alt="">` : fa('bell'), [n.app, n.title].filter(Boolean).join(': '), { ms: 4000 });
+  if (!st.open) {
+    outline.notifUntil = Date.now() + 3600;
+    outline.notifKey = String(n.id || Date.now());
+    later('notifGlow', 3650, outlineSync);
+  }
   renderClosed(); layout();
   bump();
 });
@@ -2272,12 +2287,58 @@ function voiceErrorLabel(err) {
 }
 
 function paintVoiceBars() {
-  const wrap = $('.v-bars', notchEl);
-  if (!wrap) return;
-  const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(st.voice.rms, 24) : new Array(24).fill(0.08);
-  const nodes = wrap.children;
-  for (let i = 0; i < nodes.length && i < bars.length; i++) {
-    nodes[i].style.transform = `scaleY(${bars[i].toFixed(3)})`;
+  $$('.v-bars', notchEl).forEach((wrap) => {
+    const count = wrap.children.length || 24;
+    const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(st.voice.rms, count) : new Array(count).fill(0.08);
+    const nodes = wrap.children;
+    for (let i = 0; i < nodes.length && i < bars.length; i++) {
+      nodes[i].style.transform = `scaleY(${bars[i].toFixed(3)})`;
+    }
+  });
+}
+
+function renderOpenVoice() {
+  const el = $('#openVoice');
+  if (!el) return;
+  const v = st.voice;
+  const active = !!(st.open && voiceActive());
+  el.classList.toggle('show', active);
+  el.classList.toggle('is-error', active && v.state === 'error');
+  el.classList.toggle('is-done', active && v.state === 'done');
+  if (!active) {
+    delete el.dataset.ponyMood;
+    return;
+  }
+  const showLive = !st.settings || st.settings.voiceLive !== false;
+  const badge = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+  if (v.state === 'listening') {
+    el.dataset.ponyMood = 'listening';
+    const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 12) : new Array(12).fill(0.08);
+    const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('listening', 2)}<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span><div class="v-bars ov-bars" aria-hidden="true">${barsHtml}</div>${badge}</div>`
+      + (showLive ? `<div class="v-live" dir="auto">${voiceTailHtml(v.partial, v.prevPartial)}</div>` : '');
+  } else if (v.state === 'transcribing') {
+    el.dataset.ponyMood = 'think';
+    const lbl = v.agent ? _t('Sending to Pony…') : _t('Writing…');
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('think', 2)}<span class="v-spin-dot"></span><span class="v-status-lbl">${esc(lbl)}</span><div class="v-shimmer" style="flex:1;min-width:60px" aria-hidden="true"><i></i></div>${badge}</div>`
+      + (showLive && v.partial ? `<div class="v-live dim" dir="auto">${voiceTailHtml(v.partial, '')}</div>` : '');
+  } else if (v.state === 'done') {
+    el.dataset.ponyMood = 'done';
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('done', 2)}<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>${badge}</div>`
+      + (v.text ? `<div class="v-done-text" dir="auto">${esc(v.text)}</div>` : '');
+  } else if (v.state === 'error') {
+    delete el.dataset.ponyMood;
+    const actLabel = v.action === 'download' ? _t('Download') : v.action === 'mic' ? _t('Open Settings') : '';
+    const actBtn = actLabel ? `<button class="btn primary" data-voice-action="${esc(v.action)}">${esc(actLabel)}</button>` : '';
+    el.innerHTML = `<div class="ov-top"><span class="v-err-ico">${fa('circle-exclamation')}</span><span class="v-err-text">${esc(voiceErrorLabel(v.error))}</span>${actBtn}</div>`;
+    $$('[data-voice-action]', el).forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const a = b.dataset.voiceAction;
+        if (a === 'download') { api.openSettings('voice'); }
+        else if (a === 'mic') { api.svc('perm', 'request', 'microphone').catch(() => {}); }
+      };
+    });
   }
 }
 
@@ -2289,8 +2350,8 @@ function startVoiceClock() {
   stopVoiceClock();
   voiceClockIv = setInterval(() => {
     if (!st.voice || st.voice.state !== 'listening') { stopVoiceClock(); return; }
-    const el = $('.v-time', notchEl);
-    if (el) el.textContent = voiceFmtTime(Date.now() - st.voice.since);
+    const txt = voiceFmtTime(Date.now() - st.voice.since);
+    $$('.v-time', notchEl).forEach((el) => { el.textContent = txt; });
   }, 250);
 }
 
@@ -2299,6 +2360,8 @@ api.on('voice:state', (d) => {
   const next = info.state || 'idle';
   cancel('voiceDone');
   if (next === 'listening') {
+    cancel('close');
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice = {
       state: 'listening',
       agent: !!info.agent,
@@ -2313,41 +2376,51 @@ api.on('voice:state', (d) => {
     };
     startVoiceClock();
     renderClosed(true);
+    renderOpenVoice();
     layout();
   } else if (next === 'transcribing') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'transcribing';
     renderClosed(true);
+    renderOpenVoice();
     layout();
   } else if (next === 'done') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'done';
     if (info.text != null) st.voice.text = String(info.text);
     renderClosed(true);
+    renderOpenVoice();
     layout();
     later('voiceDone', 1200, () => {
       if (st.voice.state === 'done') {
         st.voice.state = 'idle';
         renderClosed(true);
+        renderOpenVoice();
         layout();
       }
     });
   } else if (next === 'error') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'error';
     st.voice.error = String(info.error || 'Voice error');
     st.voice.action = info.action || null;
     renderClosed(true);
+    renderOpenVoice();
     layout();
     later('voiceDone', 3500, () => {
       if (st.voice.state === 'error') {
         st.voice.state = 'idle';
         renderClosed(true);
+        renderOpenVoice();
         layout();
       }
     });
   } else if (next === 'cancelled' || next === 'idle') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     if (st.voice.state !== 'done' || next === 'cancelled') {
       st.voice.state = 'idle';
       st.voice.partial = '';
@@ -2356,6 +2429,7 @@ api.on('voice:state', (d) => {
       st.voice.action = null;
       st.voice.rms = [];
       renderClosed(true);
+      renderOpenVoice();
       layout();
     }
   }
@@ -2366,6 +2440,8 @@ api.on('voice:level', (d) => {
   const r = d && typeof d.rms === 'number' ? d.rms : 0;
   st.voice.rms.push(r);
   if (st.voice.rms.length > 24) st.voice.rms.shift();
+  const energy = Math.min(1, Math.pow(Math.min(1, Math.max(0, r) * 5.0), 0.65));
+  notchEl.style.setProperty('--v-energy', energy.toFixed(3));
   paintVoiceBars();
 });
 
@@ -2375,8 +2451,8 @@ api.on('voice:partial', (d) => {
   if (!txt || txt === st.voice.partial) return;
   st.voice.prevPartial = st.voice.partial;
   st.voice.partial = txt;
-  const liveEl = $('.v-live', notchEl);
-  if (liveEl) liveEl.innerHTML = voiceTailHtml(st.voice.partial, st.voice.prevPartial);
+  const html = voiceTailHtml(st.voice.partial, st.voice.prevPartial);
+  $$('.v-live', notchEl).forEach((liveEl) => { liveEl.innerHTML = html; });
 });
 
 api.on('voice:result', (d) => {
@@ -2386,7 +2462,15 @@ api.on('voice:result', (d) => {
 
 api.on('voice:command', (d) => {
   const txt = d && d.text ? String(d.text).trim() : '';
-  if (!txt) return;
+  stopVoiceClock();
+  notchEl.style.setProperty('--v-energy', '0');
+  if (st.voice) {
+    st.voice.state = 'idle';
+    st.voice.partial = '';
+    st.voice.rms = [];
+  }
+  renderOpenVoice();
+  if (!txt) { renderClosed(true); layout(); return; }
   openNotch('chat');
   setTimeout(() => {
     if (window.N && N.chat && typeof N.chat.send === 'function') {
@@ -2520,12 +2604,15 @@ function ponyIdleOn() {
 
 function currentPonyMood() {
   if (!window.NotchKit || !NotchKit.ponyMood) return 'idle';
+  const now = Date.now();
+  const voiceDone = st.voice && st.voice.state === 'done' ? now + 1000 : 0;
   return NotchKit.ponyMood({
     asking: !!(st.ponyAsking || (st.claude && st.claude.some((c) => c.source === 'pony'))),
     cardWaiting: !!(st.claude && st.claude.length > 0),
+    listening: !!(st.voice && st.voice.state === 'listening'),
     thinking: !!((st.voice && st.voice.state === 'transcribing') || (window.N && N.chat && N.chat.pending && N.chat.pending())),
-    doneUntil: st.ponyDoneUntil || 0,
-    now: Date.now(),
+    doneUntil: Math.max(st.ponyDoneUntil || 0, voiceDone),
+    now,
     playing: !!(st.media && st.media.playing),
     idleMs: st.ponyIdleMs || 0,
     locked: !!st.locked,
@@ -2694,6 +2781,7 @@ function renderClosed(animate) {
   const belowEl = $('#below');
   const act = st.open ? null : currentActivity();
   const cam = !!camera();
+  notchEl.classList.toggle('cam', cam);
   let L = ''; let M = ''; let R = ''; let B = ''; let belowMeta = null; let panel = '';
   if (act) {
     switch (act.kind) {
@@ -2923,25 +3011,49 @@ function renderClosed(animate) {
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
-        const ponyOn = !!(st.settings && st.settings.ponyFace);
+        const langBadge = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
         if (v.state === 'listening') {
           const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 24) : new Array(24).fill(0.08);
           const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');
-          L = `<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span>`;
-          // (talking to Pony rather than dictating: the pill says so)
-          R = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+          const leftCore = `<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('listening', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${langBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('listening', 2);
+            R = langBadge;
+          }
           B = `<div class="v-below v-listening"><div class="v-bars" aria-hidden="true">${barsHtml}</div>${showLive ? `<div class="v-live" dir="auto">${voiceTailHtml(v.partial, v.prevPartial)}</div>` : ''}</div>`;
           belowMeta = { extra: showLive ? 58 : 36, wide: 420 };
         } else if (v.state === 'transcribing') {
-          const face = ponyOn ? ponyEyeHtml('think', 2) : `<span class="v-spin-dot"></span>`;
-          L = `${face}<span class="v-status-lbl">${esc(_t('Writing…'))}</span>`;
-          R = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          const leftCore = `<span class="v-spin-dot"></span><span class="v-status-lbl">${esc(_t('Writing…'))}</span>`;
+          const rBadge = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('think', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${rBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('think', 2);
+            R = rBadge;
+          }
           const dimLive = showLive && v.partial ? `<div class="v-live dim" dir="auto">${voiceTailHtml(v.partial, '')}</div>` : '';
           B = `<div class="v-below v-transcribing"><div class="v-shimmer" aria-hidden="true"><i></i></div>${dimLive}</div>`;
           belowMeta = { extra: dimLive ? 52 : 32, wide: 420 };
         } else if (v.state === 'done') {
-          L = `<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>`;
-          R = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          const leftCore = `<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>`;
+          const rBadge = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('done', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${rBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('done', 2);
+            R = rBadge;
+          }
           B = `<div class="v-below v-done"><div class="v-done-text" dir="auto">${esc(v.text || '')}</div></div>`;
           belowMeta = { extra: 40, wide: 420 };
         } else if (v.state === 'error') {
@@ -3089,6 +3201,7 @@ function renderClosed(animate) {
   renderLangMark();
   renderAiMark();
   renderClaude();
+  renderOpenVoice();
   if (act && act.kind === 'music' && st.settings.realVisualizer) viz.ensure();
 }
 
@@ -3105,7 +3218,8 @@ notchEl.appendChild(slotProbe);
 const slotSizes = new Map(); // html → its width
 let slotFit = { key: '', w: 0 };
 function slotSize(html) {
-  let w = slotSizes.get(html);
+  const key = (notchEl.classList.contains('cam') ? 'cam|' : '') + html;
+  let w = slotSizes.get(key);
   if (w != null) return w;
   slotProbe.innerHTML = html;
   const walk = document.createTreeWalker(slotProbe, NodeFilter.SHOW_TEXT);
@@ -3113,7 +3227,7 @@ function slotSize(html) {
   w = Math.ceil(slotProbe.getBoundingClientRect().width);
   slotProbe.innerHTML = '';
   if (slotSizes.size > 60) slotSizes.clear();
-  slotSizes.set(html, w);
+  slotSizes.set(key, w);
   return w;
 }
 function slotsWidth(L, R) {
@@ -3197,7 +3311,14 @@ function idleSlots() {
   const s = st.settings;
   if (!s || st.open) return { L: '', R: '', side: 0 };
   if (ponyIdleOn()) {
-    if (camera()) return { L: '', R: '', side: 74 };
+    if (camera()) {
+      const lCustom = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
+      const rCustom = s.idleRight && s.idleRight !== 'none' ? slotHtml(s.idleRight) : '';
+      const outer = lCustom || rCustom
+        ? Math.max(slotsWidth(lCustom, rCustom), clockWidth('time'))
+        : clockWidth('time');
+      return { L: '', R: '', side: Math.max(48, outer + 18) };
+    }
     const L = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
     const R = s.idleRight && s.idleRight !== 'none' && s.idleRight !== 'battery' ? slotHtml(s.idleRight) : '';
     return { L, R, side: L || R ? slotsWidth(L, R) : 0 };
@@ -3245,12 +3366,12 @@ function camPad(act, side) {
   // ponytail: nothing beside the camera but the edge marks (or nothing at all): hug the camera. The marks move to
   // 4 px from the edge (.cam-tight in notch.css) and keep 4 px to the camera: 4 + mark + 4 a side.
   if (!side && !camClockShown(act)) return marks && marks - 4;
-  return (act && act.kind === 'music' ? 13 : 10) + marks;
+  return (act && act.kind === 'music' ? 10 : 9) + marks;
 }
 function camWidth(act, side, cam) {
   const s = st.settings;
   const clock = camClockShown(act) ? clockWidth(s.idleClock || 'time') : 0;
-  const wing = side + (clock ? clock + (side ? 14 : 4) : 0);
+  const wing = side + (clock ? clock + (side ? 8 : 4) : 0);
   return Math.max(s.notchWidth, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + camPad(act, side)) * 2));
 }
 function placeCamClock(act, side, cam, w) {
@@ -4327,6 +4448,10 @@ function onVolume(v) {
   st.volume = v;
   if (v.initial || !prev || !st.settings.hudEnabled) return;
   showHud('volume');
+  const prevEff = prev.muted ? 0 : prev.level;
+  const curEff = v.muted ? 0 : v.level;
+  if (curEff <= 0 && prevEff > 0) triggerHudBounce('down');
+  else if (curEff >= 100 && prevEff < 100) triggerHudBounce('up');
 }
 function onBrightness(b) {
   const prev = st.brightness;
@@ -4351,14 +4476,15 @@ function showHud(kind) {
 // go further (audio.rs at_the_end, only for the keys Sympony takes over). The HUD shows, its bar stretches past that end
 // and springs back, and the speaker wiggles. A held key repeats: one bounce at a time (the HUD drawn again at every
 // repeat would start it over each time).
-api.on('hud:edge', (end) => {
+function triggerHudBounce(end) {
   const s = st.settings;
   if (!s || !s.fxHudBounce || !s.hudEnabled || !st.volume || notchEl.classList.contains('hud-bounce')) return;
   if (st.open && st.page === 'control') return; // (its own slider shows the volume)
   showHud('volume');
   notchEl.classList.add('hud-bounce', end === 'down' ? 'hb-down' : 'hb-up');
   later('hudBounce', 460, () => notchEl.classList.remove('hud-bounce', 'hb-down', 'hb-up'));
-});
+}
+api.on('hud:edge', triggerHudBounce);
 
 // ---- Caps Lock, Num Lock, Scroll Lock
 // main reads their toggle state (lockkeys.rs) and says when one changes: On / Off for a moment, like the volume
@@ -4612,6 +4738,7 @@ api.onCalendar(({ events, errors }) => {
 
 function renderCalendar() {
   const box = $('#calendarBox');
+  if (!box || !st.settings) return;
   box.style.display = st.settings.calendarEnabled ? '' : 'none';
   if (!st.settings.calendarEnabled || !st.open) return;
   const today = startOfDay(Date.now());
@@ -5232,7 +5359,7 @@ function shelfFly(items, before) {
 // the count on the Shelf's tab bumps once it went up (the Shelf may take a moment longer than the flight)
 function shelfFlyLanded(before, tries) {
   if (st.shelf.length <= before) { if (tries < 15) setTimeout(() => shelfFlyLanded(before, tries + 1), 100); return; }
-  const b = $('#shelfBadge');
+  const b = $('#shelfBadge') || $('#dock button[data-id="shelf"]');
   if (!b || b.classList.contains('shelf-bump')) return;
   b.classList.add('shelf-bump');
   b.addEventListener('animationend', () => b.classList.remove('shelf-bump'), { once: true });
@@ -5451,6 +5578,7 @@ api.on('pomodoro', (p) => {
   st.pomodoro = p;
   callModule('pomodoro', 'update', p);
   if (!st.open && wasRunning !== p.running) { renderClosed(true); layout(); }
+  else if (!st.open) outlineSync();
 });
 api.on('pomodoro:done', (d) => {
   if (d.sound) chime('done');
@@ -5467,6 +5595,7 @@ api.on('timer', (t) => {
   // running again ("+5 min" on another display, or a new one): its "Time's up" goes on every display
   if (t.active && st.activity && st.activity.data && st.activity.data.timer) st.activity = null;
   if (!st.open && was !== t.running) { renderClosed(true); layout(); }
+  else if (!st.open) outlineSync();
 });
 api.on('timer:done', (d) => {
   if (d.sound) chime('done');
@@ -5500,17 +5629,21 @@ const GLOW_KINDS = { 'todo-alert': 'amber', meeting: 'amber', prayer: 'amber', '
 const GLOW_MAX = 20000; // an alert that stays up longer (a brief waiting to be opened, the adhan) glows its first 20 s
 const GLOW_EASE = 'cubic-bezier(0.45, 0.05, 0.3, 1)';
 // grows from the bottom middle to the whole outline, then its tail runs out to the ends
+// (uses strokeDashoffset on a static `100 200` dasharray so WebKit/WKWebView interpolates smoothly)
 const GLOW_TRACE = [
-  { offset: 0, strokeDasharray: '0 200', strokeDashoffset: '0', opacity: 0, easing: GLOW_EASE },
+  { offset: 0, strokeDashoffset: '100', opacity: 0, easing: GLOW_EASE },
   { offset: 0.08, opacity: 1, easing: GLOW_EASE },
-  { offset: 0.45, strokeDasharray: '100 200', strokeDashoffset: '0', easing: GLOW_EASE },
-  { offset: 0.8, strokeDasharray: '100 200', strokeDashoffset: '-100', opacity: 1, easing: GLOW_EASE },
-  { offset: 1, strokeDasharray: '100 200', strokeDashoffset: '-100', opacity: 0 },
+  { offset: 0.45, strokeDashoffset: '0', opacity: 1, easing: GLOW_EASE },
+  { offset: 0.82, strokeDashoffset: '-100', opacity: 1, easing: GLOW_EASE },
+  { offset: 1, strokeDashoffset: '-100', opacity: 0 },
 ];
 const outline = { svg: null, glow: '', anims: [], glowOff: 0, src: null, since: 0, timer: '', blinkUntil: 0, blinkAnim: null, tick: 0,
-  live: false, target: '', geom: '', raf: 0, still: 0, vis: [], burst: null };
+  live: false, target: '', geom: '', raf: 0, still: 0, vis: [], burst: null, notifUntil: 0, notifKey: '', previewUntil: 0 };
 
-function outlineShown() { return !st.open && !st.hudOnly && !st.unseen && !leaveSt.out && !notchEl.classList.contains('autohidden'); }
+function outlineShown() {
+  return !st.open && !st.hudOnly && !st.unseen && !st.tucked && !leaveSt.out
+    && !notchEl.classList.contains('autohidden') && !notchEl.classList.contains('gone');
+}
 
 // An alert's glow color: its kind's, or for a toast the one it asked for (`glow`: a water or break reminder, the Timer's
 // "Time's up", a Bluetooth device connecting or running low); the Timer's comes once its end blink is over
@@ -5532,8 +5665,18 @@ function outlineGlow() {
     const short = a && (a.kind === 'charging' || (a.data && a.data.glowLoops === 2));
     return { c, key: c === 'blue' && a && a.kind !== 'toast' ? 'ai' : outline.since, loops: short ? 2 : Infinity };
   }
+  // Voice dictation actively listening or transcribing: gentle cyan-blue outline glow
+  if (st.voice && (st.voice.state === 'listening' || st.voice.state === 'transcribing')) {
+    return { c: 'blue', key: 'voice:' + st.voice.state, loops: Infinity };
+  }
+  // Agent approval / question card waiting in the closed notch
+  if (claudeShowing()) return { c: 'amber', key: 'claude', loops: Infinity };
   // AI Chat working on an answer: the Buddy's bubble, a brief, or one asked in the tab before Sympony closed
   if (window.N && N.chat && N.chat.pending()) return { c: 'blue', key: 'ai', loops: Infinity };
+  // Fresh notification arriving while closed: brief 2-loop blue outline
+  if (now < outline.notifUntil && notifShowing()) return { c: 'blue', key: 'notif:' + outline.notifKey, loops: 2 };
+  // Instant 1-loop preview when toggling Glowing outline ON in Settings
+  if (now < outline.previewUntil) return { c: 'blue', key: 'preview:' + outline.previewUntil, loops: 1 };
   return null;
 }
 
@@ -5607,11 +5750,12 @@ function outlineSync() {
   else if (!run && outline.tick) { clearInterval(outline.tick); outline.tick = 0; }
   // the shape to follow: drawn again when the notch is heading for another size, or the line just came
   const target = ['--w', '--h', '--r', '--ear'].map((k) => notchEl.style.getPropertyValue(k)).join('|') + notchEl.classList.contains('floating');
+  if (live && !outline.geom) outline.geom = outlineDraw();
   if (live && (!outline.live || target !== outline.target)) { outline.live = true; outlineFollow(); }
   outline.live = live; outline.target = target;
   // touchscreen mode: the glow round the edge is part of what's drawn (layout)
   const b = st.box; const ear = parseFloat(notchEl.style.getPropertyValue('--ear')) || 0;
-  animVis(live && b ? [{ x: b.left - ear - 12, y: Math.max(0, b.bottom - b.h - 12), w: b.w + ear * 2 + 24, h: b.h + 24 }] : []);
+  animVis(live && b ? [{ x: b.left - ear - 16, y: Math.max(0, b.bottom - b.h - 16), w: b.w + ear * 2 + 32, h: b.h + 32 }] : []);
 }
 // what the animations draw outside the notch, for touchscreen mode (layout sends it with the rest)
 function animVis(list) {
@@ -5654,7 +5798,7 @@ function outlineDraw() {
     d += ` L${x(0)},${n(e)}`;
     return e ? `${d} A${n(e)} ${n(e)} 0 0 ${1 - sw} ${x(-e)},0` : d;
   };
-  const pad = 12; const bw = n(w + (ear + pad) * 2); const bh = n(h + pad * 2);
+  const pad = 16; const bw = n(w + (ear + pad) * 2); const bh = n(h + pad * 2);
   const svg = outline.svg;
   svg.setAttribute('viewBox', `${n(-ear - pad)} ${-pad} ${bw} ${bh}`);
   Object.assign(svg.style, { left: `${n(-ear - pad)}px`, top: `${-pad}px`, width: `${bw}px`, height: `${bh}px` });
@@ -5780,6 +5924,7 @@ function applySettings(s) {
   st.settings = s;
   if (prev && prev.mediaColors !== s.mediaColors) applyMediaColors();
   notchEl.classList.toggle('glow-on', !!s.colorGlow);
+  notchEl.classList.toggle('no-tab-slide', s.fxTabSlide === false);
   applyWaveStyle(s);
   $('#mirror').classList.toggle('hidden', !s.mirrorEnabled);
   $('#mirror').classList.toggle('circle', s.mirrorShape === 'circle');
@@ -5801,6 +5946,11 @@ function applySettings(s) {
   renderLyrics();
   renderClosed();
   layout();
+  if (prev && !prev.fxGlow && s.fxGlow) {
+    outline.previewUntil = Date.now() + 1900;
+    later('glowPreview', 1950, outlineSync);
+    outlineSync();
+  }
   if (prev) previewSize(prev, s);
 }
 api.onSettings(applySettings);
@@ -6892,7 +7042,7 @@ function dayInfo(now = Date.now()) {
 
 // Shared helpers for module files.
 window.N = {
-  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, setTab, toast, bump, layout, chime: (kind) => chime(kind, true),
+  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, chime: (kind) => chime(kind, true),
   openEvent, startOfDay, DAY, cmd, mediaPosition, appLabel, progressRing, fa, prayerTimes, nextPrayer,
   meter, meterLevel, ring, appIconImg, agentIconUrl, mountHitlCard, refreshHitlCards, renderHitlSection,
   ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk,

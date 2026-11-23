@@ -113,6 +113,7 @@
   will-change: transform;
 }
 #track.drag { transition: none; }
+#notch.no-tab-slide :is(#track, #stage #view, #stage #sec, #sec .sl) { transition: none !important; }
 
 .page {
   /* computed here, not on :root, so it follows the notch's own --sw (expandedWidth − 28) */

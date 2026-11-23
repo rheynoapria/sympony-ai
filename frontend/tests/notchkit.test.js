@@ -135,11 +135,13 @@ describe('WAVES, waveTune, and agentBundle', () => {
 });
 
 describe('ponyMood', () => {
-  test('enforces precedence attention > think > done > music > sleep > idle and handles reduced input', () => {
+  test('enforces precedence attention > listening > think > done > music > sleep > idle and handles reduced input', () => {
     const now = 10_000;
-    // attention > think (both asking and cardWaiting)
-    expect(K.ponyMood({ asking: true, thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000, locked: true })).toBe('attention');
-    expect(K.ponyMood({ cardWaiting: true, thinking: true, now })).toBe('attention');
+    // attention > listening > think (both asking and cardWaiting)
+    expect(K.ponyMood({ asking: true, listening: true, thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000, locked: true })).toBe('attention');
+    expect(K.ponyMood({ cardWaiting: true, listening: true, thinking: true, now })).toBe('attention');
+    // listening > think
+    expect(K.ponyMood({ listening: true, thinking: true, doneUntil: now + 5000, now, playing: true })).toBe('listening');
     // think > done
     expect(K.ponyMood({ thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000 })).toBe('think');
     // done > music

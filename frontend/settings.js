@@ -418,7 +418,7 @@ const SECTIONS = [
       { t: 'toggle', k: 'autoHide', label: _t('Auto-hide'), sub: _t('Sympony waits above the top edge of the screen and comes down when you move the mouse there, so maximized windows get the whole screen. Alerts, reminders and the volume HUD still show.') },
       { t: 'toggle', k: 'standbyShow', label: _t('Come down when you’re idle'), sub: _t('With Auto-hide on: after a few seconds without the mouse or keyboard, Sympony comes down to show the time, music, lyrics, prayer times… and tucks away again as soon as you move the mouse or type. Not over fullscreen apps.') },
       { t: 'number', k: 'standbySecs', label: _t('Idle for'), sub: _t('Seconds without the mouse or keyboard before Sympony comes down (1 to 3600)'), min: 1, max: 3600, unit: _t('seconds') },
-      { t: 'toggle', k: 'hideButton', label: _t('Hide button'), sub: _t('An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click or tap the handle to bring it back. Right-clicking Sympony twice does the same.') },
+      { t: 'toggle', k: 'hideButton', label: _t('Hide button'), sub: _t('An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click the handle, right-click twice, or press the Open / close Sympony shortcut (default Option+N / Alt+N) to bring it back.') },
       { t: 'custom', render: renderAutoHideApps },
       { t: 'toggle', k: 'stepAside', label: _t('Step aside for the mouse'), sub: _t('Sympony stays down with the time, but slides up out of the way when the mouse comes to it from below, so a tab or button under it can be clicked. It comes back when the mouse moves away. Push the mouse to the very top edge, or press the shortcut, to open it. Not used while Auto-hide is on.') },
       { t: 'range', k: 'notchTopGap', label: _t('Gap from the top edge'), sub: _t('Let Sympony float below the top edge of the screen as a rounded pill. 0 keeps it attached to the edge. Hidden or auto-hidden, it still waits above the edge.'), min: 0, max: 120, step: 2, unit: 'px' },
@@ -753,7 +753,7 @@ const MAC_OFF = {
   // (Screen Time and Bluetooth: Sympony's own on a Mac since phase 4c, screentime.rs / bluetooth in watchers.rs)
   pages: ['cursor', 'dock', 'snap', 'wallpaper'],
   keys: ['hideInFullscreen', 'touchMode', 'reserveTop', 'reserveBlur', 'reserveMatch',
-    'toggleShortcut', 'moduleShortcuts', 'snoozeShortcut', 'snoozeMinutes',
+    'snoozeShortcut', 'snoozeMinutes',
     // System Monitor on a Mac (watchers.rs): CPU, memory, disk and network; no temperature sensor or FPS counter
     'fpsCounter',
     'realVisualizer', 'vlcWeb', 'vlcPort',

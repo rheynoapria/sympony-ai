@@ -57,7 +57,7 @@ pub fn start(app: &AppHandle) {
             if let Some(((code, name, count), prev)) = system::input_source().and_then(|v| lang.update(v)) {
                 send(&app, "inputlang", json!({ "code": code, "name": name, "count": count, "changed": prev.is_some() }));
             }
-            if power_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(30)) {
+            if power_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(2)) {
                 power_at = Some(Instant::now());
                 if let Some((p, _)) = pow.update(system::power()) {
                     send(&app, "power", p);

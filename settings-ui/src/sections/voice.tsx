@@ -103,13 +103,30 @@ function VoiceBody({ settings, set }: CustomPartProps) {
       const info = p as { rms?: number } | null;
       if (typeof info?.rms === "number") setRms(info.rms);
     });
+    const u5 = notch.on("voice:perm", () => {
+      refresh();
+    });
+    const onFocus = () => {
+      refresh();
+    };
+    window.addEventListener("focus", onFocus);
     return () => {
       u1();
       u2();
       u3();
       u4();
+      u5();
+      window.removeEventListener("focus", onFocus);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    const micOk = status?.permissions?.microphone === "granted";
+    const axOk = status?.permissions?.accessibility === "granted";
+    if (micOk && axOk) return;
+    const iv = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(iv);
+  }, [status?.permissions?.microphone, status?.permissions?.accessibility, refresh]);
 
   const enabled = Boolean(settings.voiceEnabled);
   const tierRaw = String(settings.voiceTier || "auto");
@@ -577,7 +594,16 @@ function VoiceBody({ settings, set }: CustomPartProps) {
               )}
             </div>
           </SettingsRow>
-          <SettingsRow label={t("Accessibility")}>
+          <SettingsRow
+            label={t("Accessibility")}
+            description={
+              !axGranted
+                ? t(
+                    "If Sympony is already toggled ON in System Settings, select it, click − to remove the old entry, then click + to add /Applications/Sympony.app again."
+                  )
+                : undefined
+            }
+          >
             <div className="flex items-center gap-2">
               <Badge variant={axGranted ? "soft" : "outline"} tone={axGranted ? "success" : "warning"}>
                 {axGranted ? t("Granted") : t("Required")}
