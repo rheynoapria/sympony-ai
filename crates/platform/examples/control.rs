@@ -1,6 +1,7 @@
 //! What Control's tiles read and set: `cargo run -p platform --example control` (dark mode, brightness, Wi-Fi,
 //! Bluetooth, airplane mode, Do not disturb), `-- scan [fresh]` (the Wi-Fi networks around), `-- focus on|off`,
-//! `-- pick` (the screen colour picker; its colour is copied), `-- copy <text>` (to the clipboard),
+//! `-- pick` (the screen colour picker; its colour is copied), `-- copy <text>` (to the clipboard), `-- bt` (the
+//! paired Bluetooth devices), `-- bt connect|disconnect <address>`,
 //! `-- brightness <0-100>`, `-- watch <seconds>` (prints each brightness change), `-- awake <seconds>` (keeps awake
 //! that long). Switching dark mode, the radios or airplane mode, locking and the screenshot tool change the screen or
 //! the connection: try those from the Control tab.
@@ -29,6 +30,15 @@ fn main() {
             }
         }
         ["copy", text] => println!("copied: {}", platform::os::files::write_text(text)),
+        ["bt"] => {
+            let t = Instant::now();
+            let devices = radios::bluetooth_devices();
+            println!("paired, read in {:?}:", t.elapsed());
+            for (address, name, connected, major, minor) in devices {
+                println!("  {address} {name:?} connected={connected} class=({major}, {minor:#x})");
+            }
+        }
+        ["bt", "connect" | "disconnect", address] => println!("{:?}", radios::bluetooth_connect(address, a[1] == "connect")),
         ["focus", on] => {
             println!("set: {}", system::set_focus(*on == "on"));
             std::thread::sleep(Duration::from_millis(500));

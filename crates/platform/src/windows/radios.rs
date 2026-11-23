@@ -1,10 +1,11 @@
-//! Wi-Fi, Bluetooth, airplane mode, dark mode and the lock screen. Wi-Fi's networks are `wifi.rs`' (Native Wifi).
-//! Wi-Fi and Bluetooth are switched through Windows' radio switches (Windows.Devices.Radios, what the quick settings
-//! use); airplane mode is Windows' own; dark mode is the registry's Personalize values, as Settings sets them.
-//! Bluetooth's devices are stand-ins for now.
+//! Wi-Fi, Bluetooth, airplane mode, dark mode and the lock screen. Wi-Fi's networks are `wifi.rs`' (Native Wifi),
+//! Bluetooth's devices `bluetooth.rs`'. Wi-Fi and Bluetooth are switched through Windows' radio switches
+//! (Windows.Devices.Radios, what the quick settings use); airplane mode is Windows' own; dark mode is the registry's
+//! Personalize values, as Settings sets them.
 use super::shell::wide;
 use ::windows::Devices::Radios::{Radio, RadioAccessStatus, RadioKind, RadioState};
 
+pub use super::bluetooth::{bluetooth_connect, bluetooth_devices};
 pub use super::wifi::{wifi_join, wifi_leave, wifi_on, wifi_rssi, wifi_saved, wifi_scan, wifi_ssid};
 
 /// (name, RSSI dBm, secured, enterprise, band), as on macOS.
@@ -108,10 +109,3 @@ pub fn lock_screen() {
 /// (address, name, connected, major class, minor class), as on macOS.
 pub type BtDevice = (String, String, bool, u32, u32);
 
-pub fn bluetooth_devices() -> Vec<BtDevice> {
-    vec![]
-}
-
-pub fn bluetooth_connect(_address: &str, _on: bool) -> Result<(), i32> {
-    Err(-1)
-}

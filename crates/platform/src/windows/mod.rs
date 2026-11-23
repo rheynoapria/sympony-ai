@@ -15,6 +15,7 @@ pub mod window;
 pub mod system;
 pub mod notifications;
 pub mod banners;
+mod bluetooth;
 pub mod ax;
 pub mod radios;
 pub mod calendar;
