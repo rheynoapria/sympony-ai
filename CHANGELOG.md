@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows:** `HOME` is set from `USERPROFILE` at start when missing, so `~/.sympony`, `~/.claude`, Downloads… no longer resolve relative to the folder Sympony was started in.
 - **Windows:** stdio MCP servers keep the Windows system variables they need to start at all (`SYSTEMROOT`, `TEMP`, `APPDATA`, `LOCALAPPDATA`, `PATHEXT`, …; still never keys or tokens). `tools/extract_contract.py` and `tools/classify_contract.py` read and write UTF-8 instead of Windows' default code page.
 
+### Credits
+- Huge thanks to **Ery Rivaldi ([@mrerren](https://github.com/mrerren))** for building the Windows port (`crates/platform` Win32/WinRT backend, Notch, Music/GSMTC, YouTube Video & Floating PiP, Control Center Audio/Wi-Fi/Bluetooth/Brightness/Focus/Color Picker, Explorer/Shell integration, and WebView2 fixes).
+
 ## [0.2.0-beta.3] - 2026-11-23
 
 ### Fixed

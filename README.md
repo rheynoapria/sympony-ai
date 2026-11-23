@@ -238,6 +238,14 @@ bun test ./frontend/tests
 
 ---
 
+## 🙌 Contributors & Credits
+
+Special thanks to everyone helping bring Sympony to every desktop:
+
+- **Ery Rivaldi ([@mrerren](https://github.com/mrerren))** — **Windows Port & Floating Video Mode** (`crates/platform` Win32/WinRT backend, per-monitor DPI notch, GSMTC Music & YouTube video tracking, Floating PiP video window, Control Center Sound/Wi-Fi/Bluetooth/Brightness/Focus/Color Picker, Explorer/Shell integration, and WebView2 event-loop fixes).
+
+---
+
 ## 🤝 Contributing & Licensing
 
 - **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, branch targeting (`beta` vs `main`), and the PR verification checklist.
