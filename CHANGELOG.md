@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2026-11-23
+
+### Added
+- **Module Styling Library & Minimalist Notch Sizing:** 18 distinct visual layouts across 6 core modules (*Prayer*, *Music*, *Weather*, *Calendar*, *Pomodoro*, *Control*), 3 one-click style packs (*Bento Studio*, *Compact OLED*, *Minimal Focus*), custom per-module width/height sliders (down to `420×116 px`), global card surface/radius/density controls, and custom Dashboard 4×2 card sizing.
+- **Maximized Claude Code Engine in Pony AI:** Full parity with Sympony AI — real-time word-by-word text streaming (`stream-json`), live *WebSearch* & *WebFetch* step chips with automatic source cards, **Commands & files** (`run_command`, `read_file`, `write_file`, `edit_file`, `list_dir` with Ask/YOLO approval cards and web-taint protection), active ability rules (*Eyes*, *Hands*, *Other Agents*, *Ask AI*, *External MCP*), and multimodal image attachments.
+- **Notch Style & Color Customization:** Restored *Black*, *Glass*, and custom *Color* notch themes with a live color picker and safe settings migration.
+- **Interactive Pony Eyes & Hands Upgrade:** Smoother cursor feedback, focused click targeting, and clearer overlay visuals across apps.
+
+### Changed
+- **Ultra-Slim Minimalist Notch Profiles:** Lowered compact/minimal heights across styled modules (`124–172 px`), reduced minimum custom height to `116 px` (`420 px` width), and redesigned *Control* with a sleek *Minimal OLED* default (icon toggles, output pill, horizontal capsule sliders).
+- **13-inch MacBook Closed Notch Layout:** Optimized closed camera-notch wing math (`camClosedLayout` & `closedWidthNoCam`) so clock and activity indicators hug the camera compactly.
+
+### Fixed
+- **macOS `.dmg` Slow Opening / Gatekeeper Hang:** Updated `release/build.sh` to notarize and staple `Sympony.app` **before** creating the HFS+ `.dmg` (then signing, notarizing, and stapling the `.dmg`), eliminating slow online Gatekeeper verification hangs after installation.
+- **YouTube Video Fast-Forward & Scrubber Seeking:** Routed `←` / `→` (±5s), `J` / `L` (±10s), and `Space` / `K` to YouTube playback while video mode is active (`Shift + ←/→` still slides tabs), added `−10s` / `+10s` overlay buttons with HUD feedback, and fixed progress-bar seek dispatch (`media` / `media.seek`).
+- **Claude Code & Codex Live Web Summarization:** Fixed Claude Code `--allowedTools` merging (`mcp__sympony,WebSearch,WebFetch`) and variadic `--tools` ordering so live web queries are never auto-denied, enabled live web search for Codex, and instructed CLI agents to summarize concrete live numbers/facts directly instead of returning bare links.
+- **Responsive Notch Layouts & `.sl-pane` Flex Stacking:** Fixed vertical stacking on *Pomodoro Minimal Strip* & *Weather Big Temp Minimal*, fixed `[hidden]` overrides, and removed leftover hardcoded `218 px` stage heights.
+
 ## [0.2.0-beta.1] - 2026-11-23
 
 ### Added
@@ -35,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Voice V1:** On-device Indonesian-first hybrid STT (`Zipformer2-id` live partials + `Qwen3-ASR` Metal final pass) with deterministic KBBI/phonetic post-processing and custom user dictionary.
 - **Security Hardening:** Per-turn taint tracking (including YOLO mode), home-anchored secret & shell-profile protection, `0600`/`0700` data permissions, Hardened Runtime, backup disarming, SSRF-safe redirects, and scrubbed stdio MCP environments.
 
-[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.2...HEAD
+[0.2.0-beta.2]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/rheynoapria/sympony-ai/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/rheynoapria/sympony-ai/releases/tag/v0.1.0
