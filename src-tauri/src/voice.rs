@@ -460,7 +460,8 @@ impl VoiceRuntime {
             }
             Err(e) => {
                 self.log(&format!("voice: can't watch {key_str}: {e:?}"));
-                if !platform::macos::banners::trusted(false) {
+                // (macOS: the key needs Accessibility, watched for until granted; Windows has no such permission)
+                if cfg!(target_os = "macos") && !platform::os::banners::trusted(false) {
                     self.watch_for_accessibility();
                 }
             }
@@ -511,7 +512,7 @@ impl VoiceRuntime {
                     rt.ax_waiting.store(false, Ordering::SeqCst);
                     break;
                 }
-                if platform::macos::banners::trusted(false) {
+                if platform::os::banners::trusted(false) {
                     rt.ax_waiting.store(false, Ordering::SeqCst);
                     rt.log("voice: Accessibility granted — starting dictation trigger");
                     rt.sync_triggers();

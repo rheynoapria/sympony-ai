@@ -155,12 +155,12 @@ fn overlay(app: &AppHandle, gen: u64, target_frame: (f64, f64, f64, f64)) -> boo
             let _ = w.set_position(LogicalPosition::new(mx, my));
             let _ = w.set_size(LogicalSize::new(mw, mh));
             let _ = w.show();
-            if let Ok(ns) = w.ns_window() {
+            if let Some(ns) = crate::native::window(&w) {
                 // SAFETY: live NSWindow on the main thread; orderFrontRegardless ensures overlay appears above focused browser/apps
                 unsafe {
-                    platform::macos::window::style_onboarding_window(ns, 24);
-                    platform::macos::window::set_click_through(ns, true);
-                    platform::macos::window::set_window_level(ns, 24, Some(false));
+                    platform::os::window::style_onboarding_window(ns, 24);
+                    platform::os::window::set_click_through(ns, true);
+                    platform::os::window::set_window_level(ns, 24, Some(false));
                 }
             }
             let _ = tx.send(false);
