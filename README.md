@@ -9,10 +9,12 @@
 **Your desktop notch AI companion — local-first Pony assistant (MCP, Skills, Eyes & Hands), offline Indonesian-first voice dictation, and 24 OLED modules in Rust.**
 
 <p>
+  <a href="https://sympony.enlabs.my.id"><img src="https://img.shields.io/badge/Portal-sympony.enlabs.my.id-7c5dfa?style=for-the-badge" alt="Sympony Portal" /></a>
   <a href="https://github.com/rheynoapria/sympony-ai/releases"><img src="https://img.shields.io/github/v/release/rheynoapria/sympony-ai?include_prereleases&label=Release&style=for-the-badge&color=4361ff" alt="Latest Release" /></a>
-  <a href="https://github.com/rheynoapria/sympony-ai/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rheynoapria/sympony-ai/ci.yml?branch=main&label=CI&style=for-the-badge" alt="CI Status" /></a>
+  <a href="https://github.com/rheynoapria/sympony-ai/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rheynoapria/sympony-ai/ci.yml?branch=beta&label=CI&style=for-the-badge" alt="CI Status" /></a>
   <img src="https://img.shields.io/badge/macOS-Signed%20%26%20Notarized-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Signed & Notarized" />
-  <img src="https://img.shields.io/badge/Windows%20%26%20Linux-Roadmap-1f1f27?style=for-the-badge" alt="Windows & Linux Roadmap" />
+  <img src="https://img.shields.io/badge/Windows%2010%2F11-Beta%20x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 Beta x64" />
+  <img src="https://img.shields.io/badge/Linux-Roadmap-1f1f27?style=for-the-badge&logo=linux&logoColor=white" alt="Linux Roadmap" />
   <img src="https://img.shields.io/badge/Rust-Tauri%202-f74c00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust + Tauri 2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-4ade80?style=for-the-badge" alt="License GPL-3.0-only" /></a>
 </p>
@@ -41,7 +43,7 @@ Most desktop notch utilities stop at media controls or file shelves. **Sympony**
 
 ## ✨ Meet Pony — Your Notch AI Companion
 
-**Pony** lives right inside your desktop notch with expressive moods, streaming answers, collapsible thinking timelines, and mid-run steering — without vendor lock-in.
+**Pony** lives right inside your desktop notch — or detached in a resizable **Floating Pony Chat** companion window — with expressive moods, streaming answers, collapsible thinking timelines, and mid-run steering, without vendor lock-in.
 
 <table>
 <tr>
@@ -50,7 +52,7 @@ Most desktop notch utilities stop at media controls or file shelves. **Sympony**
 ### 🧠 Bring Your Own Brain
 - **Any OpenAI-Compatible Server** — Point Pony (and Translate) at Ollama, LM Studio, or your own OpenAI-compatible API server with full SSE streaming, automatic retries, and prompt-cache-friendly turn layout.
 - **Local Coding CLIs** — Drive Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Antigravity, Hermes, or Paseo directly from the notch.
-- **Live Steering & Stop** — Steer Pony mid-run without cancelling work, or stop cleanly mid-stream while preserving output.
+- **Floating Pony Chat & Live Steering** — Detach chat into an always-on-top floating window (`macOS` & `Windows`) with shared live history, steer Pony mid-run without cancelling work, or stop cleanly mid-stream.
 
 </td>
 <td width="50%" valign="top">
@@ -98,14 +100,14 @@ Fast, private dictation engineered for **Indonesian & Indonesian–English code-
 
 ## 🎛️ 24 OLED Notch Modules
 
-Swipe, scroll, or pick from the floating menu notch to switch across modular widgets — all styled in flat 2D OLED black (`#000`):
+Swipe, scroll, or pick from the floating menu notch to switch across modular widgets — styled in pure OLED Black (`#000`), Liquid Smoked Crystal **Glass**, or custom **Color** themes with 18 module layout presets:
 
 | Category | Modules |
 |---|---|
-| **AI & Voice** | **Pony Assistant** (chat, skills, memory, briefs) • **Translate** (multi-provider LLM translation) • **AI Usage** (Claude & Codex plan limits) • **Voice Dictation Pill** |
-| **Media & Focus** | **Home** (Now Playing, album-art ambient waves, **YouTube Video Mode**, mirror) • **Pomodoro** (focus timer, stopwatch, ambient sounds) • **Teleprompter** (camera-aligned scrolling script) • **Radio** (Radio Browser streams) |
+| **AI & Voice** | **Pony Assistant** (notch & floating chat, skills, memory, briefs) • **Translate** (multi-provider LLM translation) • **AI Usage** (Claude & Codex plan limits) • **Voice Dictation Pill** |
+| **Media & Focus** | **Home** (Now Playing, album-art ambient waves, **YouTube Video Mode & Floating PiP**, mirror) • **Pomodoro** (focus timer, stopwatch, ambient sounds) • **Teleprompter** (camera-aligned scrolling script) • **Radio** (Radio Browser streams) |
 | **Tasks & Time** | **Calendar** (monthly events & tasks) • **Todo** (tasks with trash/restore & optional Google Tasks sync) • **Notes** (quick scratchpad) • **World Clock** (meeting planner) • **Day Progress** • **Prayer Times** (countdown & adhan) |
-| **System & Dev** | **Shelf** (drag-and-drop file tray) • **Control** (volume, audio I/O, brightness) • **System** (CPU, RAM, disk, network) • **GitHub** (PR review queue) • **Bluetooth / Speed Test** (Cloudflare) • **Notifications** • **Launcher** • **Bookmarks** • **Weather** (Open-Meteo) • **Health & Screen Time** |
+| **System & Dev** | **Shelf** (drag-and-drop file tray) • **Control** (volume, audio I/O, brightness, Wi-Fi, Bluetooth, Focus, Color Picker) • **System** (CPU, RAM, disk, network) • **GitHub** (PR review queue) • **Bluetooth / Speed Test** (Cloudflare) • **Notifications** • **Launcher** • **Bookmarks** • **Weather** (Open-Meteo) • **Health & Screen Time** |
 
 ---
 
@@ -115,11 +117,11 @@ Sympony is designed from day one as a **multi-platform desktop notch** using cle
 
 | Platform | Status | Backend & Packaging |
 |---|---|---|
-| **macOS** *(11.0+, Apple Silicon)* | ✅ **Ready** | Native `objc2` FFI, Accessibility, CoreAudio, Apple Vision OCR, Metal STT, Notarized `.dmg` & In-App Auto-Updater |
-| **Windows** *(x64 / ARM64)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Win32/UIA backend + NSIS installer |
-| **Linux** *(Wayland / X11)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Linux backend + `.deb` / `.rpm` |
+| **macOS** *(11.0+, Apple Silicon)* | ✅ **Stable & Beta** | Native `objc2` FFI, Accessibility, CoreAudio, Apple Vision OCR, Metal STT, Developer ID Signed & Notarized `.dmg` + In-App Auto-Updater (`darwin-aarch64`) |
+| **Windows** *(Windows 10/11, x64)* | 🧪 **Beta Ready** | Native Win32/WinRT notch, per-monitor DPI, GSMTC media + YouTube video/PiP, Core Audio, WMI brightness, Wi-Fi (`wlanapi`), Bluetooth audio, Color Picker, Floating Pony Chat, NSIS `.exe` installer + In-App Auto-Updater (`windows-x86_64`) |
+| **Linux** *(Wayland / X11)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Linux backend + `.deb` / `.rpm` / `.AppImage` |
 
-Contributions toward the **Windows** and **Linux** `crates/platform` backends are very welcome!
+Contributions toward the **Windows** (UI Automation Eyes/Hands) and **Linux** `crates/platform` backends are very welcome!
 
 ---
 
@@ -148,7 +150,7 @@ flowchart LR
     Tauri["src-tauri<br/>(Windowing, IPC, MCP, Watchers)"]
     Services["crates/services<br/>(Pure Unit-Tested Logic & Brain)"]
     Voice["crates/voice<br/>(Zipformer2 + Qwen3-ASR + ID NLP)"]
-    Platform["crates/platform<br/>(Cross-Platform OS Traits · macOS ready)"]
+    Platform["crates/platform<br/>(Cross-Platform OS Traits · macOS & Windows)"]
     Contract["crates/contract<br/>(Typed IPC Surface & Parity)"]
   end
 
@@ -174,18 +176,22 @@ flowchart LR
 
 ## 🚀 Getting Started
 
-### Download & In-App Auto-Updates
+### Download & Per-OS In-App Auto-Updates
 
-Grab the latest signed & notarized installer from **[GitHub Releases](https://github.com/rheynoapria/sympony-ai/releases)**:
+Download the installer for your OS automatically at **[sympony.enlabs.my.id](https://sympony.enlabs.my.id)** (auto-detects macOS & Windows) or directly from **[GitHub Releases](https://github.com/rheynoapria/sympony-ai/releases)**:
 
-- **Stable channel (`vX.Y.Z`):** Everyday releases built from `main`.
-- **Beta channel (`vX.Y.Z-beta.N`):** Early preview builds cut from `beta`. Opt in anytime via **Settings → About & Updates → Watch Beta updates** — Sympony downloads cryptographically verified updates in-place without requiring a manual `.dmg` reinstall, and graduates Beta users smoothly to Stable when Stable ships.
+- **macOS (`darwin-aarch64`):** Apple Developer ID signed & notarized `.dmg` installer (Stable & Beta).
+- **Windows (`windows-x86_64`):** Signed NSIS `_x64-setup.exe` installer for Windows 10/11 x64 (currently on Beta channel).
+- **Dual-Channel Per-OS Auto-Updater:**
+  - **Stable channel (`vX.Y.Z`):** Everyday releases built from `main`.
+  - **Beta channel (`vX.Y.Z-beta.N`):** Early preview builds cut from `beta`. Opt in anytime via **Settings → About & Updates → Watch Beta updates** — each OS receives independent notifications only when a signed binary for its platform (`darwin-aarch64` or `windows-x86_64`) ships, installs in-place automatically, and graduates Beta users smoothly to Stable when Stable ships.
 
 ### Prerequisites
 
 - **Rust** stable toolchain (`rustup`)
 - **Bun** (`curl -fsSL https://bun.sh/install | bash`)
-- **macOS (currently supported target):** macOS 11.0+ & Xcode Command Line Tools (`xcode-select --install`)
+- **macOS:** macOS 11.0+ & Xcode Command Line Tools (`xcode-select --install`)
+- **Windows:** Windows 10/11 (x64), Visual Studio Build Tools (C++ workload), WebView2 Runtime, Python 3, and Git Bash (for `release/build.sh`)
 
 ### Run in Development
 
@@ -202,17 +208,17 @@ bun run --cwd settings-ui build
 cargo tauri dev
 ```
 
-### Build & Install Locally (macOS)
+### Build & Install Locally
 
 ```bash
-# Optional (recommended once): create a stable local code-signing identity
+# macOS — Optional (recommended once): create a stable local code-signing identity
 # so macOS preserves Accessibility / Mic / Screen Recording permissions across rebuilds
 ./tools/make-cert.sh
 
-# Build release .app and install to /Applications/Sympony.app
+# macOS — Build release .app and install to /Applications/Sympony.app
 ./install.sh
 
-# Or build a standalone .dmg installer into release/out/<version>/
+# macOS (.dmg) or Windows (NSIS .exe, run in Git Bash) — Build installer into release/out/<version>/
 ./release/build.sh
 ```
 
