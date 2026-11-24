@@ -198,10 +198,20 @@ pub fn run() {
         .expect("error while running Sympony")
         .run(|app, event| {
             // (the space Keep windows below Sympony took goes back to the other windows, and the notification
-            // pop-ups Sympony turned off come back)
-            if let tauri::RunEvent::Exit = event {
-                wm::release();
-                notif::release(app);
+            // pop-ups Sympony turned off come back; the log says how far quitting got)
+            let log = |s: &str| {
+                if let Some(a) = app.try_state::<App>() {
+                    a.log.line(s);
+                }
+            };
+            match event {
+                tauri::RunEvent::ExitRequested { code, .. } => log(&format!("quitting (code {code:?})")),
+                tauri::RunEvent::Exit => {
+                    wm::release();
+                    notif::release(app);
+                    log("quit: the strip's space and the notification pop-ups given back");
+                }
+                _ => {}
             }
         });
 }
