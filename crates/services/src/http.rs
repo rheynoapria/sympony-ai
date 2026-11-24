@@ -479,14 +479,15 @@ pub fn get_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> 
     Ok((status, ct, bytes))
 }
 
-/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons): follows up to 5 redirects
-/// (http → https, apex → www, short links) while checking `is_public_url` + pinning DNS resolution to public IPs
-/// via `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
-pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> {
+/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons/articles) with a custom per-hop
+/// `timeout`: follows up to 5 redirects while checking `is_public_url` + pinning DNS resolution to public IPs via
+/// `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
+pub fn get_public_bytes_timeout(url: &str, max: u64, timeout: Duration) -> anyhow::Result<(u16, String, Vec<u8>)> {
     let mut cur_url = url.to_string();
+    let lim = Some(timeout);
     for hop in 0..=MAX_PUBLIC_REDIRECTS {
         anyhow::ensure!(is_public_url(&cur_url), "refused non-public URL");
-        let mut resp = public_agent().get(&cur_url).call()?;
+        let mut resp = public_agent().get(&cur_url).config().timeout_global(lim).build().call()?;
         if hop < MAX_PUBLIC_REDIRECTS {
             if let Some(loc) = redirect_location(&resp) {
                 let next = resolve_redirect_url(&cur_url, &loc).ok_or_else(|| anyhow::anyhow!("refused redirect URL"))?;
@@ -501,6 +502,13 @@ pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec
         return Ok((status, ct, bytes));
     }
     anyhow::bail!("too many redirects")
+}
+
+/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons): follows up to 5 redirects
+/// (http → https, apex → www, short links) while checking `is_public_url` + pinning DNS resolution to public IPs
+/// via `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
+pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> {
+    get_public_bytes_timeout(url, max, Duration::from_secs(15))
 }
 
 /// A stream's ICY metadata block (a short read: up to its first block). Err: the stream has no ICY titles.

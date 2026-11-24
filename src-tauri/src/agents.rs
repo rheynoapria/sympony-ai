@@ -340,8 +340,119 @@ fn run_claude_stream(
 }
 
 /// One answer from the agent `key` names (chatAgent / translateAgent). Err: what to show.
+#[allow(dead_code)]
 pub(crate) fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, web: bool) -> Result<String, String> {
     ask_in(app, key, prompt_text, &[], system, web, None, None, false).map(|(t, _, _)| t)
+}
+
+/// Fast single-turn, tool-free streaming inference for summaries, translations, and lightweight helpers:
+/// - Own engine (`sympony` / `api`): uses `brain::ask_fast_stream` (`reasoning_effort: "low"` + SSE streaming).
+/// - CLI agent (`claude`, `codex`, etc.): runs read-only without MCP overhead, streaming live tokens when supported (`claude`).
+pub(crate) fn ask_fast(
+    app: &AppHandle,
+    key: &str,
+    prompt_text: &str,
+    system: &str,
+    model_override: Option<&str>,
+    on_delta: &mut dyn FnMut(&str),
+) -> Result<String, String> {
+    if crate::brain::on(app) {
+        return crate::brain::ask_fast_stream(app, model_override, system, prompt_text, 60, on_delta);
+    }
+    let a = pick(app, key).ok_or("No AI agent is set up on this Mac: install one (Settings → Pony Assistant)")?;
+    let id = a["id"].as_str().unwrap_or("");
+    let name = a["name"].as_str().unwrap_or(id).to_string();
+    let s = app.state::<App>().settings.get();
+    let model = model_override
+        .map(str::trim)
+        .filter(|m| !m.is_empty() && !m.starts_with('-'))
+        .map(String::from)
+        .or_else(|| s["agentModels"][id].as_str().filter(|m| !m.starts_with('-')).map(String::from));
+    let dir = app.state::<App>().data_dir.join("agent");
+    let _ = std::fs::create_dir_all(&dir);
+    let mut argv = args(id, prompt_text, system, model.as_deref(), false);
+    let envs = env(id);
+    let stream_claude = id == "claude";
+    if stream_claude {
+        argv = with_stream(id, argv, false);
+    }
+    let mut cmd = Command::new(a["path"].as_str().unwrap_or(""));
+    cmd.args(argv).current_dir(&dir).env("PATH", path()).env("NO_COLOR", "1");
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let started = Instant::now();
+    let fast_limit = Duration::from_secs(75);
+    let log = |m: &str| app.state::<App>().log.line(&format!("ai: fast {id}: {m} ({:.1} s)", started.elapsed().as_secs_f32()));
+    if stream_claude {
+        platform::process::own_group(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()));
+        let mut child = cmd.spawn().map_err(|e| format!("Couldn’t start {name}: {e}"))?;
+        let pid = child.id();
+        let mut err_r = child.stderr.take().unwrap();
+        let stderr_rx = {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let mut buf = vec![];
+                let _ = (&mut err_r).take(512 << 10).read_to_end(&mut buf);
+                let _ = tx.send(String::from_utf8_lossy(&buf).to_string());
+            });
+            rx
+        };
+        let r = child.stdout.take().unwrap();
+        let mut parser = ClaudeStream::default();
+        let mut shown = Instant::now() - Duration::from_secs(1);
+        for line in BufReader::new(r).lines().map_while(Result::ok) {
+            if started.elapsed() > fast_limit {
+                platform::process::kill_group(pid);
+                let _ = child.wait();
+                log("no answer in time");
+                return Err(format!("{name} didn’t answer in time"));
+            }
+            for ev in parser.feed(&line) {
+                if let ClaudeEvent::Delta { text, .. } = ev {
+                    if shown.elapsed() >= Duration::from_millis(50) {
+                        shown = Instant::now();
+                        on_delta(&text);
+                    }
+                }
+            }
+        }
+        let status = child.wait().map_err(|e| e.to_string())?;
+        let err_out = stderr_rx.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
+        platform::process::kill_group(pid);
+        return match parser.finish(&err_out, status.success()) {
+            Ok(t) => {
+                on_delta(&t);
+                log("answered");
+                Ok(t)
+            }
+            Err(e) => {
+                log(&format!("failed: {e}"));
+                Err(format!("{name}: {e}"))
+            }
+        };
+    }
+    match run_capture_in(&mut cmd, fast_limit, None) {
+        Err(e) if e == "timeout" => {
+            log("no answer in time");
+            Err(format!("{name} didn’t answer in time"))
+        }
+        Err(e) => {
+            log(&e);
+            Err(format!("Couldn’t start {name}: {e}"))
+        }
+        Ok((ok, out, err)) => match answer(id, &out, &err, ok) {
+            Ok(t) => {
+                on_delta(&t);
+                log("answered");
+                Ok(t)
+            }
+            Err(e) => {
+                log(&format!("failed: {e}"));
+                Err(format!("{name}: {e}"))
+            }
+        },
+    }
 }
 
 /// `session`: a chat run that gets Sympony's tools (when its agent can take them) and live streaming (Claude Code).
@@ -659,7 +770,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     reg.add("translate.translate", Box::new(move |_, a| {
         let s = |i: usize| a.get(i).and_then(Value::as_str).unwrap_or("").to_string();
         let (text, from, to) = (s(0), s(1), s(2));
-        Ok(match ask(&h, "translateAgent", &translate_prompt(&text, &from, if to.is_empty() { "English" } else { &to }), "You translate text. Reply with the translation only.", false) {
+        Ok(match ask_fast(&h, "translateAgent", &translate_prompt(&text, &from, if to.is_empty() { "English" } else { &to }), "You translate text. Reply with the translation only.", None, &mut |_| {}) {
             Ok(t) => json!({"ok": true, "text": t}),
             Err(e) => json!({"ok": false, "error": e}),
         })
@@ -710,7 +821,13 @@ fn lyric_lines(app: &AppHandle, kind: &str, lines: &[String], what: &str) -> Opt
     }
     let slot = if kind == "roman" { &st.roman_run } else { &st.trans_run };
     *slot.lock().unwrap() = None; // (stops the run of this kind going on: it isn't the song playing now)
-    let (t, _, _) = ask_in(app, "translateAgent", &lines_prompt(lines, what), &[], "You transform song lyrics line by line and reply with JSON only.", false, Some(slot), None, false).ok()?;
+    let sys = "You transform song lyrics line by line and reply with JSON only.";
+    let prompt_str = lines_prompt(lines, what);
+    let t = if crate::brain::on(app) {
+        crate::brain::ask_fast_stream(app, None, sys, &prompt_str, 60, &mut |_| {}).ok()?
+    } else {
+        ask_in(app, "translateAgent", &prompt_str, &[], sys, false, Some(slot), None, false).ok()?.0
+    };
     let v = Value::from(lines_answer(&t, lines.len())?);
     let mut cache = st.lyrics.lock().unwrap();
     if cache.len() > 500 {

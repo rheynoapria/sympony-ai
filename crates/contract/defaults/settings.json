@@ -110,6 +110,7 @@
  "feedPonySummary": true,
  "feedRefreshMinutes": 30,
  "feedSummaryLang": "auto",
+ "feedSummaryModel": "",
  "feedSources": [
   "hn",
   "github_trending",

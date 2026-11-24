@@ -41,6 +41,8 @@ pub struct Brain {
     learned: std::sync::Mutex<std::collections::HashMap<String, usize>>,
     /// the chat each run belongs to (recall leaves it out)
     chat_of: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// `(base|model)` endpoints that rejected `"reasoning_effort"` with HTTP 400/422 so we never resend it twice
+    no_reasoning_effort: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 /// The chat a run (session) belongs to, "" when unknown.
@@ -325,12 +327,12 @@ pub fn fetch_article_fallback(app: &AppHandle, url: &str, title: &str) -> Option
             return None;
         }
         let body = json!({ "query": title.trim(), "news": true, "max_results": 4 });
-        let v = call(app, "POST", "/v1/search", Some(&body), 15).ok()?;
+        let v = call(app, "POST", "/v1/search", Some(&body), 6).ok()?;
         let mut idx = 1usize;
         let (digest, _) = services::brain::search_digest(&v, &mut idx);
         return (digest.chars().count() >= 60).then_some(digest);
     }
-    let v = call(app, "POST", "/v1/fetch", Some(&json!({ "url": url, "max_characters": 6500 })), 20).ok()?;
+    let v = call(app, "POST", "/v1/fetch", Some(&json!({ "url": url, "max_characters": 3600 })), 6).ok()?;
     let text = services::brain::page_text(&v);
     (text.chars().count() >= 60).then_some(text)
 }
@@ -348,9 +350,10 @@ pub fn ask(app: &AppHandle, turns: &[Value], images: &[String], system: &str, se
     if let Some(s) = session {
         app.state::<Brain>().steer.lock().unwrap().insert(s.to_string(), vec![]);
     }
-    // (the web: Sympony AI only, unless turned off in Settings)
+    // (the web: Sympony AI in interactive/brief sessions only, unless turned off in Settings;
+    //  standalone text tasks with `session == None` run strictly tool-free)
     let settings = app.state::<App>().settings.get();
-    let web = settings["ponyBrain"] == "sympony" && settings["symponyWeb"] != false;
+    let web = session.is_some() && settings["ponyBrain"] == "sympony" && settings["symponyWeb"] != false;
     let system = if web { format!("{system}\n\n{}", services::brain::WEB_RULES) } else { system.to_string() };
     // (commands & files: chats only, never a scheduled brief, and only when the user turned them on)
     let exec_on = session.is_some() && !brief && crate::exec::on(app);
@@ -650,11 +653,135 @@ pub fn upkeep(app: &AppHandle, chat: &str, all: Vec<Value>) {
     });
 }
 
-/// A short call without tools or streaming (notes, learning).
+/// Low-latency single-turn streaming call WITHOUT tools (`feed.summarize`, `translate`, `lyrics`, chat `small` notes):
+/// - Requests `"reasoning_effort": "low"` so reasoning/thinking models don't spend 25–40s generating 1,500 hidden CoT
+///   tokens for a 3-bullet summary or translation. If a strict custom endpoint rejects `"reasoning_effort"` (HTTP 400/422),
+///   remembers `(base|model)` in `no_reasoning_effort` and immediately retries cleanly without it.
+/// - Streams SSE deltas live via `on_delta` (~20 Hz) so the UI renders partial output in `< 1s` TTFT.
+pub fn ask_fast_stream(
+    app: &AppHandle,
+    model_override: Option<&str>,
+    system: &str,
+    user: &str,
+    secs: u64,
+    on_delta: &mut dyn FnMut(&str),
+) -> Result<String, String> {
+    let started = std::time::Instant::now();
+    let chosen_model = match model_override.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(m) => m.to_string(),
+        None => model(app)?,
+    };
+    let (base, key_name, key) = key(app)?;
+    let effort_key = format!("{base}|{chosen_model}");
+    let mut use_effort = !app
+        .state::<Brain>()
+        .no_reasoning_effort
+        .lock()
+        .unwrap()
+        .contains(&effort_key);
+
+    let messages = json!([
+        { "role": "system", "content": system },
+        { "role": "user", "content": user },
+    ]);
+
+    let mut retries = 0u32;
+    let reply = retrying(app, None, &mut retries, &mut || {
+        loop {
+            let mut b = json!({
+                "model": chosen_model,
+                "messages": messages,
+                "stream": true,
+            });
+            if use_effort {
+                b["reasoning_effort"] = json!("low");
+            }
+            if use_effort && !services::brain::is_local_url(&base) {
+                b["stream_options"] = json!({ "include_usage": true });
+            }
+            let mut st = services::brain::Stream::default();
+            let mut shown = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            let r = services::http::bearer_stream(
+                &format!("{base}/v1/chat/completions"),
+                &key,
+                &b,
+                secs,
+                &mut |d| {
+                    if st.feed(d) && shown.elapsed() >= std::time::Duration::from_millis(50) {
+                        shown = std::time::Instant::now();
+                        on_delta(&st.text);
+                    }
+                    true
+                },
+            );
+            match r {
+                Ok((s, text)) if (200..300).contains(&s) && text.is_empty() => {
+                    if !st.text.is_empty() {
+                        on_delta(&st.text);
+                    }
+                    if !st.done && st.text.trim().is_empty() {
+                        return Err((true, "Pony’s answer was cut off on the way; try again".into()));
+                    }
+                    return Ok(st.reply());
+                }
+                Ok((s, text)) => {
+                    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                    if (200..300).contains(&s) {
+                        if let Some(full) = v["choices"][0]["message"]["content"].as_str().filter(|t| !t.is_empty()) {
+                            on_delta(full);
+                        }
+                        return Ok(v);
+                    }
+                    if use_effort && matches!(s, 400 | 422) {
+                        app.state::<Brain>()
+                            .no_reasoning_effort
+                            .lock()
+                            .unwrap()
+                            .insert(effort_key.clone());
+                        use_effort = false;
+                        continue;
+                    }
+                    return Err(failed(app, key_name, s, &v));
+                }
+                Err(_) => return Err((true, UNREACHABLE.into())),
+            }
+        }
+    });
+
+    let _ = tauri::Emitter::emit(app, "brain:used", ());
+    match reply {
+        Ok(v) => {
+            let tok_in = v["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
+            let tok_out = v["usage"]["completion_tokens"].as_u64().unwrap_or(0);
+            let text = v["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            app.state::<App>().log.line(&format!(
+                "ai: fast {chosen_model}: {} ({retries} retries, {tok_in} tokens in, {tok_out} out, {:.1} s)",
+                if text.is_empty() { "empty" } else { "answered" },
+                started.elapsed().as_secs_f32()
+            ));
+            if text.is_empty() {
+                Err("The AI gave no answer".into())
+            } else {
+                Ok(text)
+            }
+        }
+        Err(e) => {
+            app.state::<App>().log.line(&format!(
+                "ai: fast {chosen_model}: failed: {e} ({:.1} s)",
+                started.elapsed().as_secs_f32()
+            ));
+            Err(e)
+        }
+    }
+}
+
+/// A short call without tools (notes, learning) using low reasoning effort.
 fn small(app: &AppHandle, system: &str, user: &str) -> Result<String, String> {
-    let body = json!({"model": model(app)?, "stream": false, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]});
-    let v = retrying(app, None, &mut 0, &mut || call_try(app, "POST", "/v1/chat/completions", Some(&body), 60))?;
-    v["choices"][0]["message"]["content"].as_str().map(String::from).ok_or_else(|| "no answer".into())
+    ask_fast_stream(app, None, system, user, 45, &mut |_| {})
 }
 
 

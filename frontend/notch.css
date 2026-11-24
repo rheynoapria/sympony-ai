@@ -2103,6 +2103,7 @@ html.warm .ly-shift { --ly-sh-bg: color-mix(in srgb, var(--bg-warm) 88%, transpa
 .fd-spark { width: 12px; height: 12px; display: block; flex: none; }
 .fd-ring-spin { width: 12px; height: 12px; display: block; flex: none; animation: fdSpin .85s linear infinite; }
 .fd-sum-status { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: #d8b4fe; margin-top: 2px; }
+.fd-sum-status.compact { font-size: 9.8px; opacity: 0.86; margin-top: 0; flex: none; }
 .fd-spark-pulse { display: inline-flex; align-items: center; justify-content: center; color: #c084fc; animation: fdSparkPulse 1.4s ease-in-out infinite; }
 @keyframes fdSparkPulse { 0%, 100% { opacity: 0.45; transform: scale(0.88); } 50% { opacity: 1; transform: scale(1.12); } }
 

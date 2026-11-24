@@ -8,6 +8,7 @@ export const FEED_KEYS = [
   "feedRefreshMinutes",
   "feedPonySummary",
   "feedSummaryLang",
+  "feedSummaryModel",
   "feedAutoSummary",
   "feedAutoSummaryBatch",
 ] as const;
@@ -76,6 +77,15 @@ export const FEED_ROWS: readonly Row[] = [
       ["ms", "Bahasa Melayu"],
       ["ja", "Japanese (日本語)"],
     ],
+  },
+  {
+    t: "text",
+    k: "feedSummaryModel",
+    label: "Fast summary model (optional)",
+    sub: "Override the model used for Feed summaries (e.g. gemini-2.5-flash, gpt-4.1-mini, haiku). Leave blank to use Pony’s active model.",
+    placeholder: "Default (Pony’s active model)",
+    short: true,
+    words: "fast model flash mini haiku speed cepat ringkasan",
   },
   {
     t: "toggle",

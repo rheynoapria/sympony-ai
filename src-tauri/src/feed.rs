@@ -13,7 +13,7 @@ use services::feed::{
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -21,7 +21,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::App;
 
-const MAX_FEED_BYTES: u64 = 2 << 20; // 2 MB max per feed / article
+const MAX_FEED_BYTES: u64 = 2 << 20; // 2 MB max per RSS/Atom XML feed
+const ARTICLE_FETCH_MAX_BYTES: u64 = 384 << 10; // 384 KB max HTML when extracting lead article text
+const ARTICLE_FETCH_TIMEOUT: Duration = Duration::from_millis(3800);
+const HN_FETCH_TIMEOUT: Duration = Duration::from_millis(2600);
+const MAX_PREFETCHED_TEXTS: usize = 45;
 const MAX_ICON_BYTES: u64 = 256 << 10; // 256 KB max per favicon
 const MAX_ITEMS_TOTAL: usize = 90;
 const MAX_SUMMARIES_CACHED: usize = 80;
@@ -66,8 +70,13 @@ pub struct Feed {
     cache: Mutex<FeedCache>,
     failed_icons: Mutex<HashSet<String>>,
     failed_images: Mutex<HashSet<String>>,
+    /// In-RAM extracted article/README texts keyed by `item.id` -> `(text, from_article)` so selecting
+    /// a story pre-warms its source text before the user even clicks Summarize (`0 ms` HTTP wait).
+    prefetched_texts: Mutex<HashMap<String, (String, bool)>>,
+    in_flight: Mutex<HashSet<String>>,
     refreshing: Mutex<()>,
     auto_summarizing: AtomicBool,
+    interactive_busy: AtomicUsize,
     kick: Mutex<Sender<()>>,
 }
 
@@ -78,13 +87,13 @@ pub fn kick(app: &AppHandle) {
 }
 
 /// Reacts to Feed settings changes: source/schedule edits refresh feeds, while turning on
-/// background auto-summary (or switching summary language/batch size) immediately pre-summarizes
+/// background auto-summary (or switching summary language/batch size/model) immediately pre-summarizes
 /// already-cached stories without forcing a full RSS re-fetch.
 pub fn on_settings_changed(app: &AppHandle, patch: &Value) {
     let has = |keys: &[&str]| keys.iter().any(|k| patch.get(k).is_some());
     if has(&["feedEnabled", "feedSources", "feedGoogleTopics", "feedCustomUrls", "feedRefreshMinutes", "modules"]) {
         kick(app);
-    } else if has(&["feedAutoSummary", "feedAutoSummaryBatch", "feedSummaryLang", "feedPonySummary"]) {
+    } else if has(&["feedAutoSummary", "feedAutoSummaryBatch", "feedSummaryLang", "feedSummaryModel", "feedPonySummary"]) {
         spawn_background_batch(app);
     }
 }
@@ -601,6 +610,28 @@ fn refresh(app: &AppHandle) -> Value {
         });
     }
 
+    // Pre-warm article text for top 2 newest stories in RAM so first interactive click starts streaming at 0 ms HTTP wait
+    {
+        let top_two: Vec<(String, String)> = {
+            let st = app.state::<Feed>();
+            let cache = st.cache.lock().unwrap();
+            cache
+                .items
+                .iter()
+                .take(2)
+                .map(|i| (i.id.clone(), i.url.clone()))
+                .collect()
+        };
+        if !top_two.is_empty() {
+            let bg = app.clone();
+            std::thread::spawn(move || {
+                for (id, url) in top_two {
+                    let _ = fetch_or_get_article_text(&bg, &id, &url);
+                }
+            });
+        }
+    }
+
     // Optional opt-in background batch auto-summarization for newest unsummarized stories
     spawn_background_batch(app);
 
@@ -608,7 +639,7 @@ fn refresh(app: &AppHandle) -> Value {
 }
 
 /// Pre-summarizes up to `feedAutoSummaryBatch` newest unsummarized items in the background when
-/// `feedAutoSummary` is enabled, emitting incremental `feed` updates so cached badges light up live.
+/// `feedAutoSummary` is enabled, yielding immediately whenever an interactive summary or Pony chat is active.
 fn spawn_background_batch(app: &AppHandle) {
     let Some(feed_state) = app.try_state::<Feed>() else {
         return;
@@ -667,6 +698,17 @@ fn spawn_background_batch(app: &AppHandle) {
 
         let mut done = 0usize;
         for it in targets {
+            // Yield whenever the user clicks an interactive summary or is chatting with Pony so background batches never queue-block!
+            let mut waited = 0u32;
+            while waited < 120 {
+                let busy = bg.state::<Feed>().interactive_busy.load(Ordering::SeqCst) > 0
+                    || crate::agents::has_active_chat(&bg);
+                if !busy {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+                waited += 1;
+            }
             let cur_s = bg.state::<App>().settings.get();
             if !feed_module_enabled(&cur_s) || cur_s["feedPonySummary"] == false || cur_s["feedAutoSummary"] != true {
                 break;
@@ -686,7 +728,7 @@ fn spawn_background_batch(app: &AppHandle) {
                 json!(false),
                 json!(cur_lang),
             ];
-            let res = summarize_item(&bg, &args);
+            let res = summarize_item(&bg, &args, false);
             if res["ok"] == true {
                 done += 1;
                 let payload = {
@@ -703,7 +745,7 @@ fn spawn_background_batch(app: &AppHandle) {
                 ));
                 break;
             }
-            std::thread::sleep(Duration::from_millis(350));
+            std::thread::sleep(Duration::from_millis(250));
         }
 
         if done > 0 {
@@ -772,11 +814,11 @@ fn effective_summary_lang(app: &AppHandle) -> String {
     }
 }
 
-/// Fetches top Hacker News comments + Show/Ask HN author text for `hn-{id}` stories in parallel (~250ms)
-/// so visual demos, photo galleries, and technical posts get rich expert discussion context.
+/// Fetches top Hacker News comments + Show/Ask HN author text for `hn-{id}` stories in parallel
+/// with a tight `2.6s` timeout so visual demos, repos, and concise posts get fast expert context.
 fn fetch_hn_discussion_context(hn_id: u64) -> String {
     let story_url = format!("https://hacker-news.firebaseio.com/v0/item/{hn_id}.json");
-    let Ok((200, _, story_bytes)) = services::http::get_public_bytes(&story_url, 128 << 10) else {
+    let Ok((200, _, story_bytes)) = services::http::get_public_bytes_timeout(&story_url, 96 << 10, HN_FETCH_TIMEOUT) else {
         return String::new();
     };
     let Ok(story) = serde_json::from_slice::<Value>(&story_bytes) else {
@@ -791,7 +833,7 @@ fn fetch_hn_discussion_context(hn_id: u64) -> String {
     }
     let kid_ids: Vec<u64> = story["kids"]
         .as_array()
-        .map(|a| a.iter().filter_map(Value::as_u64).take(6).collect())
+        .map(|a| a.iter().filter_map(Value::as_u64).take(4).collect())
         .unwrap_or_default();
     if !kid_ids.is_empty() {
         let comments: Vec<Value> = std::thread::scope(|scope| {
@@ -800,14 +842,14 @@ fn fetch_hn_discussion_context(hn_id: u64) -> String {
                 .map(|cid| {
                     scope.spawn(move || {
                         let cu = format!("https://hacker-news.firebaseio.com/v0/item/{cid}.json");
-                        let (st, _, b) = services::http::get_public_bytes(&cu, 64 << 10).ok()?;
+                        let (st, _, b) = services::http::get_public_bytes_timeout(&cu, 48 << 10, HN_FETCH_TIMEOUT).ok()?;
                         (st == 200).then(|| serde_json::from_slice::<Value>(&b).ok()).flatten()
                     })
                 })
                 .collect();
             handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
         });
-        let formatted = format_hn_comments(&comments, 2200);
+        let formatted = format_hn_comments(&comments, 1250);
         if !formatted.is_empty() {
             parts.push(format!("Top Hacker News technical discussion:\n{formatted}"));
         }
@@ -815,8 +857,86 @@ fn fetch_hn_discussion_context(hn_id: u64) -> String {
     parts.join("\n\n")
 }
 
-/// Summarizes a feed item into 3 crisp Pony bullet points (cached locally per language so re-opens cost 0 tokens).
-fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
+/// Fetches & extracts clean lead article text (or GitHub raw README) with a bounded `3.8s` timeout and
+/// caches it in RAM (`prefetched_texts`) so selecting a story makes subsequent summarization instant.
+fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str) -> (String, bool) {
+    if url.is_empty() {
+        return (String::new(), false);
+    }
+    if !base_id.is_empty() {
+        let cached = app
+            .state::<Feed>()
+            .prefetched_texts
+            .lock()
+            .unwrap()
+            .get(base_id)
+            .cloned();
+        if let Some(hit) = cached {
+            return hit;
+        }
+    }
+
+    let mut out_text = String::new();
+    let mut from_article = false;
+
+    if let Some((owner, repo)) = github_repo_slug(url) {
+        for readme_name in ["README.md", "readme.md", "README.rst"] {
+            let raw_url = format!("https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{readme_name}");
+            if let Ok((200, _, bytes)) = services::http::get_public_bytes_timeout(&raw_url, 160 << 10, Duration::from_millis(2800)) {
+                let md = String::from_utf8_lossy(&bytes);
+                let trimmed_md: String = md.chars().take(2800).collect();
+                if trimmed_md.chars().count() >= 60 {
+                    out_text = format!("Repository {owner}/{repo} README:\n{trimmed_md}");
+                    from_article = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if out_text.is_empty() && services::http::is_public_url(url) && host_of(url) != "news.google.com" {
+        if let Ok((200, ct, bytes)) = services::http::get_public_bytes_timeout(url, ARTICLE_FETCH_MAX_BYTES, ARTICLE_FETCH_TIMEOUT) {
+            let low_ct = ct.to_ascii_lowercase();
+            if low_ct.contains("text/") || low_ct.contains("html") || low_ct.contains("xml") || low_ct.is_empty() {
+                let html = String::from_utf8_lossy(&bytes);
+                if !base_id.is_empty() && github_repo_slug(url).is_none() {
+                    if let Some(found_img) = extract_og_image(&html, url) {
+                        let feed_state = app.state::<Feed>();
+                        let mut cache = feed_state.cache.lock().unwrap();
+                        if !cache.images.contains_key(base_id) {
+                            cache.images.insert(base_id.to_string(), found_img.clone());
+                            if let Some(it) = cache.items.iter_mut().find(|i| i.id == base_id) {
+                                if it.image.is_empty() {
+                                    it.image = found_img;
+                                }
+                            }
+                        }
+                    }
+                }
+                let extracted = extract_article_text(&html, 2900);
+                if extracted.chars().count() >= 45 {
+                    out_text = extracted;
+                    from_article = true;
+                }
+            }
+        }
+    }
+
+    if !base_id.is_empty() && !out_text.is_empty() {
+        let feed_state = app.state::<Feed>();
+        let mut map = feed_state.prefetched_texts.lock().unwrap();
+        if map.len() >= MAX_PREFETCHED_TEXTS {
+            map.clear();
+        }
+        map.insert(base_id.to_string(), (out_text.clone(), from_article));
+    }
+
+    (out_text, from_article)
+}
+
+/// Summarizes a feed item into 3 crisp Pony bullet points (cached locally per language so re-opens cost 0 tokens),
+/// streaming live partial tokens via `feed:sumDelta` so bullets render in `< 1s` TTFT.
+fn summarize_item(app: &AppHandle, args: &[Value], interactive: bool) -> Value {
     let id = args.first().and_then(Value::as_str).unwrap_or("").trim();
     let url = args.get(1).and_then(Value::as_str).unwrap_or("").trim();
     let title = args.get(2).and_then(Value::as_str).unwrap_or("").trim();
@@ -838,12 +958,25 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
     };
     let cache_key = summary_cache_key(&base_id, &lang);
 
+    struct InteractiveGuard(Option<AppHandle>);
+    impl Drop for InteractiveGuard {
+        fn drop(&mut self) {
+            if let Some(ref h) = self.0 {
+                if let Some(f) = h.try_state::<Feed>() {
+                    f.interactive_busy.fetch_sub(1, Ordering::SeqCst);
+                }
+            }
+        }
+    }
+    let _interactive_guard = if interactive {
+        app.state::<Feed>().interactive_busy.fetch_add(1, Ordering::SeqCst);
+        InteractiveGuard(Some(app.clone()))
+    } else {
+        InteractiveGuard(None)
+    };
+
     if !force {
-        let hit = {
-            let feed_state = app.state::<Feed>();
-            let cached = feed_state.cache.lock().unwrap().summaries.get(&cache_key).cloned();
-            cached
-        };
+        let hit = app.state::<Feed>().cache.lock().unwrap().summaries.get(&cache_key).cloned();
         if let Some(hit) = hit {
             return json!({
                 "ok": true,
@@ -856,56 +989,56 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
                 "cached": true,
             });
         }
+        // If a background worker is ALREADY summarizing this exact `(id, lang)` right now, wait for it
+        // rather than firing a duplicate concurrent LLM call!
+        let mut waited = 0u32;
+        while app.state::<Feed>().in_flight.lock().unwrap().contains(&cache_key) && waited < 180 {
+            std::thread::sleep(Duration::from_millis(120));
+            waited += 1;
+            if let Some(hit) = app.state::<Feed>().cache.lock().unwrap().summaries.get(&cache_key).cloned() {
+                return json!({
+                    "ok": true,
+                    "id": base_id,
+                    "key": cache_key,
+                    "lang": lang,
+                    "summary": hit.summary,
+                    "bullets": hit.bullets,
+                    "source": hit.source,
+                    "cached": true,
+                });
+            }
+        }
     }
 
-    // Gather rich source context: GitHub raw README, article HTML + JSON-LD + meta, Sympony web fallback, & HN discussion
+    app.state::<Feed>().in_flight.lock().unwrap().insert(cache_key.clone());
+    struct InFlightGuard(AppHandle, String);
+    impl Drop for InFlightGuard {
+        fn drop(&mut self) {
+            if let Some(f) = self.0.try_state::<Feed>() {
+                f.in_flight.lock().unwrap().remove(&self.1);
+            }
+        }
+    }
+    let _inflight_guard = InFlightGuard(app.clone(), cache_key.clone());
+
+    // Fetch article/README text (0 ms if prefetched!) AND Hacker News discussion IN PARALLEL (capped <= 3.8s total!)
+    let hn_num = base_id.strip_prefix("hn-").and_then(|n| n.parse::<u64>().ok());
+    let ((article_text, mut from_article), hn_ctx) = std::thread::scope(|scope| {
+        let art_job = scope.spawn(|| fetch_or_get_article_text(app, &base_id, url));
+        let hn_job = scope.spawn(move || hn_num.map(fetch_hn_discussion_context).unwrap_or_default());
+        (
+            art_job.join().unwrap_or_else(|_| (String::new(), false)),
+            hn_job.join().unwrap_or_default(),
+        )
+    });
+
     let mut sections: Vec<String> = Vec::new();
-    let mut from_article = false;
-
-    if let Some((owner, repo)) = github_repo_slug(url) {
-        for readme_name in ["README.md", "readme.md", "README.rst"] {
-            let raw_url = format!("https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{readme_name}");
-            if let Ok((200, _, bytes)) = services::http::get_public_bytes(&raw_url, 256 << 10) {
-                let md = String::from_utf8_lossy(&bytes);
-                let trimmed_md: String = md.chars().take(5200).collect();
-                if trimmed_md.chars().count() >= 60 {
-                    sections.push(format!("Repository {owner}/{repo} README:\n{trimmed_md}"));
-                    from_article = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if sections.is_empty() && !url.is_empty() && services::http::is_public_url(url) && host_of(url) != "news.google.com" {
-        if let Ok((200, ct, bytes)) = services::http::get_public_bytes(url, MAX_FEED_BYTES) {
-            let low_ct = ct.to_ascii_lowercase();
-            if low_ct.contains("text/") || low_ct.contains("html") || low_ct.contains("xml") || low_ct.is_empty() {
-                let html = String::from_utf8_lossy(&bytes);
-                // Opportunistically populate thumbnail if still missing
-                if let Some(found_img) = extract_og_image(&html, url) {
-                    let feed_state = app.state::<Feed>();
-                    let mut cache = feed_state.cache.lock().unwrap();
-                    if !cache.images.contains_key(&base_id) {
-                        cache.images.insert(base_id.clone(), found_img.clone());
-                        if let Some(it) = cache.items.iter_mut().find(|i| i.id == base_id) {
-                            if it.image.is_empty() {
-                                it.image = found_img;
-                            }
-                        }
-                    }
-                }
-                let extracted = extract_article_text(&html, 5500);
-                if extracted.chars().count() >= 45 {
-                    sections.push(extracted);
-                    from_article = true;
-                }
-            }
-        }
+    if !article_text.is_empty() {
+        sections.push(article_text);
     }
 
     // Sympony AI `/v1/fetch` or `/v1/search` enrichment when direct HTTP text is thin (e.g. Google News / JS SPA)
-    if sections.iter().map(|s| s.chars().count()).sum::<usize>() < 180 {
+    if sections.iter().map(|s| s.chars().count()).sum::<usize>() < 160 && hn_ctx.chars().count() < 160 {
         if let Some(web_extra) = crate::brain::fetch_article_fallback(app, url, title) {
             sections.push(web_extra);
             from_article = true;
@@ -916,19 +1049,41 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
         sections.insert(0, format!("Feed excerpt / related coverage: {snippet}"));
     }
 
-    if let Some(hn_num) = base_id.strip_prefix("hn-").and_then(|n| n.parse::<u64>().ok()) {
-        let hn_ctx = fetch_hn_discussion_context(hn_num);
-        if !hn_ctx.is_empty() {
-            sections.push(hn_ctx);
-            from_article = true;
-        }
+    if !hn_ctx.is_empty() {
+        sections.push(hn_ctx);
+        from_article = true;
     }
 
     let body_text = sections.join("\n\n");
-
     let (system, user_prompt) = summary_prompt(title, source, url, &body_text, &lang);
-    // Run with session=None so zero tools/exec/hands are ever exposed to untrusted web article text!
-    match crate::agents::ask(app, "chatAgent", &user_prompt, &system, false) {
+
+    let model_override = app.state::<App>().settings.get()["feedSummaryModel"]
+        .as_str()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(String::from);
+
+    // Run tool-free (`ask_fast`) with live token streaming (`feed:sumDelta`)!
+    let emit_id = base_id.clone();
+    let emit_lang = lang.clone();
+    let res = crate::agents::ask_fast(
+        app,
+        "chatAgent",
+        &user_prompt,
+        &system,
+        model_override.as_deref(),
+        &mut |partial| {
+            let _ = app.emit(
+                "feed:sumDelta",
+                json!({
+                    "id": emit_id,
+                    "lang": emit_lang,
+                    "text": partial,
+                }),
+            );
+        },
+    );
+    match res {
         Ok(raw) => {
             let trimmed = raw.trim().to_string();
             let bullets = parse_summary_bullets(&trimmed);
@@ -974,8 +1129,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         cache: Mutex::new(FeedCache::default()),
         failed_icons: Mutex::new(HashSet::new()),
         failed_images: Mutex::new(HashSet::new()),
+        prefetched_texts: Mutex::new(HashMap::new()),
+        in_flight: Mutex::new(HashSet::new()),
         refreshing: Mutex::new(()),
         auto_summarizing: AtomicBool::new(false),
+        interactive_busy: AtomicUsize::new(0),
         kick: Mutex::new(tx),
     });
 
@@ -1004,7 +1162,29 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     }));
 
     let h = app.clone();
-    reg.add("feed.summarize", Box::new(move |_, a| Ok(summarize_item(&h, &a))));
+    reg.add("feed.prefetch", Box::new(move |_, a| {
+        let id = a.first().and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let url = a.get(1).and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if !id.is_empty() && !url.is_empty() {
+            let already = {
+                let st = h.state::<Feed>();
+                let lang = effective_summary_lang(&h);
+                let key = summary_cache_key(&id, &lang);
+                st.prefetched_texts.lock().unwrap().contains_key(&id)
+                    || st.cache.lock().unwrap().summaries.contains_key(&key)
+            };
+            if !already {
+                let bg = h.clone();
+                std::thread::spawn(move || {
+                    let _ = fetch_or_get_article_text(&bg, &id, &url);
+                });
+            }
+        }
+        Ok(json!({ "ok": true }))
+    }));
+
+    let h = app.clone();
+    reg.add("feed.summarize", Box::new(move |_, a| Ok(summarize_item(&h, &a, true))));
 
     let h = app.clone();
     std::thread::spawn(move || {

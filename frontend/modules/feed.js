@@ -10,6 +10,8 @@
   let refreshing = false;
   const summarizing = new Set();
   const sumErrors = {};
+  const sumStreams = {};
+  const prefetchedIds = new Set();
 
   // ---- Authentic crisp SVG brand marks (never plain alphabet circles)
   const BRAND_SVGS = {
@@ -68,6 +70,23 @@
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
     return s;
+  }
+
+  function parseLiveBullets(raw) {
+    return String(raw || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => l.replace(/^(?:[-•*]|\d+[.)])\s+/, '').trim())
+      .filter(Boolean)
+      .slice(0, 5);
+  }
+
+  function prefetchStory(it) {
+    if (!it || !it.id || !it.url || prefetchedIds.has(it.id)) return;
+    if (cachedSummaryFor(feedData().summaries, it.id)) return;
+    prefetchedIds.add(it.id);
+    api.svc('feed', 'prefetch', it.id, it.url).catch(() => {});
   }
 
   function storyThumb(item, images, favicons, cls = '', icoSize = 15) {
@@ -190,6 +209,7 @@
     selectedId = it.id;
     tickerPreviewOpen = true;
     delete sumErrors[busyKey];
+    delete sumStreams[busyKey];
     summarizing.add(busyKey);
     render();
     try {
@@ -205,6 +225,7 @@
     } catch (e) {
       sumErrors[busyKey] = String(e || _t('Couldn’t summarize this article'));
     } finally {
+      delete sumStreams[busyKey];
       summarizing.delete(busyKey);
       render();
     }
@@ -257,10 +278,17 @@
     const lang = effectiveSummaryLang();
     const busyKey = `${sel.id}:${lang}`;
     const cachedSum = cachedSummaryFor(summaries, sel.id);
+    const streamText = sumStreams[busyKey] || '';
     const busy = summarizing.has(busyKey);
     const err = sumErrors[busyKey];
     let bodyHtml = '';
-    if (busy) {
+    if (streamText && (busy || !cachedSum)) {
+      const liveBullets = parseLiveBullets(streamText);
+      const streamView = liveBullets.length
+        ? `<ul class="fd-bullets live sc-y">${liveBullets.map((b) => `<li>${fmtInline(b)}</li>`).join('')}</ul>`
+        : `<div class="fd-sum-text sc-y">${fmtInline(streamText)}</div>`;
+      bodyHtml = `${streamView}<span class="fd-sum-status compact"><span class="fd-spark-pulse">${SPARKLE_SVG}</span><span>${esc(_t('Pony is writing…'))}</span></span>`;
+    } else if (busy) {
       bodyHtml = `<div class="fd-sum-load"><div class="fd-shimmer"></div><div class="fd-shimmer w85"></div><div class="fd-shimmer w70"></div>`
         + `<span class="fd-sum-status"><span class="fd-spark-pulse">${SPARKLE_SVG}</span><span>${esc(_t('Pony is reading and summarizing…'))}</span></span></div>`;
     } else if (ponyOn && cachedSum && Array.isArray(cachedSum.bullets) && cachedSum.bullets.length) {
@@ -505,6 +533,7 @@
     });
 
     if (sel) {
+      if (ponyOn) prefetchStory(sel);
       const runBtn = $('#fdRunSum', page);
       if (runBtn) runBtn.onclick = () => triggerSummarize(sel, false);
       const retryBtn = $('#fdRetrySum', page);
@@ -563,6 +592,23 @@
     init(p) {
       page = p;
       N.watch('feed', () => { render(); refreshCards(); });
+      if (api.onFeedSumDelta) {
+        api.onFeedSumDelta((d) => {
+          if (!d || !d.id || !d.text) return;
+          const lang = d.lang || effectiveSummaryLang();
+          sumStreams[`${d.id}:${lang}`] = d.text;
+          if (!page || selectedId !== d.id) return;
+          const bodyEl = $('.fd-sum-body', page);
+          if (bodyEl) {
+            const ponyOn = !st.settings || st.settings.feedPonySummary !== false;
+            const dAll = feedData();
+            const sel = (dAll.items || []).find((i) => i.id === d.id);
+            if (sel) {
+              bodyEl.innerHTML = buildSummaryBody(sel, dAll.summaries || {}, ponyOn).bodyHtml;
+            }
+          }
+        });
+      }
     },
     show() {
       render();

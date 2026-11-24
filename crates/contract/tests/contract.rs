@@ -29,7 +29,7 @@ fn contract_names_from_frontend() -> BTreeSet<String> {
     // (and Pony's own engine: `agent:step` / `agent:delta`, the live steps and the streamed text while an answer is on its way, `chat.stop` and `chat.steer`; `brain.*` / `brain:*`;
     // the YouTube video mode's `yt.*`)
     names.retain(|n| !n.starts_with("voice:") && !n.starts_with("voice.") && !n.starts_with("pony:") && !n.starts_with("pony.")
-        && !n.starts_with("feed.") && n != "feed"
+        && !n.starts_with("feed.") && !n.starts_with("feed:") && n != "feed"
         && n != "agent:step" && n != "agent:delta" && n != "chat.stop" && n != "chat.steer" && !n.starts_with("brain:") && !n.starts_with("brain.") && !n.starts_with("yt.") && n != "perm.request");
     names
 }
