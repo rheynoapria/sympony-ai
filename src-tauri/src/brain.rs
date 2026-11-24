@@ -74,6 +74,48 @@ pub fn steer(app: &AppHandle, session: &str, text: &str) -> bool {
     }
 }
 
+/// Whether at least one Pony own-engine run is currently active.
+pub fn has_active_run(app: &AppHandle) -> bool {
+    !app.state::<Brain>().steer.lock().unwrap().is_empty()
+}
+
+/// Whether `session` already has a pending live steering message waiting to be read by Pony.
+pub fn has_steer(app: &AppHandle, session: &str) -> bool {
+    app.state::<Brain>()
+        .steer
+        .lock()
+        .unwrap()
+        .get(session)
+        .is_some_and(|q| !q.is_empty())
+}
+
+/// Enqueues a live steering message directly into the active own-engine run (if any),
+/// returning the steered session ID so frontends don't duplicate the RPC.
+pub fn steer_active(app: &AppHandle, text: &str) -> Option<String> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let b = app.state::<Brain>();
+    let mut map = b.steer.lock().unwrap();
+    let (sid, q) = map.iter_mut().next()?;
+    q.push(t.to_string());
+    Some(sid.clone())
+}
+
+/// Stops all currently active own-engine sessions (used by voice stop commands).
+pub fn stop_all_active(app: &AppHandle) -> Vec<String> {
+    let b = app.state::<Brain>();
+    let sessions: Vec<String> = b.steer.lock().unwrap().keys().cloned().collect();
+    if !sessions.is_empty() {
+        let mut stopped = b.stopped.lock().unwrap();
+        for s in &sessions {
+            stopped.insert(s.clone());
+        }
+    }
+    sessions
+}
+
 /// What the user wrote that the run ended before reading (chat.send hands it back, to be sent next).
 pub fn take_unread(app: &AppHandle, session: &str) -> Vec<String> {
     app.state::<Brain>().unread.lock().unwrap().remove(session).unwrap_or_default()

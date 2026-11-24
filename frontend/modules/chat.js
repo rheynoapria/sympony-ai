@@ -1275,16 +1275,20 @@
     b.title = stop ? _t('Stop') : _t('Send');
     b.innerHTML = stop ? '<span class="sq"></span>' : N.ic('up', 'width:12px;height:12px;stroke-width:3');
   }
-  // Steering: what the user writes while Pony works goes into the chat now and into the run at its next step
+  // Steering: what the user writes or speaks while Pony works goes into the chat now and into the run at its next step
   // (Pony's own engine); a CLI agent, or a run that ends first, gets it as the next message
   let later = [];
-  async function steerSend(text) {
+  async function steerSend(text, opts = {}) {
     const cur = tool;
     const m = { role: 'user', content: text, steer: true };
     msgs.push(m);
     save(); changed();
+    if (opts && opts.alreadySent && (!opts.session || (cur && cur.session === opts.session))) {
+      return true;
+    }
     const r = cur ? await api.svc('chat', 'steer', cur.session, text).catch(() => null) : null;
-    if (!(r && r.ok)) { m.later = true; later.push(text); save(); changed(); }
+    if (!(r && r.ok)) { m.later = true; later.push(text); save(); changed(); return false; }
+    return true;
   }
   function sendInput() {
     if (pending) {
@@ -1474,7 +1478,7 @@
 
   // for Pony ask_user cards, notch and floating chat integration
   N.chat = {
-    send, markdown, actionChips, answerAsk, dismissAsk, newChat,
+    send, steer: steerSend, stop: stopRun, markdown, actionChips, answerAsk, dismissAsk, newChat,
     provider,
     toggleHistory: () => { history = !history; changed(); },
     isHistory: () => history,

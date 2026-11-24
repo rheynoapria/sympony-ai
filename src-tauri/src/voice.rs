@@ -533,8 +533,14 @@ impl VoiceRuntime {
         };
         if matches!(mapped, TriggerEv::HoldStart | TriggerEv::DoubleTap) {
             let s = self.settings();
-            // (one key, two ways: typing in a text field it dictates there; anywhere else what's said goes to Pony)
-            let mode = if mode == VoiceMode::Dictate && s.get("voiceAgentAuto").and_then(Value::as_bool).unwrap_or(true) && !self.typing() {
+            // (one key, two ways: typing in a text field dictates there; anywhere else — or while Pony is
+            // actively running so the user can steer Pony mid-run even if Hands just focused a text field —
+            // what's said goes straight to Pony)
+            let active_chat = crate::agents::has_active_chat(&self.app);
+            let mode = if mode == VoiceMode::Dictate
+                && s.get("voiceAgentAuto").and_then(Value::as_bool).unwrap_or(true)
+                && (active_chat || !self.typing())
+            {
                 VoiceMode::Command
             } else {
                 mode
@@ -878,29 +884,92 @@ impl VoiceRuntime {
             if has_pony {
                 let screen = self.screen.lock().ok().and_then(|mut g| g.take()).map(|(app, title)| json!({"app": app, "title": title}));
                 let hands_on = s.get("ponyEyes") == Some(&Value::Bool(true)) && s.get("ponyHands") == Some(&Value::Bool(true));
-                let base_auto = self.voice_auto_ui(&s);
-                let auto_ui = if hands_on {
-                    services::hands::parse_auto_ui_override(&text).unwrap_or(base_auto)
+                let active_chat = crate::agents::has_active_chat(&self.app);
+
+                if active_chat && services::hands::is_voice_stop_command(&text) {
+                    crate::agents::stop_active_chats(&self.app);
+                    self.log("voice: stop command ended active Pony run");
+                    let _ = self.app.emit("voice:command", json!({ "text": text, "steer": true, "stop": true }));
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "stop",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "done",
+                            "ms": self.now_ms(),
+                            "text": text,
+                        }),
+                    );
+                } else if active_chat {
+                    let steered_session = crate::brain::steer_active(&self.app, &text);
+                    let speech_ov = if hands_on { services::hands::parse_auto_ui_override(&text) } else { None };
+                    if let (Some(sid), Some(ov)) = (&steered_session, speech_ov) {
+                        crate::hands::set_session_auto_ui(&self.app, sid, ov);
+                    }
+                    let base_auto = self.voice_auto_ui(&s);
+                    let auto_ui = if hands_on { speech_ov.unwrap_or(base_auto) } else { false };
+                    self.log(&format!(
+                        "voice: {} chars live-steered Pony (session={:?}, autoUi={auto_ui})",
+                        text.chars().count(),
+                        steered_session
+                    ));
+                    let _ = self.app.emit(
+                        "voice:command",
+                        json!({
+                            "text": text,
+                            "screen": screen,
+                            "autoUi": auto_ui,
+                            "steer": true,
+                            "steeredSession": steered_session,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "steer",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "done",
+                            "ms": self.now_ms(),
+                            "text": text,
+                        }),
+                    );
                 } else {
-                    false
-                };
-                self.log(&format!("voice: {} chars to Pony (autoUi={auto_ui})", text.chars().count()));
-                let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen, "autoUi": auto_ui }));
-                let _ = self.app.emit(
-                    "voice:result",
-                    json!({
-                        "text": text,
-                        "inserted": "command",
-                        "corrections": corrections,
-                    }),
-                );
-                let _ = self.app.emit(
-                    "voice:state",
-                    json!({
-                        "state": "idle",
-                        "ms": self.now_ms(),
-                    }),
-                );
+                    let base_auto = self.voice_auto_ui(&s);
+                    let auto_ui = if hands_on {
+                        services::hands::parse_auto_ui_override(&text).unwrap_or(base_auto)
+                    } else {
+                        false
+                    };
+                    self.log(&format!("voice: {} chars to Pony (autoUi={auto_ui})", text.chars().count()));
+                    let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen, "autoUi": auto_ui, "steer": false }));
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "command",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "idle",
+                            "ms": self.now_ms(),
+                        }),
+                    );
+                }
             } else {
                 let _ = self.app.emit(
                     "voice:state",
@@ -987,11 +1056,13 @@ impl VoiceRuntime {
             VState::Listening { since_ms } => {
                 let s = self.settings();
                 let agent = self.mode.lock().map(|m| *m == VoiceMode::Command).unwrap_or(false);
+                let steer = agent && crate::agents::has_active_chat(&self.app);
                 json!({
                     "state": "listening",
                     "ms": since_ms,
                     "agent": agent,
                     "autoUi": agent && self.voice_auto_ui(&s),
+                    "steer": steer,
                     "lang": s
                         .get("voiceLanguage")
                         .and_then(Value::as_str)

@@ -420,9 +420,14 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
     };
     let mut done = vec![];
     let mut stopped: Option<String> = None;
+    let mut steered_before: Option<usize> = None;
     for (k, step) in steps.iter().enumerate() {
         if crate::brain::stopped(app, session) {
             stopped = Some("the user stopped Pony".into());
+            break;
+        }
+        if crate::brain::has_steer(app, session) {
+            steered_before = Some(k + 1);
             break;
         }
         // Re-check Secure Input and private app guard before every step (an earlier step could open a password prompt).
@@ -477,11 +482,12 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
         t.1 = what.chars().take(400).collect();
     }
     end_later(app, gen);
-    app.state::<App>().log.line(&format!("hands: {} in {app_name}: {} done{}", steps.len(), done.len(), if stopped.is_some() { ", stopped" } else { "" }));
+    app.state::<App>().log.line(&format!("hands: {} in {app_name}: {} done{}", steps.len(), done.len(), if stopped.is_some() { ", stopped" } else if steered_before.is_some() { ", steered" } else { "" }));
     let head = if done.is_empty() { String::new() } else { format!("Done: {}\n", done.join("; ")) };
-    match stopped {
-        Some(why) => Err(format!("{head}Stopped at {why}\n{what}")),
-        None => Ok(format!("{head}{what}")),
+    match (stopped, steered_before) {
+        (Some(why), _) => Err(format!("{head}Stopped at {why}\n{what}")),
+        (None, Some(step_no)) => Ok(format!("{head}Paused before step {step_no} because the user sent a live steering instruction. Read their latest message and follow it now.\n{what}")),
+        (None, None) => Ok(format!("{head}{what}")),
     }
 }
 
@@ -696,11 +702,18 @@ pub fn watch(app: &AppHandle, session: &str, args: &Value) -> Result<String, Str
 
     let started = std::time::Instant::now();
     let mut last_ui_sec = 0u64;
-    let (cur_win, final_nodes, final_els, outcome) = loop {
-        std::thread::sleep(Duration::from_millis(800));
-        if crate::brain::stopped(app, session) {
-            end_later_ms(app, gen, 400);
-            return Err("the user stopped Pony while watching".into());
+    let (cur_win, final_nodes, final_els, outcome, steered) = loop {
+        let mut wake_for_steer = false;
+        for _ in 0..4 {
+            std::thread::sleep(Duration::from_millis(200));
+            if crate::brain::stopped(app, session) {
+                end_later_ms(app, gen, 400);
+                return Err("the user stopped Pony while watching".into());
+            }
+            if crate::brain::has_steer(app, session) {
+                wake_for_steer = true;
+                break;
+            }
         }
         if ax::secure_input() {
             end_later_ms(app, gen, 400);
@@ -713,6 +726,9 @@ pub fn watch(app: &AppHandle, session: &str, args: &Value) -> Result<String, Str
 
         let cur_win = ax::window(pid).unwrap_or_else(|| win.clone());
         let (nodes, els) = ax::read(&cur_win, 6000);
+        if wake_for_steer {
+            break (cur_win, nodes, els, h::WatchState::Watching, true);
+        }
         if nodes.is_empty() {
             end_later_ms(app, gen, 400);
             return Err(format!("{app_name}'s window closed or became unreadable while watching."));
@@ -734,7 +750,7 @@ pub fn watch(app: &AppHandle, session: &str, args: &Value) -> Result<String, Str
         }
 
         if state != h::WatchState::Watching {
-            break (cur_win, nodes, els, state);
+            break (cur_win, nodes, els, state, false);
         }
     };
 
@@ -745,14 +761,24 @@ pub fn watch(app: &AppHandle, session: &str, args: &Value) -> Result<String, Str
     let new_text = h::diff_text(&baseline_text, &final_text, 6000);
     let (list, map) = services::eyes::list(&final_nodes);
     let what = h::changes(&old_nodes, &old_map, &final_nodes, &map, &list);
-    remember(app, session, pid, &app_name, &bundle, cur_win, final_nodes, final_els, map);
-    end_later(app, gen);
+    if !final_nodes.is_empty() {
+        remember(app, session, pid, &app_name, &bundle, cur_win, final_nodes, final_els, map);
+    }
+    if steered {
+        end_later_ms(app, gen, 400);
+    } else {
+        end_later(app, gen);
+    }
 
-    let status_line = match outcome {
-        h::WatchState::Settled => format!("Watch finished after {elapsed_s}s (response settled)."),
-        h::WatchState::Matched => format!("Watch matched target text after {elapsed_s}s."),
-        h::WatchState::QuietTimeout => format!("Watch stopped after {elapsed_s}s with no new activity (the window may still be idle or hidden)."),
-        h::WatchState::TimedOut | h::WatchState::Watching => format!("Watch reached {elapsed_s}s timeout (showing what appeared so far)."),
+    let status_line = if steered {
+        format!("Watch paused early after {elapsed_s}s because the user sent a live steering instruction. Read their latest message and follow it now.")
+    } else {
+        match outcome {
+            h::WatchState::Settled => format!("Watch finished after {elapsed_s}s (response settled)."),
+            h::WatchState::Matched => format!("Watch matched target text after {elapsed_s}s."),
+            h::WatchState::QuietTimeout => format!("Watch stopped after {elapsed_s}s with no new activity (the window may still be idle or hidden)."),
+            h::WatchState::TimedOut | h::WatchState::Watching => format!("Watch reached {elapsed_s}s timeout (showing what appeared so far)."),
+        }
     };
     app.state::<App>().log.line(&format!("hands: watch {app_name}: {status_line} (+{} chars)", new_text.len()));
 
@@ -829,6 +855,9 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
             while started.elapsed().as_millis() < ms as u128 {
                 if crate::brain::stopped(app, session) {
                     return Err("the user stopped Pony".into());
+                }
+                if crate::brain::has_steer(app, session) {
+                    return Ok(format!("wait paused early after {}ms for live user steering", started.elapsed().as_millis()));
                 }
                 std::thread::sleep(Duration::from_millis(80));
             }

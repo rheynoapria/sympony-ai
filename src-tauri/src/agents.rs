@@ -20,6 +20,32 @@ const LIMIT: Duration = Duration::from_secs(180);
 /// Interactive MCP-wired chat runs (Hands/Exec/approval cards) allow up to 180 s idle and 10 min total wall-clock.
 const CHAT_MAX_LIMIT: Duration = Duration::from_secs(600);
 
+/// Whether any Pony chat run (own engine or CLI agent) is currently active.
+pub fn has_active_chat(app: &AppHandle) -> bool {
+    crate::brain::has_active_run(app)
+        || !app.state::<Agents>().chat_runs.lock().unwrap().is_empty()
+}
+
+/// Immediately stops all active Pony chat runs (both own engine and CLI agent subprocesses).
+/// Returns `true` if at least one active run was stopped.
+pub fn stop_active_chats(app: &AppHandle) -> bool {
+    let mut stopped_any = !crate::brain::stop_all_active(app).is_empty();
+    let runs: Vec<(String, std::sync::Arc<Mutex<Option<u32>>>)> = app
+        .state::<Agents>()
+        .chat_runs
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    for (s, slot) in runs {
+        crate::brain::stop(app, &s);
+        *slot.lock().unwrap() = None;
+        stopped_any = true;
+    }
+    stopped_any
+}
+
 /// Active model label for routines & diagnostics across all brain modes (own engine or CLI agent).
 pub fn active_model_name(app: &AppHandle) -> Option<String> {
     if crate::brain::on(app) {

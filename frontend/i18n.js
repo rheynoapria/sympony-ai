@@ -1838,6 +1838,7 @@
     'Watching your screen…': 'Memantau layar Anda…',
     'Watching': 'Memantau',
     'Auto UI': 'Auto UI',
+    'Steer': 'Arahkan',
     'Voice Auto UI': 'Auto UI lewat Suara',
     'Control whether voice commands to Pony run in Auto UI mode or follow the chat toggle.': 'Atur apakah perintah suara ke Pony langsung memakai mode Auto UI atau mengikuti toggle di chat.',
     'Follow chat': 'Ikuti chat',

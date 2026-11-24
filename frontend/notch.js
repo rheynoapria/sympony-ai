@@ -2407,8 +2407,9 @@ function renderOpenVoice() {
     return;
   }
   const showLive = !st.settings || st.settings.voiceLive !== false;
-  const autoBadge = v.agent && v.autoUi ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')} ${esc(_t('Auto UI'))}</span>` : '';
-  const badge = `${autoBadge}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+  const steerBadge = v.agent && v.steer ? `<span class="v-lang v-steer">${fa('route')} ${esc(_t('Steer'))}</span>` : '';
+  const autoBadge = v.agent && !v.steer && v.autoUi ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')} ${esc(_t('Auto UI'))}</span>` : '';
+  const badge = `${steerBadge}${autoBadge}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
   if (v.state === 'listening') {
     el.dataset.ponyMood = 'listening';
     const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 12) : new Array(12).fill(0.08);
@@ -2464,6 +2465,7 @@ api.on('voice:state', (d) => {
       state: 'listening',
       agent: !!info.agent,
       autoUi: !!info.autoUi,
+      steer: !!info.steer,
       since: Date.now(),
       lang: (info.lang || (st.settings && st.settings.voiceLanguage) || 'id').toUpperCase(),
       partial: '',
@@ -2561,6 +2563,23 @@ api.on('voice:result', (d) => {
 
 api.on('voice:command', (d) => {
   const txt = d && d.text ? String(d.text).trim() : '';
+  const isStop = !!(d && d.stop);
+  const isSteer = !!(d && d.steer);
+  const chat = window.N && N.chat;
+  const chatBusy = !!(chat && typeof chat.pending === 'function' && chat.pending());
+
+  // Live voice stop or mid-run steering: keep the screen unobstructed (don't yank the Notch open)
+  if (isStop) {
+    if (chatBusy && typeof chat.stop === 'function') chat.stop();
+    return;
+  }
+  if (isSteer) {
+    if (txt && chatBusy && typeof chat.steer === 'function') {
+      chat.steer(txt, { alreadySent: !!(d && d.steeredSession), session: (d && d.steeredSession) || '' });
+    }
+    return;
+  }
+
   stopVoiceClock();
   notchEl.style.setProperty('--v-energy', '0');
   if (st.voice) {
@@ -2573,6 +2592,11 @@ api.on('voice:command', (d) => {
   openNotch('chat');
   setTimeout(() => {
     if (window.N && N.chat && typeof N.chat.send === 'function') {
+      // (if a run started in the meantime, route as live steer instead of dropping the voice command)
+      if (typeof N.chat.pending === 'function' && N.chat.pending() && typeof N.chat.steer === 'function') {
+        N.chat.steer(txt);
+        return;
+      }
       // (with Eyes on, pass front-window hint silently in context so Pony uses screen_read only when user intent refers to the screen)
       const sc = d.screen;
       const screenContext = sc && sc.app
@@ -3130,10 +3154,13 @@ function renderClosed(animate) {
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
-        const autoTag = v.agent && v.autoUi
+        const steerTag = v.agent && v.steer
+          ? `<span class="v-lang v-steer">${fa('route')}${cam ? '' : ' ' + esc(_t('Steer'))}</span>`
+          : '';
+        const autoTag = v.agent && !v.steer && v.autoUi
           ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')}${cam ? '' : ' ' + esc(_t('Auto UI'))}</span>`
           : '';
-        const langBadge = `${autoTag}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+        const langBadge = `${steerTag}${autoTag}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
         if (v.state === 'listening') {
           const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 24) : new Array(24).fill(0.08);
           const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');

@@ -481,6 +481,20 @@
           if (chatMod && chatMod.takeFiles) chatMod.takeFiles(type, paths);
         });
       }
+      if (api.on) {
+        api.on('voice:command', (d) => {
+          if (!d || !d.steer || !N.chat || !N.chat.pending || !N.chat.pending()) return;
+          if (d.stop) {
+            if (N.chat.stop) N.chat.stop();
+            toast(fa('stop'), _t('Stopped'));
+            return;
+          }
+          const txt = d.text ? String(d.text).trim() : '';
+          if (txt && N.chat.steer) {
+            N.chat.steer(txt, { alreadySent: !!d.steeredSession, session: d.steeredSession || '' });
+          }
+        });
+      }
       window.addEventListener('focus', focusChatInput);
     },
   };
