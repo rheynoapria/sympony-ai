@@ -132,6 +132,12 @@ pub unsafe fn foreground_state(_ns_window: *mut std::ffi::c_void) -> &'static st
     "normal"
 }
 
+/// Out of sight for a fullscreen app, which a Mac's notch never is: nothing to do.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn set_cloaked(_ns_window: *mut std::ffi::c_void, _cloaked: bool) {}
+
 /// Keep windows below Sympony is Windows' (a Mac's menu bar already keeps windows below the notch): nothing to do.
 ///
 /// # Safety

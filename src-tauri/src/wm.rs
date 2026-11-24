@@ -1,7 +1,8 @@
 //! Sympony over other apps' windows (on Windows; a Mac's notch never makes way, its `foreground_state` is always
 //! "normal", so nothing here moves there):
 //! - the app in front fullscreen on Sympony's display sends it up out of sight (Settings → General → Hide when an app
-//!   is fullscreen): the frontend slides it away (`notch:leaving`), then the window is hidden (`notch:visible`);
+//!   is fullscreen): the frontend slides it away (`notch:leaving`), then the window is cloaked (`notch:visible`): out
+//!   of sight and of the mouse's way, while Tauri keeps it as shown (`platform::os::window::set_cloaked` says why);
 //! - a HUD meanwhile brings it in for its moment (Settings → HUD → Show over fullscreen apps, `notch_hud`): the
 //!   closed notch shows that HUD alone (`notch:hudOnly`), nothing opens it and clicks go through to the app;
 //! - the app in front being fullscreen is told to the frontend (`shell:fg`), which then draws nothing;
@@ -86,10 +87,10 @@ pub fn start(app: &AppHandle) {
             let hide = front == "full" && s["hideInFullscreen"] != false && s["shellForm"] != "drawer";
             let hud = HUD_UNTIL.lock().unwrap().is_some_and(|t| Instant::now() < t);
             match (PLACE.load(Ordering::Relaxed), hide, hud) {
-                (SHOWN, true, _) => go_away(&app, &w, false),
+                (SHOWN, true, _) => go_away(&app, handle, false),
                 (OUT, false, _) => come_in(&app, handle, false),
                 (OUT, true, true) => come_in(&app, handle, true),
-                (HUD, true, false) => go_away(&app, &w, true),
+                (HUD, true, false) => go_away(&app, handle, true),
                 (HUD, false, _) => {
                     PLACE.store(SHOWN, Ordering::Relaxed);
                     let _ = app.emit_to(LABEL, "notch:hudOnly", false);
@@ -100,14 +101,15 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// Slides it away, then hides the window (unless it was asked back meanwhile).
-fn go_away(app: &AppHandle, w: &tauri::WebviewWindow, from_hud: bool) {
+/// Slides it away, then cloaks the window (unless it was asked back meanwhile).
+fn go_away(app: &AppHandle, handle: *mut std::ffi::c_void, from_hud: bool) {
     PLACE.store(OUT, Ordering::Relaxed);
     crate::hover::leave(app);
     let _ = app.emit_to(LABEL, "notch:leaving", true);
     std::thread::sleep(SLIDE_AWAY);
     if PLACE.load(Ordering::Relaxed) == OUT {
-        let _ = w.hide();
+        // SAFETY: the notch window's handle, read by the watch just now
+        unsafe { platform::os::window::set_cloaked(handle, true) };
         let _ = app.emit_to(LABEL, "notch:visible", false);
     }
     if from_hud {
@@ -120,8 +122,12 @@ fn come_in(app: &AppHandle, handle: *mut std::ffi::c_void, for_hud: bool) {
     PLACE.store(if for_hud { HUD } else { SHOWN }, Ordering::Relaxed);
     let handle = handle as usize;
     let _ = app.run_on_main_thread(move || {
-        // SAFETY: the notch window's handle, read just now; level 25: above everything, shown without activating
-        unsafe { platform::os::window::set_window_level(handle as *mut std::ffi::c_void, 25, Some(false)) };
+        // SAFETY: the notch window's handle, read just now; level 25: above everything (it was never hidden: only
+        // cloaked, so nothing to show)
+        unsafe {
+            platform::os::window::set_cloaked(handle as *mut std::ffi::c_void, false);
+            platform::os::window::set_window_level(handle as *mut std::ffi::c_void, 25, None);
+        }
     });
     let _ = app.emit_to(LABEL, "notch:hudOnly", for_hud);
     let _ = app.emit_to(LABEL, "notch:visible", true);
