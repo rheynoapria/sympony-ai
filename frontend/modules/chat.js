@@ -138,6 +138,14 @@
   // ---- what the assistant knows about your day: sent along with each message (Settings → AI can turn it
   // off). Plain lines, 24-hour times, a few items each, so it stays small.
   let launcher = null;
+  let gcalState = null;
+  let todoSyncState = null;
+  api.svc('pony', 'gcalState').then((v) => { gcalState = v; }).catch(() => {});
+  api.on('pony:gcal', (v) => { gcalState = v; });
+  api.svc('todosync', 'state').then((v) => { todoSyncState = v; }).catch(() => {});
+  api.on('todosync', (v) => { todoSyncState = v; });
+  const gcalWritable = () => !!(gcalState && gcalState.signedIn && gcalState.hasCalendarScope
+    && (gcalState.defaultCalendarId || (gcalState.calendars || []).some((c) => c.writable)));
   async function dayContext() {
     const s = st.settings;
     if (s.chatContext === false) return '';
@@ -152,11 +160,23 @@
     };
     const lines = [];
     if (s.calendarEnabled) {
-      const end = new Date(); end.setDate(end.getDate() + 7); end.setHours(0, 0, 0, 0);
-      const evs = (st.events || []).filter((e) => e.end > now && e.start < end.getTime()).slice(0, 20);
-      lines.push('Calendar, now until the end of the next 7 days: ' + (evs.length
-        ? evs.map((e) => `${day(e.start)} ${e.allDay ? 'all day' : `${t24(e.start)}-${t24(e.end)}`} ${e.title}${e.location ? ` (${e.location})` : ''}`).join('; ')
+      const end = new Date(); end.setDate(end.getDate() + 14); end.setHours(0, 0, 0, 0);
+      const evs = (st.events || []).filter((e) => e.end > now && e.start < end.getTime()).slice(0, 35);
+      lines.push('Calendar, now until the end of the next 14 days: ' + (evs.length
+        ? evs.map((e) => {
+          const idTag = e.provider === 'gcal' && e.writable && e.gcalKey ? `[${e.gcalKey}] ` : '';
+          const where = e.location ? ` (${e.location})` : '';
+          const calTag = e.provider === 'gcal' && e.source ? ` [${e.source}${e.writable ? '' : ', read-only'}]` : '';
+          return `${idTag}${day(e.start)} ${e.allDay ? 'all day' : `${t24(e.start)}-${t24(e.end)}`} ${e.title}${where}${calTag}`;
+        }).join('; ')
         : 'nothing'));
+      if (gcalState && gcalState.signedIn && gcalState.hasCalendarScope) {
+        const cals = gcalState.calendars || [];
+        const selNames = cals.filter((c) => c.selected).map((c) => c.summary);
+        const defCal = cals.find((c) => c.id === gcalState.defaultCalendarId) || cals.find((c) => c.primary && c.writable) || cals.find((c) => c.writable);
+        lines.push(`Google Calendar connected (${gcalState.account || 'signed in'}): active calendars: ${selNames.length ? selNames.join(', ') : 'none selected'}.`
+          + (defCal ? ` New events via add_event go to Google Calendar "${defCal.summary}". Events with [gc_…] ids can be moved/edited with update_item or deleted with remove_item (confirm before deleting).` : ''));
+      }
     }
     // the ones with a time still to come first, soonest first (a reminder weeks ahead is still listed, so the model has
     // its ID and doesn't make one up), then the rest, newest first
@@ -165,6 +185,9 @@
     const lateLimit = (m) => (m ? `ticked off by itself ${m}m after its time` : 'kept until ticked off');
     lines.push('Open todos: ' + (todos.length ? todos.slice(0, 40).map((t) => `[${t.id}] ${t.text}${t.due ? ` (due ${day(t.due)} ${t24(t.due)})` : ''}${t.repeat ? ` (repeats ${N.repeatLabel(t.repeat)})` : ''}${t.lateMin != null ? ` (if late: ${lateLimit(+t.lateMin)})` : ''}`).join('; ') : 'none')
       + `. Late tasks without their own choice: ${lateLimit(+s.todoLateMinutes || 0)}`);
+    if (todoSyncState && todoSyncState.provider === 'google' && todoSyncState.signedIn && todoSyncState.list) {
+      lines.push(`Google Tasks sync connected (${todoSyncState.account || 'signed in'}, list "${todoSyncState.list.name || 'Tasks'}"): todos added, updated, completed, or removed here sync with Google Tasks.`);
+    }
     const mine = (s.localEvents || []).filter((e) => (e.end || e.start) > now).sort((a, b) => a.start - b.start).slice(0, 30);
     if (mine.length) lines.push('Events added in Sympony (these can be changed): ' + mine.map((e) => `[${e.id}] ${day(e.start)} ${t24(e.start)} ${e.title} (${Math.round((e.end - e.start) / 60000)}m)`).join('; '));
     const w = N.data.weather;
@@ -252,19 +275,41 @@
   }
   const timeOf = (s) => { const m = (s || '').trim().match(/^([01]?\d|2[0-3])[:.]([0-5]\d)$/); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null; };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  function dueOf(when) {
+  function dueOf(when, baseMs) {
     const w = when.trim().toLowerCase();
     let m = w.match(/^(\d{1,4})\s*(?:m|min|mins|minutes?|menit)$/);
     if (m) return Date.now() + +m[1] * 60000;
     m = w.match(/^(\d{1,3})\s*(?:h|hr|hrs|hours?|jam)$/);
     if (m) return Date.now() + +m[1] * 3600000;
-    m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ t]+([01]?\d|2[0-3])[:.]([0-5]\d)$/);
+    // RFC3339 with timezone offset or Z (e.g. 2026-11-25T11:00:00+07:00)
+    if (/^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(:\d{2})?(?:\.\d+)?(?:z|[+-]\d{2}:?\d{2})$/.test(w)) {
+      const t = Date.parse(when.trim());
+      if (!Number.isNaN(t)) return t;
+    }
+    m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ t]+([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?$/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+    // "today 11:00" / "tomorrow 11:00" / "besok 11:00"
+    m = w.match(/^(today|hari ini|tomorrow|besok)\s+(?:at\s+|jam\s+|pukul\s+)?([01]?\d|2[0-3])[:.]([0-5]\d)$/);
+    if (m) {
+      const d = new Date();
+      if (m[1] === 'tomorrow' || m[1] === 'besok') d.setDate(d.getDate() + 1);
+      d.setHours(+m[2], +m[3], 0, 0);
+      return d.getTime();
+    }
     // a day without a time ("ingetin tanggal 8 …"): that morning at 09:00
     m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], 9, 0).getTime();
-    m = w.match(/^([01]?\d|2[0-3])[:.]([0-5]\d)$/);
-    if (m) { const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); return d.getTime(); }
+    m = w.match(/^([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?$/);
+    if (m) {
+      if (baseMs) {
+        const d = new Date(baseMs);
+        d.setHours(+m[1], +m[2], 0, 0);
+        return d.getTime();
+      }
+      const d = new Date(); d.setHours(+m[1], +m[2], 0, 0);
+      if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+      return d.getTime();
+    }
     return null;
   }
   function minutesOf(s) {
@@ -325,9 +370,17 @@
         const mins = a.length > 2 ? minutesOf(a[1]) || 60 : 60;
         const title = (a.length > 2 ? a.slice(2) : a.slice(1)).join(' | ');
         if (!start || !title) return { kind, ok: false, text: title || args };
+        if (gcalWritable()) {
+          try {
+            const r = await api.svc('pony', 'gcalCreate', { title, start, end: start + mins * 60000 });
+            if (r && r.ok) return { kind, ok: true, target: 'gcal', id: r.id, text: r.title || title, due: r.start || start, mins, calendarName: r.calendarName || 'Google Calendar' };
+          } catch (e) {
+            return { kind, ok: false, target: 'gcal', text: title, err: String(e) };
+          }
+        }
         const id = 'l' + uid();
         api.setSettings({ localEvents: [...(st.settings.localEvents || []), { id, title, start, end: start + mins * 60000, location: '', repeat: 'none' }] });
-        return { kind, ok: true, text: title, due: start, mins, id };
+        return { kind, ok: true, target: 'event', text: title, due: start, mins, id };
       }
       case 'pomodoro': {
         const cmd = args.trim().toLowerCase();
@@ -356,7 +409,8 @@
         const id = a[0];
         const when = (a[1] || '-').trim().toLowerCase();
         const newText = a.slice(2).join(' | ').trim();
-        const t = todos().find((x) => x.id === id);
+        const t = todos().find((x) => x.id === id)
+          || todos().find((x) => !x.deletedAt && norm(x.text) === norm(id));
         if (t) {
           let next = { ...t };
           if (kind === 'done') {
@@ -384,11 +438,39 @@
             api.setSettings({ localEvents: list.filter((e) => e.id !== id) });
             return { kind, ok: true, target: 'event', id, text: ev.title, prev: ev };
           }
-          const start = when && when !== '-' ? dueOf(when) : ev.start;
+          const start = when && when !== '-' ? dueOf(when, ev.start) : ev.start;
           if (!start) return { kind, ok: false, text: ev.title };
           const next = { ...ev, start, end: start + ((ev.end || ev.start + 3600000) - ev.start), title: newText && newText !== '-' ? newText : ev.title };
           api.setSettings({ localEvents: list.map((e) => (e.id === id ? next : e)) });
           return { kind, ok: true, target: 'event', id, text: next.title, due: next.start, prev: ev };
+        }
+        const gev = (st.events || []).find((e) => e.provider === 'gcal' && (e.gcalKey === id || e.uid === id || e.id === id))
+          || (st.events || []).find((e) => e.provider === 'gcal' && e.writable && norm(e.title) === norm(id));
+        if (gev && kind !== 'done') {
+          if (!gev.writable) return { kind, ok: false, target: 'gcal', text: gev.title, err: _t('That calendar is read-only.') };
+          const key = gev.gcalKey || id;
+          if (kind === 'remove') {
+            try {
+              const r = await api.svc('pony', 'gcalDelete', key);
+              if (r && r.ok) return { kind, ok: true, target: 'gcal', id: key, text: r.title || gev.title, prev: r.prev, calendarName: r.calendarName || gev.source };
+            } catch (e) {
+              return { kind, ok: false, target: 'gcal', text: gev.title, err: String(e) };
+            }
+          } else {
+            const hasWhen = when && when !== '-';
+            const start = hasWhen ? dueOf(when, gev.start) : gev.start;
+            if (!start) return { kind, ok: false, target: 'gcal', text: gev.title, err: `Unrecognized time "${a[1]}"` };
+            const dur = Math.max(1800000, (gev.end || gev.start + 3600000) - gev.start);
+            const payload = { id: key };
+            if (hasWhen) { payload.start = start; payload.end = start + dur; }
+            if (newText && newText !== '-') payload.title = newText;
+            try {
+              const r = await api.svc('pony', 'gcalUpdate', payload);
+              if (r && r.ok) return { kind, ok: true, target: 'gcal', id: r.id || key, text: r.title || gev.title, due: r.start || start, prev: r.prev, calendarName: r.calendarName || gev.source };
+            } catch (e) {
+              return { kind, ok: false, target: 'gcal', text: gev.title, err: String(e) };
+            }
+          }
         }
         // an ID that isn't there (the model made one up, or the item went) with a time and a text: most likely it
         // meant one more reminder ("remind me again on the 27th"), so that's what it gets, with Undo
@@ -464,7 +546,11 @@
   // The [id] tags the day's context gives the model for its action lines, should one slip into the words it shows
   // ("Bayar listrik ([mvrz70rezl6w]), due …"): only the ids of todos and Sympony's own events, so a [1] citation stays.
   function dropIds(text) {
-    const ids = new Set([...((N.data.todo || {}).items || []).map((t) => t.id), ...(st.settings.localEvents || []).map((e) => e.id)].filter(Boolean));
+    const ids = new Set([
+      ...((N.data.todo || {}).items || []).map((t) => t.id),
+      ...(st.settings.localEvents || []).map((e) => e.id),
+      ...(st.events || []).map((e) => e.gcalKey),
+    ].filter(Boolean));
     if (!ids.size) return text;
     return text.replace(/[ \t]*\(?\[([A-Za-z0-9_-]{4,40})\]\)?[ \t]*/g, (all, id) => (ids.has(id) ? (/^[ \t]/.test(all) && /[ \t]$/.test(all) ? ' ' : '') : all));
   }
@@ -486,7 +572,14 @@
       const added = todos().filter((t) => !act.prevList.some((p) => p.id === t.id)).map((t) => t.id);
       N.saveStore('todo', { items: todos().filter((t) => !added.includes(t.id)).map((t) => (t.id === act.id && back ? back : t)) });
     } else if (act.prev && act.target === 'todo') N.saveStore('todo', { items: todos().map((t) => (t.id === act.id ? act.prev : t)) });
-    else if (act.prev && act.target === 'event') {
+    else if (act.target === 'gcal') {
+      if (act.kind === 'event') api.svc('pony', 'gcalDelete', act.id).catch(() => {});
+      else if (act.kind === 'update' && act.prev) {
+        api.svc('pony', 'gcalUpdate', { id: act.id, title: act.prev.title, start: act.prev.start, end: act.prev.end, location: act.prev.location || '' }).catch(() => {});
+      } else if (act.kind === 'remove' && act.prev) {
+        api.svc('pony', 'gcalCreate', { title: act.prev.title, start: act.prev.start, end: act.prev.end, location: act.prev.location || '', description: act.prev.description || '', calendarId: act.prev.calendarId }).catch(() => {});
+      }
+    } else if (act.prev && act.target === 'event') {
       const list = st.settings.localEvents || [];
       api.setSettings({ localEvents: list.some((e) => e.id === act.id) ? list.map((e) => (e.id === act.id ? act.prev : e)) : [...list, act.prev] });
     } else if (act.kind === 'remind' || act.kind === 'todo' || act.kind === 'repeat') N.saveStore('todo', { items: todos().filter((t) => t.id !== act.id) });
@@ -589,7 +682,7 @@
     return acts.map((a, i) => {
       if (!a.ok) {
         const past = a.why === 'past' && a.due ? _t('“{text}” would be on {date}, which has passed. Ask again with a date still to come.', { text: a.text, date: new Date(a.due).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' }) }) : '';
-        const why = past || { remind: _t('Couldn’t set the reminder “{text}”. Try a time like 15m, 14:30 or a date like 1 November 09:00.', { text: a.text }), event: _t('Couldn’t add “{text}” to the calendar. Try a time like 14:30 or a date like 1 November 09:00.', { text: a.text }),
+        const why = past || a.err || { remind: _t('Couldn’t set the reminder “{text}”. Try a time like 15m, 14:30 or a date like 1 November 09:00.', { text: a.text }), event: _t('Couldn’t add “{text}” to the calendar. Try a time like 14:30 or a date like 1 November 09:00.', { text: a.text }),
           open: _t('“{text}” isn’t in your launcher apps (Settings → Drop Actions & Shelf).', { text: a.text }), pomodoro: _t('Couldn’t start or stop Pomodoro.'),
           update: _t('Couldn’t find that item to change. Ask again with its name, or ask for a new reminder.'), done: _t('Couldn’t find that todo.'), remove: _t('Couldn’t find that item to remove.'),
           repeat: _t('Couldn’t set “{text}” to repeat. Try days like weekdays or mon,wed and a time like 08:00.', { text: a.text }),
@@ -611,11 +704,11 @@
         remind: `${a.instead ? _t('Couldn’t find the one to change, so added a new reminder:') : _t('Reminder set:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}`,
         todo: `${_t('Added to Todo:')} <b>${esc(a.text)}</b>`,
         repeat: a.repeat ? `${_t('Repeats {when}:', { when: esc(N.repeatLabel(a.repeat)) })} <b>${esc(a.text)}</b>` : `${_t('No longer repeats:')} <b>${esc(a.text)}</b>`,
-        update: `${a.target === 'event' ? _t('Event moved:') : _t('Updated:')} <b>${esc(a.text)}</b>${a.due ? ` · ${esc(whenLabel(a.due))}` : a.target === 'todo' ? ` · ${_t('no time')}` : ''}`,
+        update: `${a.target === 'gcal' ? _t('Updated in Google Calendar:') : a.target === 'event' ? _t('Event moved:') : _t('Updated:')} <b>${esc(a.text)}</b>${a.due ? ` · ${esc(whenLabel(a.due))}` : a.target === 'todo' ? ` · ${_t('no time')}` : ''}`,
         done: `${_t('Marked done:')} <b>${esc(a.text)}</b>`,
-        remove: a.target === 'event' ? `${_t('Removed from your calendar:')} <b>${esc(a.text)}</b>` : `${_t('Moved to Trash:')} <b>${esc(a.text)}</b>`,
+        remove: a.target === 'gcal' ? `${_t('Removed from Google Calendar:')} <b>${esc(a.text)}</b>` : a.target === 'event' ? `${_t('Removed from your calendar:')} <b>${esc(a.text)}</b>` : `${_t('Moved to Trash:')} <b>${esc(a.text)}</b>`,
         note: `${_t('Saved to Notes:')} <b>${esc(a.text)}</b>`,
-        event: `${_t('Added to your calendar:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}${a.mins ? ` · ${_t('{n}m', { n: a.mins })}` : ''}`,
+        event: `${a.target === 'gcal' ? _t('Added to Google Calendar:') : _t('Added to your calendar:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}${a.mins ? ` · ${_t('{n}m', { n: a.mins })}` : ''}`,
         pomodoro: esc(a.text),
         open: `${_t('Opened')} <b>${esc(a.text)}</b>`,
         bookmark: `${_t('Saved to Bookmarks:')} <b>${esc(a.text)}</b>${a.cat ? ` · ${esc(a.cat)}` : ''}`,
@@ -626,8 +719,9 @@
       }[a.kind];
       const canUndo = a.id && !a.undone;
       const icon = a.kind === 'volume' && (a.muted || a.level === 0) ? 'volume-xmark' : ICON[a.kind] || 'check';
+      const jumpTab = TAB[a.kind] || (a.target === 'todo' ? 'todo' : (a.target === 'gcal' || a.target === 'event' || a.kind === 'event') ? 'calendar' : '');
       return `<div class="ch-rem ${a.undone ? 'undone' : ''}">${fa(icon)}<span>${a.undone ? `<s>${what}</s> · ${_t('undone')}` : what}</span>
-        ${canUndo ? `<button data-undo="${i}">${_t('Undo')}</button>` : ''}${!a.undone && (TAB[a.kind] || (a.target === 'todo' && 'todo')) && tabOn(TAB[a.kind] || 'todo') ? `<button data-tab="${TAB[a.kind] || 'todo'}">${esc(MODULE_TITLES[TAB[a.kind] || 'todo'] || _t('Todo'))}</button>` : ''}</div>`;
+        ${canUndo ? `<button data-undo="${i}">${_t('Undo')}</button>` : ''}${!a.undone && jumpTab && tabOn(jumpTab) ? `<button data-tab="${jumpTab}">${esc(MODULE_TITLES[jumpTab] || _t('Todo'))}</button>` : ''}</div>`;
     }).join('');
   }
 
@@ -1191,7 +1285,18 @@
     if (imgs.length || txts.length) { tool.steps.forEach((x) => { x.fresh = true; }); syncThink(); }
     // (a text file's text goes with this message only; the chat keeps just its name)
     const fileText = txts.map((a) => `\n\n[Attached file: ${a.name}]\n` + '```\n' + a.text + '\n```').join('');
-    const wire = msgs.map(({ role, content }, i) => ({ role, content: i === msgs.length - 1 && fileText ? content + fileText : content }));
+    const wire = msgs.map((m, i) => {
+      let body = m.content || '';
+      if (i === msgs.length - 1 && fileText) body += fileText;
+      if (m.role === 'assistant' && Array.isArray(m.actions) && m.actions.length) {
+        const trail = m.actions
+          .filter((a) => a && a.ok && a.id)
+          .map((a) => `${a.kind} [${a.id}]${a.text ? ` "${a.text}"` : ''}`)
+          .join(', ');
+        if (trail) body += `\n(Executed tools: ${trail})`;
+      }
+      return { role: m.role, content: body };
+    });
     const autoOverride = typeof opts.autoUi === 'boolean' ? opts.autoUi : null;
     const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '', autoOverride);
     const done = tool.actions;
@@ -1381,9 +1486,10 @@
   // (the chips and their Undo as for a [[…]] line), and what came of it goes back to the agent
   let tool = null; // { session, actions } while a send waits
   const said = (a) => {
-    if (!a.ok) return `Not done${a.why === 'past' ? ': that time has passed' : ''} (${a.kind}: ${a.text || ''})`;
+    if (!a.ok) return `Not done${a.err ? `: ${a.err}` : a.why === 'past' ? ': that time has passed' : ''} (${a.kind}: ${a.text || ''})`;
     const when = a.due ? ` for ${new Date(a.due).toLocaleString()}` : '';
-    return `Done: ${a.kind}${a.text ? ` “${a.text}”` : ''}${when}${a.existed ? ' (it was already there)' : ''}${a.id ? ` [${a.id}]` : ''}`;
+    const cal = a.target === 'gcal' ? ` in Google Calendar${a.calendarName ? ` (${a.calendarName})` : ''}` : '';
+    return `Done: ${a.kind}${a.text ? ` “${a.text}”` : ''}${when}${cal}${a.existed ? ' (it was already there)' : ''}${a.id ? ` [${a.id}]` : ''}`;
   };
   api.on('pony:approve', (d) => {
     if (!tool || !d || d.session !== tool.session) return;

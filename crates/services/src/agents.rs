@@ -314,8 +314,10 @@ fn rules(now: &str, tools: bool, engine: bool, web: bool, exec: bool, eyes: bool
     let (a, b) = (all.find("<<ACTIONS>>").unwrap_or(0), all.find("<<END>>").unwrap_or(0));
     let block = if tools {
         "Tools: Call get_context before answering about the user's calendar, todos, weather, prayer times or this Mac, and \
-before changing an item (for its id); never make an id up. When asked to do something, call the tool, then confirm in one \
-short sentence (Sympony shows it with an Undo button). Skills: pick one by its description in the Skills list, \
+before changing or removing an item (for its [id]); never make an id up. NEVER say you added, moved, edited, completed, \
+or deleted a calendar event or task unless you actually called the matching tool (add_event, update_item, remove_item, \
+add_todo, add_reminder, complete_todo) in THIS turn and got Done back. When asked to do something, call the tool, then \
+confirm in one short sentence (Sympony shows it with an Undo button). Skills: pick one by its description in the Skills list, \
 read_skill(name) loads it, follow its steps (read_skill_file for files it mentions). Memory: remember(text) lasting facts \
 about the user and how they want you to work (a preference or a correction), never secrets; forget(id) when asked; \
 recall(query) when they refer to an earlier conversation. Call ask_user(questions) before removing anything, before \

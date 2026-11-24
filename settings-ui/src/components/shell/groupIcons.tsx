@@ -61,6 +61,7 @@ const ICONS: Record<string, () => ReactNode> = {
   Lyrics: () => tint("MicVocal", "#ec4899"),
   YouTube: () => tint("MonitorPlay", "#ef4444"),
   VLC: () => tint("Clapperboard", "#f97316"),
+  "Google Calendar": () => tint("Calendar", "#4285f4"),
   "Subscribed calendars (iCal / .ics)": () => tint("CalendarPlus", "#ef4444"),
   "Local events": () => tint("CalendarDays", "#f43f5e"),
   Location: () => tint("MapPin", "#22c55e"),

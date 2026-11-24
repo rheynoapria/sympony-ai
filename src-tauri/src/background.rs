@@ -82,6 +82,9 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
     if has(&["icsFeeds", "localEvents", "calendarEnabled"]) {
         crate::calendar::kick(app, patch.get("icsFeeds").is_some());
     }
+    if has(&["todoSync", "todoSyncGoogleClientId", "has_todoSyncGoogleClientSecret"]) {
+        crate::todosync::notify_auth_changed(app);
+    }
     // (General → Language: Sympony starts again in it)
     if patch.get("language").is_some() {
         crate::lang::changed(app);

@@ -19,6 +19,7 @@ mod hands;
 mod feed;
 mod files;
 mod floating_chat;
+mod gcal;
 mod github;
 mod hooks;
 mod extras;
@@ -129,6 +130,7 @@ pub fn run() {
             github::register(&mut reg, app.handle());
             feed::register(&mut reg, app.handle());
             todosync::register(&mut reg, app.handle(), &data_dir);
+            gcal::register(&mut reg, app.handle(), &data_dir);
             agents::register(&mut reg, app.handle());
             brain::register(&mut reg, app.handle());
             exec::register(&mut reg, app.handle());

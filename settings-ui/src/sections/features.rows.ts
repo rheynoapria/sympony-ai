@@ -322,6 +322,16 @@ export const CALENDAR_ROWS: readonly Row[] = [
     step: 1,
     unit: "min",
   },
+  { t: "h2", text: "Google Calendar" },
+  {
+    t: "lead",
+    html: "Connect your Google account directly from this device to read upcoming events, pick which calendars Sympony and Pony use, and create, move, or delete events on request. Disconnect anytime.",
+  },
+  {
+    t: "custom",
+    id: "googleCalendar",
+    label: "Google Calendar",
+  },
   { t: "h2", text: "Subscribed calendars (iCal / .ics)" },
   {
     t: "lead",

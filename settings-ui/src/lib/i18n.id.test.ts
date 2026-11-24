@@ -24,6 +24,7 @@ const ALLOW_ENGLISH = new Set([
   "Paseo",
   "Microsoft To Do",
   "Google Tasks",
+  "Google Calendar",
   "VLC",
   "HEX · #4A90E2",
   "RGB · rgb(74, 144, 226)",

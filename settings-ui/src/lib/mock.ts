@@ -159,6 +159,23 @@ export function createMock(
       if (name === "perm" && method === "request") {
         return { action: "dialog" };
       }
+      if (name === "pony" && method === "gcalState") {
+        return {
+          ready: true,
+          builtIn: true,
+          signingIn: false,
+          signedIn: false,
+          account: "",
+          hasCalendarScope: false,
+          hasCalendarListScope: false,
+          hasTasksScope: false,
+          calendars: [],
+          defaultCalendarId: null,
+          syncing: false,
+          last: null,
+          error: "",
+        };
+      }
       return null;
     },
     async openExternal() {

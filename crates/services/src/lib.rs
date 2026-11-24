@@ -14,6 +14,7 @@ pub mod exec;
 pub mod eyes;
 pub mod feed;
 pub mod calendar;
+pub mod gcal;
 pub mod github;
 pub mod health;
 pub mod hands;

@@ -2,10 +2,12 @@ import { Rows } from "@/rows/Rows";
 import type { SectionBody } from "@/rows/types";
 import { CALENDAR_ROWS } from "./features.rows";
 import { CalendarFeedsPart } from "./parts/CalendarFeeds";
+import { GoogleCalendarPart } from "./parts/GoogleCalendar";
 import { LocalEventsPart } from "./parts/LocalEventsPart";
 import { ModuleStyleCard } from "./parts/ModuleStyleCard";
 
 const CUSTOMS = {
+  googleCalendar: GoogleCalendarPart,
   icsFeeds: CalendarFeedsPart,
   localEvents: LocalEventsPart,
 };

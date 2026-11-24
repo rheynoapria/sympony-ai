@@ -15,6 +15,18 @@
   let form = null;
   let dayField; let timeField; // the form's day and time fields (datetime.js: drawn inside the notch)
   let saved = null; // the event just saved: { id, until }, its row lights up in the day's list
+  let gcal = null; // live Google Calendar OAuth state (pony:gcal)
+  api.svc('pony', 'gcalState').then((v) => { gcal = v; }).catch(() => {});
+  api.on('pony:gcal', (v) => { gcal = v; });
+  const gcalWriteCal = () => {
+    if (!gcal || !gcal.signedIn || !gcal.hasCalendarScope) return null;
+    const cals = gcal.calendars || [];
+    return cals.find((c) => c.id === gcal.defaultCalendarId && c.writable)
+      || cals.find((c) => c.primary && c.selected && c.writable)
+      || cals.find((c) => c.selected && c.writable)
+      || cals.find((c) => c.writable)
+      || null;
+  };
 
   const sod = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const isoDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -90,7 +102,9 @@
       + `<i style="width:3px;height:28px;border-radius:2px;background:#fb923c;flex:none"></i>`
       + `<span class="t1" style="flex:1;font-size:12.5px;font-weight:600">${t.done ? '<s>' : ''}${esc(t.text)}${t.done ? '</s>' : ''}</span></div>`));
 
-    const noCalendars = !(st.settings.icsFeeds || []).length && !(st.settings.localEvents || []).length && !(st.events || []).some((e) => e.provider === 'mac');
+    const noCalendars = !(st.settings.icsFeeds || []).length && !(st.settings.localEvents || []).length
+      && !(st.events || []).some((e) => e.provider === 'mac' || e.provider === 'gcal')
+      && !(gcal && gcal.signedIn && gcal.hasCalendarScope);
     const far = sel < today - 35 * 86400000 || sel > today + 64 * 86400000;
     $('.calm-list', page).innerHTML = rows.length ? rows.join('')
       : `<div class="sub" style="margin:auto;text-align:center;padding:12px">${far ? _t('Sympony loads events from five weeks back to two months ahead.') : noCalendars ? `${_t('No calendars yet.')}<br><button type="button" class="sbtn" style="margin-top:8px" data-cal="settings">${_t('Connect Google / Outlook calendar')}</button>` : _t('Nothing on this day')}</div>`;
@@ -101,7 +115,7 @@
   }
 
   // ------------------------------------------------------------------ the event's card
-  const PROVIDER = { google: 'Google', outlook: 'Outlook' };
+  const PROVIDER = { google: 'Google', gcal: 'Google Calendar', outlook: 'Outlook' };
   const isUrl = (s) => /^https?:\/\/\S+$/i.test(String(s || '').trim());
   // a location that only says the meeting is online (Outlook puts "Microsoft Teams Meeting" there): no map for it
   const ONLINE = /^(microsoft teams( meeting)?|teams meeting|zoom( meeting)?|google meet|webex( meeting)?|online( meeting)?)$/i;
@@ -163,6 +177,8 @@
     const card = $('.cald', page);
     const s = st.settings;
     const local = e.provider === 'sympony';
+    const editableGcal = e.provider === 'gcal' && !!e.writable;
+    const editable = local || editableGcal;
     const link = e.url || (isUrl(e.location) ? e.location.trim() : '');
     const meet = link ? meetingName(link) : '';
     const known = ['Google Meet', 'Zoom', 'Microsoft Teams', 'Webex'].includes(meet);
@@ -198,11 +214,11 @@
         <button class="pill-btn cald-del" data-act="del-yes">${_t('Yes')}</button><button class="pill-btn" data-act="del-no">${_t('No')}</button>`
       : [busy && `<button class="pill-btn" data-act="settings">${fa('gear')} ${_t('Calendar settings')}</button>`,
         link && `<button class="pill-btn cald-join" data-act="join">${fa(known ? 'video' : 'link')} ${known ? _t('Join') : _t('Open link')}</button>`,
-        e.openUrl && from && `<button class="pill-btn" data-act="open">${fa('up-right-from-square')} ${_t('Open in {app}', { app: e.provider === 'google' ? 'Google Calendar' : 'Outlook' })}</button>`,
+        e.openUrl && from && `<button class="pill-btn" data-act="open">${fa('up-right-from-square')} ${_t('Open in {app}', { app: (e.provider === 'google' || e.provider === 'gcal') ? 'Google Calendar' : 'Outlook' })}</button>`,
         link && `<button class="pill-btn" data-act="copy">${fa('copy', 'regular')} ${_t('Copy link')}</button>`,
         place && `<button class="pill-btn" data-act="map">${fa('map-location-dot')} ${_t('Map')}</button>`,
-        local && `<button class="pill-btn" data-act="edit">${fa('pen')} ${_t('Edit')}</button>`,
-        local && `<button class="pill-btn cald-del" data-act="delete">${fa('trash-can', 'regular')} ${_t('Delete')}</button>`].filter(Boolean).join('');
+        editable && `<button class="pill-btn" data-act="edit">${fa('pen')} ${_t('Edit')}</button>`,
+        editable && `<button class="pill-btn cald-del" data-act="delete">${fa('trash-can', 'regular')} ${_t('Delete')}</button>`].filter(Boolean).join('');
     // a re-render (every minute) keeps where the card was scrolled to
     const same = card.dataset.ev === e.id;
     const scrolled = same ? ['.cald-body', '.cald-desc'].map((q) => { const x = $(q, card); return x ? x.scrollTop : 0; }) : [];
@@ -243,13 +259,17 @@
       case 'copy': navigator.clipboard.writeText(link).then(() => N.toast(fa('copy', 'regular'), _t('Link copied')), () => N.toast(fa('copy', 'regular'), _t("Couldn't copy the link"))); break;
       case 'map': api.openExternal('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.location.trim())); break;
       case 'settings': api.openSettings('calendar'); break;
-      case 'edit': openForm(e.uid); break;
+      case 'edit': openForm(e.provider === 'gcal' ? e.gcalKey : e.uid, e.provider === 'gcal' ? e : null); break;
       case 'delete': askDelete = true; renderDetail(e); break;
       case 'del-no': askDelete = false; renderDetail(e); break;
       case 'del-yes':
-        // the whole event goes, with its repeats: it's one entry in Settings → Calendar → Local events
-        LocalEvents.remove(st.settings.localEvents, e.uid);
-        back();
+        if (e.provider === 'gcal') {
+          api.svc('pony', 'gcalDelete', e.gcalKey || e.uid).then(() => back()).catch((err) => N.toast(fa('triangle-exclamation'), String(err)));
+        } else {
+          // the whole event goes, with its repeats: it's one entry in Settings → Calendar → Local events
+          LocalEvents.remove(st.settings.localEvents, e.uid);
+          back();
+        }
         break;
     }
   }
@@ -262,25 +282,56 @@
   const durText = (m) => (m < 60 ? _t('{n} min', { n: m }) : m % 60 ? _t('{h} h {m} min', { h: Math.floor(m / 60), m: m % 60 }) : _t('{h} h', { h: m / 60 }));
   const own = (id) => (st.settings.localEvents || []).find((x) => x.id === id);
 
-  // `id`: the Sympony event to change (its id in Settings), else a new one on the chosen day: at the next whole hour
-  // today, at 9 on another day
-  function openForm(id) {
-    const prev = id ? own(id) : null;
-    if (id && !prev) return;
+  // `id`: the Sympony or Google Calendar event to change, else a new one on the chosen day: at the next whole hour
+  // today, at 9 on another day (saved to Google Calendar when connected, else Sympony local events)
+  function openForm(id, gcalEv) {
+    const isGcalEdit = !!gcalEv;
+    const writeCal = !id ? gcalWriteCal() : null;
+    const useGcal = isGcalEdit || !!writeCal;
+    const prev = !useGcal && id ? own(id) : null;
+    if (!useGcal && id && !prev) return;
     const now = new Date();
-    const f = prev ? LocalEvents.fields(prev)
-      : { title: '', day: isoDay(sel), time: `${String(sel === sod(now) ? Math.min(23, now.getHours() + 1) : 9).padStart(2, '0')}:00`, minutes: 30, location: '', repeat: 'none' };
-    form = { id: prev ? id : null, back: detail, minutes: f.minutes, repeat: f.repeat, ask: false };
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const gcalFields = (ev) => {
+      const sd = new Date(ev.start);
+      const mins = Math.max(15, Math.round(((ev.end || ev.start + 1800000) - ev.start) / 60000));
+      return {
+        title: ev.title || '',
+        day: isoDay(ev.start),
+        time: `${pad2(sd.getHours())}:${pad2(sd.getMinutes())}`,
+        minutes: mins,
+        location: ev.location || '',
+        repeat: 'none',
+      };
+    };
+    const f = isGcalEdit ? gcalFields(gcalEv)
+      : prev ? LocalEvents.fields(prev)
+      : { title: '', day: isoDay(sel), time: `${pad2(sel === sod(now) ? Math.min(23, now.getHours() + 1) : 9)}:00`, minutes: 30, location: '', repeat: 'none' };
+    form = {
+      id: isGcalEdit ? (gcalEv.gcalKey || id) : (prev ? id : null),
+      gcal: useGcal,
+      calendarId: isGcalEdit ? gcalEv.calendarId : (writeCal ? writeCal.id : null),
+      calendarName: isGcalEdit ? (gcalEv.calendarName || gcalEv.source || 'Google Calendar') : (writeCal ? writeCal.summary : ''),
+      back: detail,
+      minutes: f.minutes,
+      repeat: f.repeat,
+      ask: false,
+      busy: false,
+    };
     detail = null; askDelete = false;
     const box = $('.calf', page);
+    const badgeCol = isGcalEdit ? (gcalEv.color || '#4285f4') : writeCal ? (writeCal.color || '#4285f4') : ((prev && prev.color) || '#a78bfa');
+    const heading = useGcal
+      ? `${isGcalEdit ? _t('Edit event') : _t('New event')} · ${form.calendarName || 'Google Calendar'}`
+      : (prev ? _t('Edit event') : _t('New event'));
     box.innerHTML = `
       <div class="calf-top">
         <button class="cald-back" data-f="cancel" title="${_t('Cancel')} (Esc)"></button>
-        <span class="cald-src"><i style="background:${esc((prev && prev.color) || '#a78bfa')}"></i><span>${prev ? _t('Edit event') : _t('New event')}</span></span>
+        <span class="cald-src"><i style="background:${esc(badgeCol)}"></i><span>${esc(heading)}</span></span>
       </div>
       <input type="text" class="field calf-title" maxlength="200" placeholder="${_t('Event title')}" spellcheck="false">
       <div class="calf-row"><input class="field calf-day" placeholder="${_t('Day')}"><input class="field calf-time" placeholder="${_t('Time')}"><button class="pick-btn calf-dur" title="${_t('Duration')}"></button></div>
-      <div class="calf-row"><button class="pick-btn calf-rep" title="${_t('Repeat')}"></button><input type="text" class="field calf-loc" maxlength="500" placeholder="${_t('Location or meeting link')}" spellcheck="false"></div>
+      <div class="calf-row">${useGcal ? '' : `<button class="pick-btn calf-rep" title="${_t('Repeat')}"></button>`}<input type="text" class="field calf-loc" maxlength="500" placeholder="${_t('Location or meeting link')}" spellcheck="false"></div>
       <div class="calf-acts"></div>`;
     $('.calf-title', box).value = f.title;
     $('.calf-loc', box).value = f.location;
@@ -302,25 +353,57 @@
   function paintPicks() {
     const mins = DURATIONS.includes(form.minutes) ? DURATIONS : [...DURATIONS, form.minutes].sort((a, b) => a - b);
     N.pick($('.calf-dur', page), { options: mins.map((m) => [m, durText(m)]), value: form.minutes, onChange: (v) => { form.minutes = +v; paintPicks(); } });
-    N.pick($('.calf-rep', page), { options: LocalEvents.repeats(), value: form.repeat, icon: fa('repeat'), onChange: (v) => { form.repeat = v; paintPicks(); } });
+    if (!form.gcal && $('.calf-rep', page)) {
+      N.pick($('.calf-rep', page), { options: LocalEvents.repeats(), value: form.repeat, icon: fa('repeat'), onChange: (v) => { form.repeat = v; paintPicks(); } });
+    }
   }
 
   function paintActs() {
-    const prev = form.id && own(form.id);
-    const label = form.id ? _t('Save') : _t('Add event');
+    const prev = !form.gcal && form.id && own(form.id);
+    const label = form.busy ? _t('Saving…') : (form.id ? _t('Save') : _t('Add event'));
     $('.calf-acts', page).innerHTML = form.ask
       ? `<span class="cald-ask">${prev && prev.repeat && prev.repeat !== 'none' ? _t('Delete this event and its repeats?') : _t('Delete this event?')}</span>
         <button class="pill-btn cald-del" data-f="del-yes">${_t('Yes')}</button><button class="pill-btn" data-f="del-no">${_t('No')}</button>`
-      : `<button class="pill-btn primary" data-f="save" title="${label} (Enter)">${fa('check')} ${label}</button>
+      : `<button class="pill-btn primary" data-f="save" ${form.busy ? 'disabled' : ''} title="${label} (Enter)">${fa('check')} ${label}</button>
         <button class="pill-btn" data-f="cancel" title="${_t('Cancel')} (Esc)">${_t('Cancel')}</button>
-        ${form.id ? `<button class="pill-btn cald-del calf-del" data-f="delete">${fa('trash-can', 'regular')} ${_t('Delete')}</button>` : ''}`;
+        ${form.id ? `<button class="pill-btn cald-del calf-del" data-f="delete" ${form.busy ? 'disabled' : ''}>${fa('trash-can', 'regular')} ${_t('Delete')}</button>` : ''}`;
   }
 
   // a field that won't do blinks and gets the keyboard
   function shake(el) { el.classList.remove('bad'); void el.offsetWidth; el.classList.add('bad'); el.focus(); }
 
-  function saveForm() {
+  async function saveForm() {
+    if (form.busy) return;
     const box = $('.calf', page);
+    if (form.gcal) {
+      const title = $('.calf-title', box).value.trim();
+      if (!title) { shake($('.calf-title', box)); return; }
+      const day = (dayField.value || '').trim();
+      const dm = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!dm) { shake($('.calf-day', box)); return; }
+      const tm = (timeField.value || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+      if (!tm) { shake($('.calf-time', box)); return; }
+      const start = new Date(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]).getTime();
+      const end = start + (form.minutes || 30) * 60000;
+      const location = $('.calf-loc', box).value.trim();
+      form.busy = true;
+      paintActs();
+      try {
+        const res = form.id
+          ? await api.svc('pony', 'gcalUpdate', { id: form.id, title, start, end, location })
+          : await api.svc('pony', 'gcalCreate', { title, start, end, location, calendarId: form.calendarId || undefined });
+        if (!form) return;
+        sel = sod(start); month = null;
+        saved = { id: (res && res.eventId) || null, until: Date.now() + 1500 };
+        form = null;
+        render();
+        if (N.layout) N.layout();
+      } catch (e) {
+        if (form) { form.busy = false; paintActs(); }
+        N.toast(fa('triangle-exclamation'), String(e));
+      }
+      return;
+    }
     const r = LocalEvents.save(st.settings.localEvents, {
       title: $('.calf-title', box).value, day: dayField.value, time: timeField.value, minutes: form.minutes, location: $('.calf-loc', box).value, repeat: form.repeat,
     }, form.id ? own(form.id) : null);
@@ -340,11 +423,18 @@
     const a = ev.target.closest('[data-f]');
     if (!form || !a) return;
     switch (a.dataset.f) {
-      case 'save': saveForm(); break;
+      case 'save': void saveForm(); break;
       case 'cancel': closeForm(); break;
       case 'delete': form.ask = true; paintActs(); break;
       case 'del-no': form.ask = false; paintActs(); break;
-      case 'del-yes': LocalEvents.remove(st.settings.localEvents, form.id); form = null; render(); break;
+      case 'del-yes':
+        if (form.gcal) {
+          const id = form.id;
+          api.svc('pony', 'gcalDelete', id).then(() => { form = null; detail = null; render(); }).catch((e) => N.toast(fa('triangle-exclamation'), String(e)));
+        } else {
+          LocalEvents.remove(st.settings.localEvents, form.id); form = null; render();
+        }
+        break;
     }
   }
 
