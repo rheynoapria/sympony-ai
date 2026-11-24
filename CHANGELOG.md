@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
+### Added
+- **Official Windows 10/11 x64 Support & Full Desktop Parity:** Native Win32/WinRT backend (`crates/platform/src/windows`) with NSIS desktop installer (`Sympony_0.2.0_x64-setup.exe`), bundled `sherpa-onnx` runtime DLLs, Notch + Fullscreen DWM Cloak + AppBar strip (`Keep windows below Sympony`), Music/GSMTC & YouTube Video Mode, Control Center (Audio, Wi-Fi, Bluetooth, Brightness, Focus/DND, Color Picker), System/Battery/Session stats, Location, Clipboard History & Recycle Bin, Windows Notifications (`wpndatabase.db`), Calendar & Radio, Voice dictation keys & RAM tiering, and Pony Eyes & Hands via UI Automation, SendInput, and in-memory Vision/OCR. (Note: Windows installer is not yet Authenticode-signed, so SmartScreen may prompt "More info → Run anyway".)
+- **Dual-Channel In-App Auto-Updater (macOS & Windows):** Automatic update checks across Stable (`latest.json`) and Beta (`beta-channel/latest.json`) channels with cryptographic signature verification, live download progress, non-downgrade channel switching, and Apple Developer ID signed + notarized macOS builds.
+- **Feed & RSS Module + Fast Streaming Pony Summaries:** Cross-platform OLED Feed & RSS reader (Hacker News, GitHub Trending with owner avatars, Google News Indonesia + custom topics, Indonesian news portals, global presets, and custom RSS/Atom feeds) with 3 Module Styling Library layouts, SSRF-safe cached favicons, article thumbnails, opt-in background batch auto-summary, live SSE streaming summaries (`feed:sumDelta`), and Claude Code Haiku fast-task pinning.
+- **Google Calendar & Google Tasks OAuth Sync:** Bidirectional Google Calendar & Google Tasks OAuth integration directly from the Calendar & Todo modules and Pony chat, paired with a Pony tool-execution safety guard that prevents unexecuted calendar/task mutation claims.
+- **Floating Pony Chat Window & Liquid Smoked Crystal Glass:** Detachable, resizable, always-on-top Floating Pony Chat (`pony-chat`) sharing live Markdown/streaming/tool history with the notch across macOS and Windows, plus upgraded Liquid Glass styling, Notch color themes, and 18 Module Styling Library layouts across 3 style packs (Bento Studio, Compact OLED, Minimal Focus).
+- **Full Auto UI Mode, Live Voice Steering & Maximized Claude Code Engine:** Quick `Auto UI` composer toggle with zero-token `screen_watch` passive waiting, 3-layer Voice + Auto UI combo (`Auto UI` / `Steer` pill badges, mid-run steering, instant voice stop commands), Active-UI-First Paseo & deep Electron AX/UIA reading (`depth 96` + Head/Middle/Tail truncation), and full Claude Code `stream-json` parity (live WebSearch/WebFetch chips, Commands & files, multimodal attachments).
+- **Floating YouTube Video (Picture-in-Picture) & Dismissible Settings `New` Badges:** Pop-out always-on-top muted YouTube video window synchronized within `±0.1 s` to the browser tab (`ytFloat`), plus dismissible `New` (`Baru`) badges across Settings Sidebar, Modules, and new rows.
+
+### Changed
+- **Display-Adaptive Notch Sizing & Minimalist Profiles:** Automatically adapts closed & expanded notch dimensions to screen geometry (`notchSizeMode: "auto"`) while preserving explicit compact/minimal user configs, slimmer 13-inch MacBook camera-notch wings, and YouTube seek moved to `Shift + ←/→` so plain `←/→` slides notch modules.
+
+### Fixed
+- **Horizontal Trackpad / Wheel Double-Scroll (`#62`):** Momentum-safe `NotchKit.createWheelPager` locks out full macOS/Windows trackpad inertial glide tails, ignores diagonal vertical scroll wobbles, and respects `e.defaultPrevented` from inner sliders/controls.
+- **Claude Code AI Usage Auto-Refresh & Keychain Reliability (`#61`):** Automatically refreshes expired/401/Keychain-denied Claude Code OAuth via zero-LLM-token `claude -p /usage`, decodes hex Keychain output, supports `CLAUDE_CONFIG_DIR` hashed Keychain entries, prevents stale `.credentials.json` from masking Keychain denials, falls back to CLI usage output, and restores macOS `"on this Mac"` copy.
+- **Pony Peek Below Closed Notch (`#60`):** Decoupled clickable `peekHit` from `notch:hover` (`openOnHover`) and upgraded `#ponyPeek` with `shadow: false`, notch-rim `grip` paws, hover/`done` `wave`, and click-through flicker fix.
+- **Voice Model Download UI Glitch (`#58`) & Closed-Notch 1 Hz Flicker:** Sequential download queue, concurrency guard, monotonic progress events, catalog size fallback, and stable `closedStateKey` rendering on non-camera Macs.
+- **macOS Gatekeeper & Windows WebView2 Stability:** Notarizes and staples `Sympony.app` before `.dmg` packing, fixes Windows Settings/Onboarding WebView2 deadlocks (`later_on_main_thread`), cloaks Windows notch via `DWMWA_CLOAK`, and preserves Windows MCP environment variables & `HOME` resolution.
+
+### Credits
+- Special thanks to **Ery Rivaldi ([@mrerren](https://github.com/mrerren))** for building the native Windows 10/11 port, Floating YouTube PiP, and cross-platform polish across Phases 1 & 2.
+
 ## [0.2.0-beta.6] - 2026-11-24
 
 ### Added
@@ -131,7 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Voice V1:** On-device Indonesian-first hybrid STT (`Zipformer2-id` live partials + `Qwen3-ASR` Metal final pass) with deterministic KBBI/phonetic post-processing and custom user dictionary.
 - **Security Hardening:** Per-turn taint tracking (including YOLO mode), home-anchored secret & shell-profile protection, `0600`/`0700` data permissions, Hardened Runtime, backup disarming, SSRF-safe redirects, and scrubbed stdio MCP environments.
 
-[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.6...HEAD
+[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rheynoapria/sympony-ai/compare/v0.1.0...v0.2.0
 [0.2.0-beta.6]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.5...v0.2.0-beta.6
 [0.2.0-beta.5]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.4...v0.2.0-beta.5
 [0.2.0-beta.4]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.3...v0.2.0-beta.4
