@@ -28,17 +28,36 @@ pub struct Display {
     pub main: bool,
 }
 
-/// The notch window: 820×420 centred on the display's top edge; and `notch:camera` for it (the camera's centre and
-/// size in window coordinates), `None` on a display without one.
+/// The notch window: up to 820×420 centred on the display's top edge (shrunk safely on compact/high-DPI screens);
+/// and `notch:camera` for it (the camera's centre and size in window coordinates), `None` on a display without one.
 pub fn place(d: &Display) -> (Rect, Option<Value>) {
-    let win = Rect { x: d.frame.x + (d.frame.w - WIN_W) / 2.0, y: d.frame.y, w: WIN_W, h: WIN_H };
+    let w = WIN_W.min((d.frame.w - 24.0).max(480.0));
+    let h = WIN_H.min((d.frame.h - 40.0).max(280.0));
+    let win = Rect { x: d.frame.x + (d.frame.w - w) / 2.0, y: d.frame.y, w, h };
     let cam = d.camera.map(|c| json!({ "x": c.x + c.w / 2.0 - win.x, "w": c.w, "h": c.h }));
     (win, cam)
 }
 
+/// Active display metrics sent to the notch frontend (`notch:display` & `helper_state.display`) so closed/open
+/// notch dimensions adapt proportionally to the current screen.
+pub fn display_info(d: &Display) -> Value {
+    json!({
+        "id": d.id,
+        "w": d.frame.w.round(),
+        "h": d.frame.h.round(),
+        "hasCamera": d.camera.is_some(),
+    })
+}
+
 /// Where the notch sits in its window for `notchPosition` (0..1 along the window; 0.5 is the middle).
 pub fn anchor_px(position: f64) -> f64 {
-    (position * WIN_W).clamp(0.0, WIN_W)
+    anchor_px_for(position, WIN_W)
+}
+
+/// Where the notch sits in a window of width `win_w` for `notchPosition`.
+pub fn anchor_px_for(position: f64, win_w: f64) -> f64 {
+    let w = if win_w > 0.0 { win_w } else { WIN_W };
+    (position * w).clamp(0.0, w)
 }
 
 /// The display the notch goes on, from the `display` setting: a display's id, else the main display ("primary",

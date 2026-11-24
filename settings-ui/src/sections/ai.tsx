@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/knowns/switch";
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { useAgents } from "@/lib/agents";
 import { SkeletonCard } from "@/components/ui/knowns/skeleton";
@@ -614,6 +615,7 @@ function AiSection({ settings, set, part }: CustomPartProps) {
   const chatHelp = chat ? renderHelp(chat) : null;
   const mode: BrainMode = settings.ponyBrain === "sympony" || settings.ponyBrain === "api" ? settings.ponyBrain : "agent";
   const api = mode !== "agent";
+  const hasTools = api || Boolean(chat?.tools);
   const { name: ponyName, persona: ponyPersona, personaText: ponyPersonaText } = ponyDefaults(settings);
 
   const tabBody: Record<PonyTab, ReactNode> = {
@@ -630,17 +632,21 @@ function AiSection({ settings, set, part }: CustomPartProps) {
           {!api && (
           <>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {t(
-              "Pony and Translate answer through an AI agent already on this Mac, with your own sign-in and plan: no API keys. Pick one below."
-            )}
+            {onMac()
+              ? t(
+                  "Pony and Translate answer through an AI agent already on this Mac, with your own sign-in and plan: no API keys. Pick one below."
+                )
+              : t(
+                  "Pony and Translate answer through an AI agent already on this PC, with your own sign-in and plan: no API keys. Pick one below."
+                )}
           </p>
 
           <div className="flex items-center justify-between gap-3">
             <span className="text-[12.5px] text-muted-foreground">
               {agents === null
-                ? t("Looking for AI agents on this Mac…")
+                ? (onMac() ? t("Looking for AI agents on this Mac…") : t("Looking for AI agents on this PC…"))
                 : ready.length
-                ? t("{n} ready on this Mac", { n: ready.length })
+                ? (onMac() ? t("{n} ready on this Mac", { n: ready.length }) : t("{n} ready on this PC", { n: ready.length }))
                 : t("None ready yet: install one and sign in")}
             </span>
             <Button
@@ -782,15 +788,17 @@ function AiSection({ settings, set, part }: CustomPartProps) {
               <div className="py-3" data-k="agentModels">
                 <SettingsRow
                   label={t("Model for {name}", { name: chat.name })}
-                  description={t(
-                    "Empty: the agent’s own default. Any model name it knows (e.g. opus, gpt-5, gemini-3-pro)."
-                  )}
+                  description={
+                    chat.id === "claude"
+                      ? t("Empty: defaults to sonnet. Enter any Claude alias or model ID (e.g. sonnet, opus, haiku).")
+                      : t("Empty: the agent’s own default. Any model name it knows (e.g. opus, gpt-5, gemini-3-pro).")
+                  }
                 >
                   <input
                     key={chat.id}
                     type="text"
                     defaultValue={models[chat.id] || ""}
-                    placeholder={t("default")}
+                    placeholder={chat.id === "claude" ? "sonnet" : t("default")}
                     aria-label={t("Model for {name}", { name: chat.name })}
                     onBlur={(e) =>
                       void set({
@@ -816,10 +824,16 @@ function AiSection({ settings, set, part }: CustomPartProps) {
             <p>
               {t(
                 mode === "sympony"
-                  ? "Your messages, persona, active skills, memory facts, and tool results go to Sympony AI with your account. Everything else stays in ~/.sympony on this Mac."
+                  ? (onMac()
+                    ? "Your messages, persona, active skills, memory facts, and tool results go to Sympony AI with your account. Everything else stays in ~/.sympony on this Mac."
+                    : "Your messages, persona, active skills, memory facts, and tool results go to Sympony AI with your account. Everything else stays in ~/.sympony on this PC.")
                   : api
-                  ? "Your messages, persona, active skills, memory facts, and tool results go to the AI server above, with your account. Everything else stays in ~/.sympony on this Mac."
-                  : "Your messages, persona, active skills, memory facts, and tool results go to the chosen AI CLI under your own account. Everything stays in ~/.sympony on this Mac."
+                  ? (onMac()
+                    ? "Your messages, persona, active skills, memory facts, and tool results go to the AI server above, with your account. Everything else stays in ~/.sympony on this Mac."
+                    : "Your messages, persona, active skills, memory facts, and tool results go to the AI server above, with your account. Everything else stays in ~/.sympony on this PC.")
+                  : onMac()
+                  ? "Your messages, persona, active skills, memory facts, and tool results go to the chosen AI CLI under your own account. Everything stays in ~/.sympony on this Mac."
+                  : "Your messages, persona, active skills, memory facts, and tool results go to the chosen AI CLI under your own account. Everything stays in ~/.sympony on this PC."
               )}
             </p>
           </div>
@@ -838,8 +852,8 @@ function AiSection({ settings, set, part }: CustomPartProps) {
             icon="Globe"
             tone="sky"
             title={t("Search the web")}
-            summary={t("With Claude Code, its own web search; the other agents search when they see fit.")}
-            tryIt={[t("AI news today")]}
+            summary={t("With Claude Code, live WebSearch & WebFetch with cited summaries; other agents search when supported.")}
+            tryIt={[t("AI news today"), t("gold price now")]}
             control={<Switch checked={Boolean(settings.chatWebSearch)} aria-label={t("Search the web")} onCheckedChange={(checked) => void set({ chatWebSearch: checked })} />}
           />
         )}
@@ -848,26 +862,38 @@ function AiSection({ settings, set, part }: CustomPartProps) {
           icon="CalendarDays"
           tone="amber"
           title={t("Knows your day")}
-          summary={t("Your calendar, todos, weather and your Mac go along with each message")}
+          summary={onMac() ? t("Your calendar, todos, weather and your Mac go along with each message") : t("Your calendar, todos, weather and your PC go along with each message")}
           tryIt={[t("what's on today?"), t("am I free at 3?")]}
           control={<Switch checked={settings.chatContext !== false} aria-label={t("Knows your day")} onCheckedChange={(checked) => void set({ chatContext: checked })} />}
         />
       </AbilityGroup>
       <AbilityGroup title={t("On your screen")} hint={t("the window you're looking at")}>
-        <PonyEyes settings={settings} set={set} />
-        <PonyAskAi settings={settings} set={set} />
+        {!hasTools && (
+          <div className="flex items-start gap-2 bg-muted/40 px-4 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0 text-foreground/70" aria-hidden="true" />
+            <span>{t("Eyes, Hands, Ask other AIs, Commands & files, and Outside MCP tools require Sympony AI, your own server, or Claude Code (Brain tab).")}</span>
+          </div>
+        )}
+        <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+          <PonyEyes settings={settings} set={set} />
+          <PonyAskAi settings={settings} set={set} />
+        </div>
       </AbilityGroup>
-      <AbilityGroup title={t("On your Mac")} hint={t("work Pony does or hands off")}>
-        {api ? (
+      <AbilityGroup title={onMac() ? t("On your Mac") : t("On your PC")} hint={t("work Pony does or hands off")}>
+        {hasTools ? (
           <PonyHands settings={settings} set={set} />
         ) : (
           <p className="px-4 py-3.5 text-[12px] leading-relaxed text-muted-foreground">
-            {t("Commands & files work when Pony thinks with Sympony AI or your own server (Brain tab).")}
+            {t("Commands & files work with Sympony AI, your own server, or Claude Code (Brain tab).")}
           </p>
         )}
-        <OtherAgents />
+        <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+          <OtherAgents />
+        </div>
       </AbilityGroup>
-      <McpServers settings={settings} set={set} api={api} />
+      <div className={cn(!hasTools && "pointer-events-none opacity-55")}>
+        <McpServers settings={settings} set={set} api={api} />
+      </div>
       </>
     ),
     persona: (
@@ -975,7 +1001,11 @@ function AiSection({ settings, set, part }: CustomPartProps) {
         <div className="mb-3 border-b border-border/80 pb-3" data-k="ponyLearn">
           <SettingsRow
             label={t("Learn from chats")}
-            description={t("After a few messages Pony notes lasting things you said, like how you like answers. They show here marked Learned; edit or forget any.")}
+            description={
+              api
+                ? t("After a few messages Pony notes lasting things you said, like how you like answers. They show here marked Learned; edit or forget any.")
+                : t("Automatic background learning runs with Sympony AI or your own server. With Claude Code you can still ask Pony to remember or forget facts directly.")
+            }
           >
             <Switch
               checked={settings.ponyLearn !== false}
@@ -990,7 +1020,7 @@ function AiSection({ settings, set, part }: CustomPartProps) {
     ),
     briefs: (
       <>
-      <TabLead text={t("On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the Mac was asleep, the brief comes when it wakes, up to an hour late.")} />
+      <TabLead text={onMac() ? t("On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the Mac was asleep, the brief comes when it wakes, up to an hour late.") : t("On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the PC was asleep, the brief comes when it wakes, up to an hour late.")} />
       <PanelCard>
         <BriefsList settings={settings} set={set} />
       </PanelCard>

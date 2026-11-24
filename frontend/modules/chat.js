@@ -41,9 +41,17 @@
     chats.current = id;
     msgs = ((chats.list.find((x) => x.id === id) || {}).msgs || []).slice();
     history = false;
+    api.svc('store', 'set', 'chats', { ...chats, by: me });
     changed();
   }
-  function newChat() { clearActiveAsk(); chats.current = null; msgs = []; history = false; changed(); }
+  function newChat() {
+    clearActiveAsk();
+    chats.current = null;
+    msgs = [];
+    history = false;
+    api.svc('store', 'set', 'chats', { ...chats, by: me });
+    changed();
+  }
   // The conversation just deleted: its row in History says so with an Undo for a few seconds (until the list closes)
   let deleted = null; // { chat, at (its place in the list), current (it was the open one), timer }
   function removeChat(id) {
@@ -86,11 +94,14 @@
     if (!pending) msgs = ((chats.list.find((x) => x.id === chats.current) || {}).msgs || []).slice();
     changed();
   })();
-  // another notch window saved: follow it (unless this one is waiting for an answer)
+  // another window (notch or floating chat) saved: follow it (unless this one is waiting for an answer)
   api.on('store:chats', (v) => {
     if (!v || v.by === me || pending) return;
-    chats = { current: chats.current, list: v.list || [] };
+    const list = Array.isArray(v.list) ? v.list : [];
+    const cur = v.current !== undefined ? v.current : chats.current;
+    chats = { current: cur, list };
     msgs = ((chats.list.find((x) => x.id === chats.current) || {}).msgs || []).slice();
+    lastRenderSig = '';
     changed();
   });
   // main is searching the web before it answers (Settings → Let AI Chat search the web): the window that asked says so
@@ -107,19 +118,34 @@
     ['envelope', _t('Write a short, polite email asking for a meeting next week'), 'var(--lilac)'],
   ];
 
+  const isLocalServerUrl = (u) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(\/|$)/i.test(String(u || '').trim());
+
   // What the chat is using, and whether it's ready (a key / server set).
   function provider() {
     const s = st.settings || {};
     if (s.ponyBrain === 'sympony') return s.has_symponyAiKey ? { label: _t('Sympony AI'), ready: true } : { label: _t('Sympony AI'), ready: false, need: _t('a sign-in to Sympony AI') };
-    if (s.ponyBrain === 'api') return s.has_brainKey && s.brainUrl ? { label: s.brainModel || _t('AI server'), ready: true } : { label: _t('AI server'), ready: false, need: _t('your AI server and its key') };
+    if (s.ponyBrain === 'api') {
+      const local = isLocalServerUrl(s.brainUrl);
+      return s.brainUrl && (s.has_brainKey || local)
+        ? { label: s.brainModel || (local ? _t('Local AI') : _t('AI server')), ready: true }
+        : { label: _t('AI server'), ready: false, need: _t('your AI server and its key') };
+    }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
-    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') };
+    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
   }
 
   // ---- what the assistant knows about your day: sent along with each message (Settings → AI can turn it
   // off). Plain lines, 24-hour times, a few items each, so it stays small.
   let launcher = null;
+  let gcalState = null;
+  let todoSyncState = null;
+  api.svc('pony', 'gcalState').then((v) => { gcalState = v; }).catch(() => {});
+  api.on('pony:gcal', (v) => { gcalState = v; });
+  api.svc('todosync', 'state').then((v) => { todoSyncState = v; }).catch(() => {});
+  api.on('todosync', (v) => { todoSyncState = v; });
+  const gcalWritable = () => !!(gcalState && gcalState.signedIn && gcalState.hasCalendarScope
+    && (gcalState.defaultCalendarId || (gcalState.calendars || []).some((c) => c.writable)));
   async function dayContext() {
     const s = st.settings;
     if (s.chatContext === false) return '';
@@ -134,11 +160,23 @@
     };
     const lines = [];
     if (s.calendarEnabled) {
-      const end = new Date(); end.setDate(end.getDate() + 7); end.setHours(0, 0, 0, 0);
-      const evs = (st.events || []).filter((e) => e.end > now && e.start < end.getTime()).slice(0, 20);
-      lines.push('Calendar, now until the end of the next 7 days: ' + (evs.length
-        ? evs.map((e) => `${day(e.start)} ${e.allDay ? 'all day' : `${t24(e.start)}-${t24(e.end)}`} ${e.title}${e.location ? ` (${e.location})` : ''}`).join('; ')
+      const end = new Date(); end.setDate(end.getDate() + 14); end.setHours(0, 0, 0, 0);
+      const evs = (st.events || []).filter((e) => e.end > now && e.start < end.getTime()).slice(0, 35);
+      lines.push('Calendar, now until the end of the next 14 days: ' + (evs.length
+        ? evs.map((e) => {
+          const idTag = e.provider === 'gcal' && e.writable && e.gcalKey ? `[${e.gcalKey}] ` : '';
+          const where = e.location ? ` (${e.location})` : '';
+          const calTag = e.provider === 'gcal' && e.source ? ` [${e.source}${e.writable ? '' : ', read-only'}]` : '';
+          return `${idTag}${day(e.start)} ${e.allDay ? 'all day' : `${t24(e.start)}-${t24(e.end)}`} ${e.title}${where}${calTag}`;
+        }).join('; ')
         : 'nothing'));
+      if (gcalState && gcalState.signedIn && gcalState.hasCalendarScope) {
+        const cals = gcalState.calendars || [];
+        const selNames = cals.filter((c) => c.selected).map((c) => c.summary);
+        const defCal = cals.find((c) => c.id === gcalState.defaultCalendarId) || cals.find((c) => c.primary && c.writable) || cals.find((c) => c.writable);
+        lines.push(`Google Calendar connected (${gcalState.account || 'signed in'}): active calendars: ${selNames.length ? selNames.join(', ') : 'none selected'}.`
+          + (defCal ? ` New events via add_event go to Google Calendar "${defCal.summary}". Events with [gc_…] ids can be moved/edited with update_item or deleted with remove_item (confirm before deleting).` : ''));
+      }
     }
     // the ones with a time still to come first, soonest first (a reminder weeks ahead is still listed, so the model has
     // its ID and doesn't make one up), then the rest, newest first
@@ -147,6 +185,9 @@
     const lateLimit = (m) => (m ? `ticked off by itself ${m}m after its time` : 'kept until ticked off');
     lines.push('Open todos: ' + (todos.length ? todos.slice(0, 40).map((t) => `[${t.id}] ${t.text}${t.due ? ` (due ${day(t.due)} ${t24(t.due)})` : ''}${t.repeat ? ` (repeats ${N.repeatLabel(t.repeat)})` : ''}${t.lateMin != null ? ` (if late: ${lateLimit(+t.lateMin)})` : ''}`).join('; ') : 'none')
       + `. Late tasks without their own choice: ${lateLimit(+s.todoLateMinutes || 0)}`);
+    if (todoSyncState && todoSyncState.provider === 'google' && todoSyncState.signedIn && todoSyncState.list) {
+      lines.push(`Google Tasks sync connected (${todoSyncState.account || 'signed in'}, list "${todoSyncState.list.name || 'Tasks'}"): todos added, updated, completed, or removed here sync with Google Tasks.`);
+    }
     const mine = (s.localEvents || []).filter((e) => (e.end || e.start) > now).sort((a, b) => a.start - b.start).slice(0, 30);
     if (mine.length) lines.push('Events added in Sympony (these can be changed): ' + mine.map((e) => `[${e.id}] ${day(e.start)} ${t24(e.start)} ${e.title} (${Math.round((e.end - e.start) / 60000)}m)`).join('; '));
     const w = N.data.weather;
@@ -234,19 +275,41 @@
   }
   const timeOf = (s) => { const m = (s || '').trim().match(/^([01]?\d|2[0-3])[:.]([0-5]\d)$/); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null; };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  function dueOf(when) {
+  function dueOf(when, baseMs) {
     const w = when.trim().toLowerCase();
     let m = w.match(/^(\d{1,4})\s*(?:m|min|mins|minutes?|menit)$/);
     if (m) return Date.now() + +m[1] * 60000;
     m = w.match(/^(\d{1,3})\s*(?:h|hr|hrs|hours?|jam)$/);
     if (m) return Date.now() + +m[1] * 3600000;
-    m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ t]+([01]?\d|2[0-3])[:.]([0-5]\d)$/);
+    // RFC3339 with timezone offset or Z (e.g. 2026-11-25T11:00:00+07:00)
+    if (/^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(:\d{2})?(?:\.\d+)?(?:z|[+-]\d{2}:?\d{2})$/.test(w)) {
+      const t = Date.parse(when.trim());
+      if (!Number.isNaN(t)) return t;
+    }
+    m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ t]+([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?$/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+    // "today 11:00" / "tomorrow 11:00" / "besok 11:00"
+    m = w.match(/^(today|hari ini|tomorrow|besok)\s+(?:at\s+|jam\s+|pukul\s+)?([01]?\d|2[0-3])[:.]([0-5]\d)$/);
+    if (m) {
+      const d = new Date();
+      if (m[1] === 'tomorrow' || m[1] === 'besok') d.setDate(d.getDate() + 1);
+      d.setHours(+m[2], +m[3], 0, 0);
+      return d.getTime();
+    }
     // a day without a time ("ingetin tanggal 8 …"): that morning at 09:00
     m = w.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], 9, 0).getTime();
-    m = w.match(/^([01]?\d|2[0-3])[:.]([0-5]\d)$/);
-    if (m) { const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); return d.getTime(); }
+    m = w.match(/^([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?$/);
+    if (m) {
+      if (baseMs) {
+        const d = new Date(baseMs);
+        d.setHours(+m[1], +m[2], 0, 0);
+        return d.getTime();
+      }
+      const d = new Date(); d.setHours(+m[1], +m[2], 0, 0);
+      if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+      return d.getTime();
+    }
     return null;
   }
   function minutesOf(s) {
@@ -307,9 +370,17 @@
         const mins = a.length > 2 ? minutesOf(a[1]) || 60 : 60;
         const title = (a.length > 2 ? a.slice(2) : a.slice(1)).join(' | ');
         if (!start || !title) return { kind, ok: false, text: title || args };
+        if (gcalWritable()) {
+          try {
+            const r = await api.svc('pony', 'gcalCreate', { title, start, end: start + mins * 60000 });
+            if (r && r.ok) return { kind, ok: true, target: 'gcal', id: r.id, text: r.title || title, due: r.start || start, mins, calendarName: r.calendarName || 'Google Calendar' };
+          } catch (e) {
+            return { kind, ok: false, target: 'gcal', text: title, err: String(e) };
+          }
+        }
         const id = 'l' + uid();
         api.setSettings({ localEvents: [...(st.settings.localEvents || []), { id, title, start, end: start + mins * 60000, location: '', repeat: 'none' }] });
-        return { kind, ok: true, text: title, due: start, mins, id };
+        return { kind, ok: true, target: 'event', text: title, due: start, mins, id };
       }
       case 'pomodoro': {
         const cmd = args.trim().toLowerCase();
@@ -338,7 +409,8 @@
         const id = a[0];
         const when = (a[1] || '-').trim().toLowerCase();
         const newText = a.slice(2).join(' | ').trim();
-        const t = todos().find((x) => x.id === id);
+        const t = todos().find((x) => x.id === id)
+          || todos().find((x) => !x.deletedAt && norm(x.text) === norm(id));
         if (t) {
           let next = { ...t };
           if (kind === 'done') {
@@ -366,11 +438,39 @@
             api.setSettings({ localEvents: list.filter((e) => e.id !== id) });
             return { kind, ok: true, target: 'event', id, text: ev.title, prev: ev };
           }
-          const start = when && when !== '-' ? dueOf(when) : ev.start;
+          const start = when && when !== '-' ? dueOf(when, ev.start) : ev.start;
           if (!start) return { kind, ok: false, text: ev.title };
           const next = { ...ev, start, end: start + ((ev.end || ev.start + 3600000) - ev.start), title: newText && newText !== '-' ? newText : ev.title };
           api.setSettings({ localEvents: list.map((e) => (e.id === id ? next : e)) });
           return { kind, ok: true, target: 'event', id, text: next.title, due: next.start, prev: ev };
+        }
+        const gev = (st.events || []).find((e) => e.provider === 'gcal' && (e.gcalKey === id || e.uid === id || e.id === id))
+          || (st.events || []).find((e) => e.provider === 'gcal' && e.writable && norm(e.title) === norm(id));
+        if (gev && kind !== 'done') {
+          if (!gev.writable) return { kind, ok: false, target: 'gcal', text: gev.title, err: _t('That calendar is read-only.') };
+          const key = gev.gcalKey || id;
+          if (kind === 'remove') {
+            try {
+              const r = await api.svc('pony', 'gcalDelete', key);
+              if (r && r.ok) return { kind, ok: true, target: 'gcal', id: key, text: r.title || gev.title, prev: r.prev, calendarName: r.calendarName || gev.source };
+            } catch (e) {
+              return { kind, ok: false, target: 'gcal', text: gev.title, err: String(e) };
+            }
+          } else {
+            const hasWhen = when && when !== '-';
+            const start = hasWhen ? dueOf(when, gev.start) : gev.start;
+            if (!start) return { kind, ok: false, target: 'gcal', text: gev.title, err: `Unrecognized time "${a[1]}"` };
+            const dur = Math.max(1800000, (gev.end || gev.start + 3600000) - gev.start);
+            const payload = { id: key };
+            if (hasWhen) { payload.start = start; payload.end = start + dur; }
+            if (newText && newText !== '-') payload.title = newText;
+            try {
+              const r = await api.svc('pony', 'gcalUpdate', payload);
+              if (r && r.ok) return { kind, ok: true, target: 'gcal', id: r.id || key, text: r.title || gev.title, due: r.start || start, prev: r.prev, calendarName: r.calendarName || gev.source };
+            } catch (e) {
+              return { kind, ok: false, target: 'gcal', text: gev.title, err: String(e) };
+            }
+          }
         }
         // an ID that isn't there (the model made one up, or the item went) with a time and a text: most likely it
         // meant one more reminder ("remind me again on the 27th"), so that's what it gets, with Undo
@@ -446,7 +546,11 @@
   // The [id] tags the day's context gives the model for its action lines, should one slip into the words it shows
   // ("Bayar listrik ([mvrz70rezl6w]), due …"): only the ids of todos and Sympony's own events, so a [1] citation stays.
   function dropIds(text) {
-    const ids = new Set([...((N.data.todo || {}).items || []).map((t) => t.id), ...(st.settings.localEvents || []).map((e) => e.id)].filter(Boolean));
+    const ids = new Set([
+      ...((N.data.todo || {}).items || []).map((t) => t.id),
+      ...(st.settings.localEvents || []).map((e) => e.id),
+      ...(st.events || []).map((e) => e.gcalKey),
+    ].filter(Boolean));
     if (!ids.size) return text;
     return text.replace(/[ \t]*\(?\[([A-Za-z0-9_-]{4,40})\]\)?[ \t]*/g, (all, id) => (ids.has(id) ? (/^[ \t]/.test(all) && /[ \t]$/.test(all) ? ' ' : '') : all));
   }
@@ -468,7 +572,14 @@
       const added = todos().filter((t) => !act.prevList.some((p) => p.id === t.id)).map((t) => t.id);
       N.saveStore('todo', { items: todos().filter((t) => !added.includes(t.id)).map((t) => (t.id === act.id && back ? back : t)) });
     } else if (act.prev && act.target === 'todo') N.saveStore('todo', { items: todos().map((t) => (t.id === act.id ? act.prev : t)) });
-    else if (act.prev && act.target === 'event') {
+    else if (act.target === 'gcal') {
+      if (act.kind === 'event') api.svc('pony', 'gcalDelete', act.id).catch(() => {});
+      else if (act.kind === 'update' && act.prev) {
+        api.svc('pony', 'gcalUpdate', { id: act.id, title: act.prev.title, start: act.prev.start, end: act.prev.end, location: act.prev.location || '' }).catch(() => {});
+      } else if (act.kind === 'remove' && act.prev) {
+        api.svc('pony', 'gcalCreate', { title: act.prev.title, start: act.prev.start, end: act.prev.end, location: act.prev.location || '', description: act.prev.description || '', calendarId: act.prev.calendarId }).catch(() => {});
+      }
+    } else if (act.prev && act.target === 'event') {
       const list = st.settings.localEvents || [];
       api.setSettings({ localEvents: list.some((e) => e.id === act.id) ? list.map((e) => (e.id === act.id ? act.prev : e)) : [...list, act.prev] });
     } else if (act.kind === 'remind' || act.kind === 'todo' || act.kind === 'repeat') N.saveStore('todo', { items: todos().filter((t) => t.id !== act.id) });
@@ -571,7 +682,7 @@
     return acts.map((a, i) => {
       if (!a.ok) {
         const past = a.why === 'past' && a.due ? _t('“{text}” would be on {date}, which has passed. Ask again with a date still to come.', { text: a.text, date: new Date(a.due).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' }) }) : '';
-        const why = past || { remind: _t('Couldn’t set the reminder “{text}”. Try a time like 15m, 14:30 or a date like 1 November 09:00.', { text: a.text }), event: _t('Couldn’t add “{text}” to the calendar. Try a time like 14:30 or a date like 1 November 09:00.', { text: a.text }),
+        const why = past || a.err || { remind: _t('Couldn’t set the reminder “{text}”. Try a time like 15m, 14:30 or a date like 1 November 09:00.', { text: a.text }), event: _t('Couldn’t add “{text}” to the calendar. Try a time like 14:30 or a date like 1 November 09:00.', { text: a.text }),
           open: _t('“{text}” isn’t in your launcher apps (Settings → Drop Actions & Shelf).', { text: a.text }), pomodoro: _t('Couldn’t start or stop Pomodoro.'),
           update: _t('Couldn’t find that item to change. Ask again with its name, or ask for a new reminder.'), done: _t('Couldn’t find that todo.'), remove: _t('Couldn’t find that item to remove.'),
           repeat: _t('Couldn’t set “{text}” to repeat. Try days like weekdays or mon,wed and a time like 08:00.', { text: a.text }),
@@ -593,11 +704,11 @@
         remind: `${a.instead ? _t('Couldn’t find the one to change, so added a new reminder:') : _t('Reminder set:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}`,
         todo: `${_t('Added to Todo:')} <b>${esc(a.text)}</b>`,
         repeat: a.repeat ? `${_t('Repeats {when}:', { when: esc(N.repeatLabel(a.repeat)) })} <b>${esc(a.text)}</b>` : `${_t('No longer repeats:')} <b>${esc(a.text)}</b>`,
-        update: `${a.target === 'event' ? _t('Event moved:') : _t('Updated:')} <b>${esc(a.text)}</b>${a.due ? ` · ${esc(whenLabel(a.due))}` : a.target === 'todo' ? ` · ${_t('no time')}` : ''}`,
+        update: `${a.target === 'gcal' ? _t('Updated in Google Calendar:') : a.target === 'event' ? _t('Event moved:') : _t('Updated:')} <b>${esc(a.text)}</b>${a.due ? ` · ${esc(whenLabel(a.due))}` : a.target === 'todo' ? ` · ${_t('no time')}` : ''}`,
         done: `${_t('Marked done:')} <b>${esc(a.text)}</b>`,
-        remove: a.target === 'event' ? `${_t('Removed from your calendar:')} <b>${esc(a.text)}</b>` : `${_t('Moved to Trash:')} <b>${esc(a.text)}</b>`,
+        remove: a.target === 'gcal' ? `${_t('Removed from Google Calendar:')} <b>${esc(a.text)}</b>` : a.target === 'event' ? `${_t('Removed from your calendar:')} <b>${esc(a.text)}</b>` : `${_t('Moved to Trash:')} <b>${esc(a.text)}</b>`,
         note: `${_t('Saved to Notes:')} <b>${esc(a.text)}</b>`,
-        event: `${_t('Added to your calendar:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}${a.mins ? ` · ${_t('{n}m', { n: a.mins })}` : ''}`,
+        event: `${a.target === 'gcal' ? _t('Added to Google Calendar:') : _t('Added to your calendar:')} <b>${esc(a.text)}</b> · ${esc(whenLabel(a.due))}${a.mins ? ` · ${_t('{n}m', { n: a.mins })}` : ''}`,
         pomodoro: esc(a.text),
         open: `${_t('Opened')} <b>${esc(a.text)}</b>`,
         bookmark: `${_t('Saved to Bookmarks:')} <b>${esc(a.text)}</b>${a.cat ? ` · ${esc(a.cat)}` : ''}`,
@@ -608,78 +719,66 @@
       }[a.kind];
       const canUndo = a.id && !a.undone;
       const icon = a.kind === 'volume' && (a.muted || a.level === 0) ? 'volume-xmark' : ICON[a.kind] || 'check';
+      const jumpTab = TAB[a.kind] || (a.target === 'todo' ? 'todo' : (a.target === 'gcal' || a.target === 'event' || a.kind === 'event') ? 'calendar' : '');
       return `<div class="ch-rem ${a.undone ? 'undone' : ''}">${fa(icon)}<span>${a.undone ? `<s>${what}</s> · ${_t('undone')}` : what}</span>
-        ${canUndo ? `<button data-undo="${i}">${_t('Undo')}</button>` : ''}${!a.undone && (TAB[a.kind] || (a.target === 'todo' && 'todo')) && tabOn(TAB[a.kind] || 'todo') ? `<button data-tab="${TAB[a.kind] || 'todo'}">${esc(MODULE_TITLES[TAB[a.kind] || 'todo'] || _t('Todo'))}</button>` : ''}</div>`;
+        ${canUndo ? `<button data-undo="${i}">${_t('Undo')}</button>` : ''}${!a.undone && jumpTab && tabOn(jumpTab) ? `<button data-tab="${jumpTab}">${esc(MODULE_TITLES[jumpTab] || _t('Todo'))}</button>` : ''}</div>`;
     }).join('');
   }
 
-  // ---- a small, safe Markdown renderer: the text is escaped first, then code, emphasis, lists and links
-  function inline(t) {
-    return t
-      .replace(/`([^`\n]+)`/g, (m, c) => `<code>${c}</code>`)
-      .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
-      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, label, url) => `<a data-href="${url}">${label}</a>`)
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,!?:;'"])/g, (m, pre, url) => `${pre}<a data-href="${url}">${url}</a>`);
-  }
+  // ---- Full, XSS-safe GitHub-Flavored Markdown renderer (shared with NotchKit for unit testing)
   function markdown(src) {
-    const out = [];
-    const parts = esc(src).split(/```/);
-    parts.forEach((part, i) => {
-      if (i % 2) { // fenced code block (the first line may name the language)
-        const code = part.replace(/^[\w+-]*\n/, '').replace(/\n$/, '');
-        out.push(`<pre><button class="ch-copy" title="${_t('Copy code')}">${fa('copy', 'regular')}</button><code>${code}</code></pre>`);
-        return;
-      }
-      let list = null;
-      const flush = () => { if (list) { out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join('')}</${list.tag}>`); list = null; } };
-      let para = [];
-      const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
-      for (const line of part.split('\n')) {
-        const ul = line.match(/^\s*[-*•]\s+(.*)/);
-        const ol = line.match(/^\s*\d+[.)]\s+(.*)/);
-        const h = line.match(/^#{1,4}\s+(.*)/);
-        if (ul || ol) {
-          flushPara();
-          const tag = ul ? 'ul' : 'ol';
-          if (!list || list.tag !== tag) { flush(); list = { tag, items: [] }; }
-          list.items.push((ul || ol)[1]);
-        } else if (h) { flushPara(); flush(); out.push(`<p class="h">${inline(h[1])}</p>`); }
-        else if (!line.trim()) { flushPara(); flush(); }
-        else { flush(); para.push(line); }
-      }
-      flushPara(); flush();
-    });
-    return out.join('');
+    if (window.NotchKit && typeof window.NotchKit.renderMarkdown === 'function') {
+      return window.NotchKit.renderMarkdown(src, {
+        copyTitle: _t('Copy code'),
+        copyIcon: fa('copy', 'regular'),
+      });
+    }
+    return `<p>${esc(src).replace(/\n/g, '<br>')}</p>`;
   }
 
-  function renderAnswerBubble(m) {
+  function copyBtn(i) {
+    return `<button type="button" class="ch-act" data-copy="${i}" title="${esc(_t('Copy'))}" aria-label="${esc(_t('Copy'))}">${fa('copy', 'regular')}</button>`;
+  }
+
+  function copyMessageText(m) {
+    if (!m) return '';
+    if (m.role === 'user' && m.kind === 'answer') {
+      if (Array.isArray(m.qa) && m.qa.length) {
+        return m.qa.map((r) => `${r.question ? `${r.question}: ` : (r.header ? `${r.header}: ` : '')}${r.answer || _t('Skipped')}`).join('\n');
+      }
+      return String(m.content || '').replace(/^(?:Answers to your question|Question & answer):\n/, '');
+    }
+    return String(m.content || '');
+  }
+
+  function renderAnswerBubble(m, i) {
+    const copy = copyMessageText(m).trim() ? copyBtn(i) : '';
     if (Array.isArray(m.qa) && m.qa.length) {
-      return `<div class="ch-qa-ans" dir="auto">${m.qa.map((row) => {
+      return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-qa-ans" dir="auto">${m.qa.map((row) => {
         const qLine = row.question ? `<div class="ch-qa-q">${esc(row.question)}</div>` : '';
         const aLine = row.header
           ? `<div class="ch-qa-row"><span class="cc-tag">${esc(row.header)}</span><span>${esc(row.answer || _t('Skipped'))}</span></div>`
           : `<div class="ch-qa-row"><span>${esc(row.answer || _t('Skipped'))}</span></div>`;
         return `<div class="ch-qa-pair">${qLine}${aLine}</div>`;
-      }).join('')}</div>`;
+      }).join('')}</div></div>`;
     }
     const clean = String(m.content || '').replace(/^(?:Answers to your question|Question & answer):\n/, '');
     if (clean === '(the user skipped your question)') {
-      return `<div class="ch-qa-ans"><div class="ch-qa-row"><span>${esc(_t('Skipped'))}</span></div></div>`;
+      return `<div class="ch-msg me" data-i="${i}"><div class="ch-qa-ans"><div class="ch-qa-row"><span>${esc(_t('Skipped'))}</span></div></div></div>`;
     }
-    return `<div class="ch-qa-ans" dir="auto">${esc(clean).replace(/\n/g, '<br>')}</div>`;
+    return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-qa-ans" dir="auto">${esc(clean).replace(/\n/g, '<br>')}</div></div>`;
   }
 
-  const BUB = 'padding:7px 12px;border-radius:14px 14px 4px 14px;background:#2a2a33;font-size:12.5px;line-height:1.4';
-  function userBubble(m) {
+  function userBubble(m, i) {
     const files = m.files || [];
     const body = esc(m.content).replace(/\n/g, '<br>');
+    const copy = String(m.content || '').trim() ? copyBtn(i) : '';
     // (a message written while Pony worked: "Sends when Pony is done" when the run can't take it now)
     const note = m.later ? `<div class="ch-later">${fa('clock', 'regular')} ${esc(_t('Sends when Pony is done'))}</div>` : '';
-    if (!files.length) return `<div style="align-self:flex-end;max-width:75%;${BUB}" dir="auto">${body}</div>${note}`;
+    if (!files.length) return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-me"><div class="ch-me-bub" dir="auto">${body}</div>${note}</div></div>`;
     const pics = files.filter((f) => f.kind === 'image' && f.thumb);
     const docs = files.filter((f) => f.kind !== 'image').map((f) => { const [ic, c] = fileLook(f.name); return `<div class="ch-att-file sent" style="--c:${c}"><span class="ic">${fa(ic)}</span><span class="nm"><b>${esc(f.name)}</b><span>${esc(f.size ? kb(f.size) : '')}</span></span></div>`; }).join('');
-    return `<div class="ch-me">${pics.length ? `<div class="ch-me-pics">${pics.map((f) => `<img src="${esc(f.thumb)}" alt="" title="${esc(f.name)}">`).join('')}</div>` : ''}<div style="${BUB}" dir="auto">${docs}${body}</div></div>`;
+    return `<div class="ch-msg me" data-i="${i}">${copy}<div class="ch-me">${pics.length ? `<div class="ch-me-pics">${pics.map((f) => `<img src="${esc(f.thumb)}" alt="" title="${esc(f.name)}">`).join('')}</div>` : ''}<div class="ch-me-bub" dir="auto">${docs}${body}</div>${note}</div></div>`;
   }
   function seenLine(s) {
     const bits = [s.img ? _t('looked at {n} pictures', { n: s.img }) : '', s.txt ? _t('read {n} files', { n: s.txt }) : ''].filter(Boolean).join(' · ');
@@ -727,6 +826,7 @@
     see: ['eye', 'var(--lav)', 'Looking at'],
     screen: ['eye', 'var(--sky)', 'Reading'],
     hands: ['hand-pointer', 'var(--lilac)', 'Working in'],
+    watch: ['eye', 'var(--lav)', 'Watching'],
     web: ['magnifying-glass', 'var(--sky)', 'Searching the web for'],
     page: ['globe', 'var(--sky)', 'Reading a page on'],
     read: ['file-lines', 'var(--sky)', 'Reading'],
@@ -751,6 +851,10 @@
   // The notch is closed when Pony finishes, needs an OK or asks something: it comes down open on Pony (as a scheduled
   // brief does) and goes back up by itself after a while if the mouse never comes
   function showInNotch() {
+    if (N.isFloatingChat) {
+      if (api.openFloatingChat) api.openFloatingChat();
+      return;
+    }
     if (st.open || !N.openNotch) return;
     N.openNotch('chat');
     st.openedByShortcut = true;
@@ -838,7 +942,7 @@
   }
   // the streamed answer's words: the ones already there stay still, the new ones come in from a blur (AI Answer)
   function wordsIn(el, from) {
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('pre, code, a.ch-cite') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('pre, code, a.ch-cite, .md-code-hd, .md-chk, button') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
     const nodes = [];
     while (walk.nextNode()) nodes.push(walk.currentNode);
     let k = 0;
@@ -874,6 +978,7 @@
     box.classList.toggle('live', !!(tool && tool.live && tool.live.text));
     avaMood();
     $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
+    $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
     const lv = $('.ch-live', box);
     if (lv && tool && tool.live) tool.live.words = wordsIn(lv, tool.live.words || 0);
     if (tool) tool.steps.forEach((s) => { s.fresh = false; });
@@ -947,7 +1052,7 @@
       b.onmouseleave = () => { if (emptyPony) emptyPony.setMood('idle'); };
       b.onclick = () => { const i = $('#chIn', page); i.value = b.dataset.sugg; N.focusField(i); };
     });
-    const s2 = $('#chSetup', box); if (s2) s2.onclick = () => { api.openSettings('ai'); N.closeNotch(); };
+    const s2 = $('#chSetup', box); if (s2) s2.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); };
   }
 
   function render() {
@@ -957,8 +1062,11 @@
     if (provEl) provEl.textContent = (st.settings && st.settings.ponyName) || 'Pony';
     if (provEl) provEl.title = p.label || '';
     const box = $('.ch-msgs', page);
-    $('#chHist', page).classList.toggle('on', history);
-    $('#chHist', page).disabled = !chats.list.length && !history;
+    const histBtn = $('#chHist', page);
+    if (histBtn) {
+      histBtn.classList.toggle('on', history);
+      histBtn.disabled = !chats.list.length && !history;
+    }
     if (!history) dropDeleted();
     const agentName = p.label || 'Claude';
     const agentIco = ponyAva(30);
@@ -992,21 +1100,28 @@
           : '';
         box.innerHTML = msgs.map((m, i) => (m.role === 'user'
           ? (m.kind === 'answer'
-            ? renderAnswerBubble(m)
-            : userBubble(m))
-          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:92%">${agentIco}<div class="bub" style="padding:8px 12px;border-radius:14px 14px 14px 4px;background:var(--tile);font-size:12.5px;line-height:1.45;min-width:0;flex:1" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
-            + `${m.error ? '' : `<button type="button" class="ch-act" data-copy="${i}" title="${esc(_t('Copy'))}" style="color:var(--mute);cursor:pointer;flex:none;margin-top:4px">${fa('copy', 'regular')}</button>`}</div>`)).join('')
+            ? renderAnswerBubble(m, i)
+            : userBubble(m, i))
+          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:95%">${agentIco}<div class="bub" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
+            + `${m.error ? '' : copyBtn(i)}</div>`)).join('')
           + (pending && searching ? `<div class="row" style="gap:8px">${thinkingIco}<div style="padding:8px 12px;border-radius:14px;background:var(--tile);font-size:12px;color:var(--dim)">${fa('globe')} ${esc(_t('Searching the web for “{query}”…', { query: searching }))}</div></div>`
             : pending ? `<div class="row" style="gap:8px;align-items:flex-start">${thinkingIco}<div class="ch-think">${thinkHtml()}</div></div>` : '')
           + approveHtml()
           + peekHtml()
           + askHtml;
-        $$('[data-copy]', box).forEach((b) => { b.onclick = () => { navigator.clipboard.writeText(msgs[+b.dataset.copy].content); N.toast(fa('copy', 'regular'), _t('Copied')); }; });
-        $$('.ch-copy', box).forEach((b) => { b.onclick = () => { navigator.clipboard.writeText(b.nextElementSibling.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); }; });
+        $$('[data-copy]', box).forEach((b) => {
+          b.onclick = () => {
+            const txt = copyMessageText(msgs[+b.dataset.copy]);
+            if (!txt) return;
+            navigator.clipboard.writeText(txt);
+            N.toast(fa('copy', 'regular'), _t('Copied'));
+          };
+        });
+        $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
         $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
         bindSuggest(box);
         $$('[data-tab]', box).forEach((b) => { b.onclick = () => N.openModule(b.dataset.tab); });
-        $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); N.closeNotch(); }; });
+        $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); }; });
         $$('[data-srcall]', box).forEach((b) => { b.onclick = () => { msgs[+b.dataset.srcall].srcAll = true; lastRenderSig = ''; render(); }; });
         $$('a.ch-card[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
         $$('[data-work]', box).forEach((b) => { b.onclick = () => { const m = msgs[+b.dataset.work]; m.workOpen = !m.workOpen; lastRenderSig = ''; render(); }; });
@@ -1033,6 +1148,7 @@
       }
     }
     syncSend();
+    syncAutoUi();
     const newBtn = $('#chNew', page); if (newBtn) newBtn.disabled = (!msgs.length && !history) || pending;
     refreshCards();
   }
@@ -1046,7 +1162,12 @@
   const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|toml|ini|html?|css|m?js|tsx?|jsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|sql)$/i;
   const IMG_EXT = /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i;
   let attach = []; // { id, kind: 'image'|'text'|'bad', name, size, data?, thumb?, text?, why? }
-  const canSee = () => ['sympony', 'api'].includes((st.settings || {}).ponyBrain);
+  const canSee = () => {
+    const s = st.settings || {};
+    if (['sympony', 'api'].includes(s.ponyBrain)) return true;
+    const a = N.aiAgent ? N.aiAgent('chatAgent') : null;
+    return !!(a && a.id === 'claude');
+  };
   const kb = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   function fileLook(name) {
     const ext = ((String(name).match(/\.([a-z0-9]+)$/i) || [])[1] || '').toLowerCase();
@@ -1152,7 +1273,9 @@
     pending = true;
     save(); changed();
     if (N.pony && N.pony.sync) N.pony.sync();
-    const context = await dayContext().catch(() => '');
+    const dayCtx = await dayContext().catch(() => '');
+    const extraCtx = opts && opts.screenContext ? String(opts.screenContext) : '';
+    const context = [dayCtx, extraCtx].filter(Boolean).join('\n');
     // this run's id: the agent's calls to Sympony's tools come back to this window with it (agent:tool below)
     const session = uid().replace(/[^a-z0-9]/gi, '');
     tool = { session, actions: [], steps: [], start: Date.now() };
@@ -1162,8 +1285,20 @@
     if (imgs.length || txts.length) { tool.steps.forEach((x) => { x.fresh = true; }); syncThink(); }
     // (a text file's text goes with this message only; the chat keeps just its name)
     const fileText = txts.map((a) => `\n\n[Attached file: ${a.name}]\n` + '```\n' + a.text + '\n```').join('');
-    const wire = msgs.map(({ role, content }, i) => ({ role, content: i === msgs.length - 1 && fileText ? content + fileText : content }));
-    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '');
+    const wire = msgs.map((m, i) => {
+      let body = m.content || '';
+      if (i === msgs.length - 1 && fileText) body += fileText;
+      if (m.role === 'assistant' && Array.isArray(m.actions) && m.actions.length) {
+        const trail = m.actions
+          .filter((a) => a && a.ok && a.id)
+          .map((a) => `${a.kind} [${a.id}]${a.text ? ` "${a.text}"` : ''}`)
+          .join(', ');
+        if (trail) body += `\n(Executed tools: ${trail})`;
+      }
+      return { role: m.role, content: body };
+    });
+    const autoOverride = typeof opts.autoUi === 'boolean' ? opts.autoUi : null;
+    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '', autoOverride);
     const done = tool.actions;
     const wasStopped = !!tool.stopped;
     const work = tool.steps.length ? { secs: Math.max(1, Math.round((Date.now() - tool.start) / 1000)), steps: tool.steps.map(({ kind, detail, sources }) => ({ kind, detail, ...(sources ? { sources } : {}) })) } : null;
@@ -1212,6 +1347,28 @@
     api.svc('chat', 'stop', tool.session);
     syncSend();
   }
+  // Auto UI pill: quick toggle inside the composer when Eyes & Hands are on
+  function syncAutoUi() {
+    const b = page && $('#chAutoUi', page);
+    if (!b) return;
+    const s = st.settings || {};
+    const avail = !!(s.ponyEyes && s.ponyHands);
+    b.hidden = !avail;
+    if (!avail) return;
+    const on = !!s.ponyAutoUi;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = on
+      ? _t('Auto UI: On — Pony operates UI, watches until responses finish, and continues automatically (financial/destructive actions still ask)')
+      : _t('Auto UI: Off — click to let Pony run full multi-step UI automation and watch until responses finish');
+  }
+  function toggleAutoUi(e) {
+    if (e) e.stopPropagation();
+    const next = !(st.settings && st.settings.ponyAutoUi);
+    if (st.settings) st.settings.ponyAutoUi = next;
+    syncAutoUi();
+    api.setSettings({ ponyAutoUi: next });
+  }
   // the composer's round button: send (white arrow), or Stop (red square) while an answer is on its way
   function syncSend() {
     const b = page && $('#chSend', page);
@@ -1223,16 +1380,20 @@
     b.title = stop ? _t('Stop') : _t('Send');
     b.innerHTML = stop ? '<span class="sq"></span>' : N.ic('up', 'width:12px;height:12px;stroke-width:3');
   }
-  // Steering: what the user writes while Pony works goes into the chat now and into the run at its next step
+  // Steering: what the user writes or speaks while Pony works goes into the chat now and into the run at its next step
   // (Pony's own engine); a CLI agent, or a run that ends first, gets it as the next message
   let later = [];
-  async function steerSend(text) {
+  async function steerSend(text, opts = {}) {
     const cur = tool;
     const m = { role: 'user', content: text, steer: true };
     msgs.push(m);
     save(); changed();
+    if (opts && opts.alreadySent && (!opts.session || (cur && cur.session === opts.session))) {
+      return true;
+    }
     const r = cur ? await api.svc('chat', 'steer', cur.session, text).catch(() => null) : null;
-    if (!(r && r.ok)) { m.later = true; later.push(text); save(); changed(); }
+    if (!(r && r.ok)) { m.later = true; later.push(text); save(); changed(); return false; }
+    return true;
   }
   function sendInput() {
     if (pending) {
@@ -1325,9 +1486,10 @@
   // (the chips and their Undo as for a [[…]] line), and what came of it goes back to the agent
   let tool = null; // { session, actions } while a send waits
   const said = (a) => {
-    if (!a.ok) return `Not done${a.why === 'past' ? ': that time has passed' : ''} (${a.kind}: ${a.text || ''})`;
+    if (!a.ok) return `Not done${a.err ? `: ${a.err}` : a.why === 'past' ? ': that time has passed' : ''} (${a.kind}: ${a.text || ''})`;
     const when = a.due ? ` for ${new Date(a.due).toLocaleString()}` : '';
-    return `Done: ${a.kind}${a.text ? ` “${a.text}”` : ''}${when}${a.existed ? ' (it was already there)' : ''}${a.id ? ` [${a.id}]` : ''}`;
+    const cal = a.target === 'gcal' ? ` in Google Calendar${a.calendarName ? ` (${a.calendarName})` : ''}` : '';
+    return `Done: ${a.kind}${a.text ? ` “${a.text}”` : ''}${when}${cal}${a.existed ? ' (it was already there)' : ''}${a.id ? ` [${a.id}]` : ''}`;
   };
   api.on('pony:approve', (d) => {
     if (!tool || !d || d.session !== tool.session) return;
@@ -1376,6 +1538,8 @@
       const s = [...tool.steps].reverse().find((x) => x.kind === d.kind && x.detail === d.detail) || [...tool.steps].reverse().find((x) => x.kind === d.kind);
       if (s) { s.sources = d.sources; syncThink(); return; }
     }
+    // A new tool step started after any preamble text: clear live text so the UI stays in active working state.
+    if (tool.live) tool.live = null;
     tool.steps.push({ kind: d.kind, detail: d.detail || '', fresh: true });
     syncThink();
   });
@@ -1418,9 +1582,14 @@
     api.svc('agent', 'result', t.call, res).catch(() => {});
   });
 
-  // for Pony ask_user cards and notch integration
+  // for Pony ask_user cards, notch and floating chat integration
   N.chat = {
-    send, markdown, actionChips, answerAsk, dismissAsk,
+    send, steer: steerSend, stop: stopRun, markdown, actionChips, answerAsk, dismissAsk, newChat,
+    provider,
+    toggleHistory: () => { history = !history; changed(); },
+    isHistory: () => history,
+    hasHistory: () => chats.list.length > 0,
+    hasMessages: () => msgs.length > 0,
     activeAsk: () => activeAsk,
     answer: answerHtml, // the text with its sources and what it did
     ready: () => provider().ready,
@@ -1442,9 +1611,9 @@
     const ico = ponyAva(38);
     const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant' && !m.error);
     const bubbleText = (lastAsst && lastAsst.content ? lastAsst.content.replace(/\s+/g, ' ').trim() : '') || _t('Ask anything about your day, tasks, or notes.');
-    el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">${ico}<span style="font-size:9.5px;color:var(--mute);font-weight:700">⌘K</span></div>`
+    el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">${ico}<span style="font-size:9.5px;color:var(--mute);font-weight:700">${N.MAC ? '⌘K' : 'Ctrl K'}</span></div>`
       + `<div style="flex:1;min-width:0;display:flex;flex-direction:column">`
-      + `<div class="t1" style="align-self:flex-start;max-width:100%;padding:6px 10px;border-radius:12px 12px 12px 4px;background:#1d1d24;font-size:12px" dir="auto">${esc(bubbleText)}</div>`
+      + `<div class="t1" style="align-self:flex-start;max-width:100%;padding:6px 10px;border-radius:12px 12px 12px 4px;background:var(--pill-hi);font-size:12px" dir="auto">${esc(bubbleText)}</div>`
       + `<div class="row" style="margin-top:auto;height:30px;padding:0 4px 0 11px;border-radius:15px;background:var(--pill);color:var(--mute);font-size:12px">`
       + `<span style="flex:1">${esc(_t('Ask anything…'))}</span>`
       + `<span class="mini-btn w" style="width:22px;height:22px">${N.ic('up', 'width:11px;height:11px;stroke-width:3')}</span></div></div>`;
@@ -1488,16 +1657,18 @@
     init(p) {
       page = p;
       const prov = provider();
-      page.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%;position:relative">`
+      page.innerHTML = `<div class="ch-shell" style="display:flex;flex-direction:column;gap:8px;height:100%;width:100%;position:relative">`
         + `<div class="ch-msgs sc-y" style="flex:1;display:flex;flex-direction:column;gap:7px"></div>`
         + `<div class="ch-drop" id="chDrop" hidden><span class="ic">${fa('paperclip')}</span><span><b>${esc(_t('Drop to attach'))}</b><span>${esc(_t('Pictures or text files, up to {n}', { n: MAX_ATT }))}</span></span></div>`
         + `<div class="ch-tray" id="chTray" hidden></div>`
-        + `<div class="row" style="gap:6px;flex:none">`
-        + `<button type="button" class="mini-btn" id="chNew" title="${esc(_t('New chat (this one stays in History)'))}" style="width:34px;height:34px;border-radius:17px">${N.ic('plus', 'width:13px;height:13px')}</button>`
-        + `<button type="button" class="mini-btn" id="chHist" title="${esc(_t('History'))}" style="width:34px;height:34px;border-radius:17px">${fa('clock-rotate-left')}</button>`
+        + `<div class="row ch-foot" style="gap:6px;flex:none">`
+        + (N.isFloatingChat ? '' : `<button type="button" class="mini-btn" id="chNew" title="${esc(_t('New chat (this one stays in History)'))}" style="width:34px;height:34px;border-radius:17px">${N.ic('plus', 'width:13px;height:13px')}</button>`
+          + `<button type="button" class="mini-btn" id="chHist" title="${esc(_t('History'))}" style="width:34px;height:34px;border-radius:17px">${fa('clock-rotate-left')}</button>`
+          + `<button type="button" class="mini-btn" id="chFloat" title="${esc(_t('Pop out floating chat'))}" style="width:34px;height:34px;border-radius:17px">${fa('up-right-from-square')}</button>`)
         + `<div class="ch-bar"><span class="ch-who" title="${esc(((st.settings && st.settings.ponyName) || 'Pony') + (prov.label ? ' · ' + prov.label : ''))}"><canvas class="ch-pony-canvas" id="chPony" width="34" height="58"></canvas></span>`
         + `<input id="chIn" type="text" placeholder="${esc(_t('Ask anything…'))}" spellcheck="false">`
-        + `<button type="button" id="chClip" class="ch-clip" title="${esc(_t('Attach a picture or a file (⌘V pastes a screenshot)'))}">${fa('paperclip')}</button>`
+        + `<button type="button" id="chAutoUi" class="ch-autoui" hidden aria-pressed="false" title="${esc(_t('Auto UI'))}">${fa('wand-magic-sparkles')}<span>${esc(_t('Auto UI'))}</span></button>`
+        + `<button type="button" id="chClip" class="ch-clip" title="${esc(N.MAC ? _t('Attach a picture or a file (⌘V pastes a screenshot)') : _t('Attach a picture or a file (Ctrl+V pastes a screenshot)'))}">${fa('paperclip')}</button>`
         + `<input id="chPick" type="file" multiple hidden accept="image/*,.txt,.md,.csv,.tsv,.json,.log,.xml,.yaml,.yml,.toml,.ini,.html,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.php,.sh,.sql,.pdf">`
         + `<button type="button" id="chSend" class="mini-btn w" style="width:28px;height:28px" title="${esc(_t('Send'))}">${N.ic('up', 'width:12px;height:12px;stroke-width:3')}</button></div>`
         + `</div></div>`;
@@ -1518,6 +1689,8 @@
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendInput(); } });
       input.addEventListener('input', syncSend);
       $('#chSend', page).onclick = sendInput;
+      const autoBtn = $('#chAutoUi', page);
+      if (autoBtn) autoBtn.onclick = toggleAutoUi;
       const pick = $('#chPick', page);
       $('#chClip', page).onclick = () => pick.click();
       pick.onchange = () => { [...pick.files].forEach(addFile); pick.value = ''; N.focusField(input); };
@@ -1528,13 +1701,22 @@
         e.preventDefault();
         files.forEach(addFile);
       });
-      $('#chNew', page).onclick = () => { newChat(); N.focusField(input); };
-      $('#chHist', page).onclick = () => { history = !history; render(); };
+      const newBtn = $('#chNew', page);
+      if (newBtn) newBtn.onclick = () => { newChat(); N.focusField(input); };
+      const histBtn = $('#chHist', page);
+      if (histBtn) histBtn.onclick = () => { history = !history; render(); };
+      const floatBtn = $('#chFloat', page);
+      if (floatBtn) {
+        floatBtn.onclick = () => {
+          if (api.openFloatingChat) api.openFloatingChat();
+          if (N.closeNotch) N.closeNotch();
+        };
+      }
       render();
     },
     show() { if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },
     hide() { if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
-    onSettings() { launcher = null; syncHeaderPony(); N.loadAgents().then(render); },
+    onSettings() { launcher = null; syncHeaderPony(); syncAutoUi(); N.loadAgents().then(render); },
     takeFiles(type, paths) {
       if (history) return false;
       if (type === 'enter' || type === 'over') { dropZone(true); return true; }

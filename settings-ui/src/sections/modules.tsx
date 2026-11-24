@@ -1,13 +1,32 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp, GripVertical } from "@/components/icons";
+import { ChevronDown, ChevronUp, GripVertical, Palette } from "@/components/icons";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { Button } from "@/components/ui/knowns/button";
+import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
 import { Switch } from "@/components/ui/knowns/switch";
+import { NewBadge } from "@/components/shell/NewBadge";
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { SectionIcon } from "@/components/shell/icons";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/knowns/utils";
+import { isNewKeyUnseen, markNewKeysSeen, useWhatsNew } from "@/lib/whatsNew";
+import {
+  activeStyleOption,
+  ALLOWED_GRID_SIZES,
+  defaultGridSize,
+  MODULE_STYLES,
+  MODULE_TO_SETTINGS_SECTION,
+  QUICK_PACKS,
+  readCardStyle,
+  readModulePref,
+  readModuleStyles,
+  type CardDensity,
+  type CardRadius,
+  type CardSurface,
+  type GridSize,
+  type ModuleSizeMode,
+} from "@/lib/stylelib";
 import { LeadText } from "@/rows/Rows";
 import { offTabs } from "@/rows/os";
 import type { CustomPartProps, SectionBody } from "@/rows/types";
@@ -26,7 +45,10 @@ function readRestoreTab(): boolean {
   }
 }
 
-function ModulesSection({ settings, set, os }: CustomPartProps) {
+const STYLE_LIBRARY_NEW_KEY = "v0.2b5:item:modules:styleLibrary";
+
+function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
+  useWhatsNew();
   const every = (Array.isArray(settings.modules) ? settings.modules : []) as ModuleEntry[];
   const hiddenIds = new Set(offTabs(os));
   const mods = os === "windows" ? every : every.filter((m) => !hiddenIds.has(m.id));
@@ -62,6 +84,11 @@ function ModulesSection({ settings, set, os }: CustomPartProps) {
   };
 
   const toggle = (i: number, on: boolean) => {
+    const mod = mods[i];
+    if (mod) {
+      const meta = moduleMetaFor(mod.id, os);
+      if (meta.newKey) markNewKeysSeen([meta.newKey]);
+    }
     const next = mods.map((m, idx) => (idx === i ? { ...m, on } : m));
     save(next);
   };
@@ -142,10 +169,167 @@ function ModulesSection({ settings, set, os }: CustomPartProps) {
 
   const enabledMods = mods.filter((m) => m.on);
   const notchView = settings.notchView === "dashboard" ? "dashboard" : "modules";
+  const cardStyle = readCardStyle(settings);
+  const allModStyles = readModuleStyles(settings);
+
+  const updateCardStyle = (patch: Partial<typeof cardStyle>) => {
+    void set({ cardStyle: { ...cardStyle, ...patch } });
+  };
+
+  const applyQuickPack = (packId: "bento" | "compact" | "minimal") => {
+    const pack = QUICK_PACKS.find((p) => p.id === packId);
+    if (!pack) return;
+    const nextStyles = { ...allModStyles };
+    for (const [modId, styleId] of Object.entries(pack.styles)) {
+      nextStyles[modId] = {
+        ...(nextStyles[modId] ?? {}),
+        style: styleId,
+        size: "auto",
+        surface: "auto",
+      };
+    }
+    void set({
+      cardStyle: pack.cardStyle,
+      moduleStyles: nextStyles,
+    });
+  };
+
+  const setGridSize = (modId: string, gridSize: GridSize) => {
+    const nextStyles = {
+      ...allModStyles,
+      [modId]: {
+        ...(allModStyles[modId] ?? {}),
+        gridSize,
+      },
+    };
+    void set({ moduleStyles: nextStyles });
+  };
+
+  const setNotchSize = (modId: string, size: ModuleSizeMode) => {
+    const nextStyles = {
+      ...allModStyles,
+      [modId]: {
+        ...(allModStyles[modId] ?? {}),
+        size,
+      },
+    };
+    void set({ moduleStyles: nextStyles });
+  };
+
+  const activePackId =
+    QUICK_PACKS.find((pack) =>
+      Object.entries(pack.styles).every(
+        ([modId, styleId]) => (activeStyleOption(settings, modId)?.id ?? "bento") === styleId
+      )
+    )?.id ?? null;
 
   return (
     <div className="flex flex-col gap-5">
       <LeadText html="Each ON module is a page in the notch; this order is the swipe order." />
+
+      <PanelCard
+        title={
+          isNewKeyUnseen(STYLE_LIBRARY_NEW_KEY) ? (
+            <span className="inline-flex items-center gap-2">
+              <span>{t("Module Style Library")}</span>
+              <NewBadge />
+            </span>
+          ) : (
+            t("Module Style Library")
+          )
+        }
+        icon={groupIcon("Module Style Library")}
+      >
+        <div
+          className="divide-y divide-border/80"
+          data-k="cardStyle"
+          onPointerDown={() => markNewKeysSeen([STYLE_LIBRARY_NEW_KEY])}
+        >
+          <div className="pb-3.5">
+            <div className="text-[13px] font-medium text-foreground">{t("Quick style presets")}</div>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              {t("Apply a cohesive OLED layout look across styled modules in one click, or customize each module individually.")}
+            </p>
+            <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {QUICK_PACKS.map((pack) => {
+                const on = activePackId === pack.id;
+                return (
+                  <button
+                    key={pack.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => applyQuickPack(pack.id)}
+                    className={cn(
+                      "flex cursor-pointer flex-col gap-0.5 rounded-[10px] border px-3 py-2.5 text-start transition-all",
+                      on
+                        ? "border-primary bg-primary/10 ring-1 ring-primary/40"
+                        : "border-border bg-muted/25 hover:bg-muted/50"
+                    )}
+                  >
+                    <span className="text-[12.5px] font-semibold text-foreground">{t(pack.title)}</span>
+                    <span className="text-[11px] leading-snug text-muted-foreground">{t(pack.sub)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="py-3">
+            <SettingsRow
+              label={t("Dashboard card surface")}
+              description={t("Surface style for cards in Dashboard 4×2 view.")}
+            >
+              <SegmentedControl
+                tone="neutral"
+                size="sm"
+                aria-label={t("Dashboard card surface")}
+                value={cardStyle.surface}
+                options={[
+                  { value: "oled", label: t("OLED") },
+                  { value: "borderless", label: t("Borderless") },
+                  { value: "outline", label: t("Outline") },
+                  { value: "glass", label: t("Glass") },
+                  { value: "tinted", label: t("Tinted") },
+                ]}
+                onValueChange={(next) => updateCardStyle({ surface: next as CardSurface })}
+              />
+            </SettingsRow>
+          </div>
+
+          <div className="grid gap-3 pt-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12.5px] font-medium text-foreground">{t("Corner radius")}</span>
+              <SegmentedControl
+                tone="neutral"
+                size="sm"
+                aria-label={t("Corner radius")}
+                value={cardStyle.radius}
+                options={[
+                  { value: "sharp", label: t("Sharp") },
+                  { value: "rounded", label: t("Rounded") },
+                  { value: "soft", label: t("Soft") },
+                ]}
+                onValueChange={(next) => updateCardStyle({ radius: next as CardRadius })}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12.5px] font-medium text-foreground">{t("Density")}</span>
+              <SegmentedControl
+                tone="neutral"
+                size="sm"
+                aria-label={t("Density")}
+                value={cardStyle.density}
+                options={[
+                  { value: "compact", label: t("Compact") },
+                  { value: "balanced", label: t("Balanced") },
+                  { value: "airy", label: t("Airy") },
+                ]}
+                onValueChange={(next) => updateCardStyle({ density: next as CardDensity })}
+              />
+            </div>
+          </div>
+        </div>
+      </PanelCard>
 
       <PanelCard>
         <div data-k="notchView">
@@ -219,8 +403,30 @@ function ModulesSection({ settings, set, os }: CustomPartProps) {
                   <SectionIcon name={meta.icon} className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-foreground">
-                    {t(meta.title)}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-[13px] font-medium text-foreground">
+                      {t(meta.title)}
+                    </span>
+                    {isNewKeyUnseen(meta.newKey) && <NewBadge />}
+                    {(() => {
+                      const opt = activeStyleOption(settings, m.id);
+                      const secId = MODULE_TO_SETTINGS_SECTION[m.id];
+                      if (!opt || !secId) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (meta.newKey) markNewKeysSeen([meta.newKey]);
+                            onNavigate?.(secId);
+                          }}
+                          title={t("Customize style & layout")}
+                          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border/80 bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+                        >
+                          <Palette className="size-2.5" aria-hidden="true" />
+                          <span>{t(opt.title)}</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                   {meta.sub && (
                     <div className="truncate text-[12px] text-muted-foreground">
@@ -229,6 +435,42 @@ function ModulesSection({ settings, set, os }: CustomPartProps) {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  {notchView === "dashboard" && (ALLOWED_GRID_SIZES[m.id]?.length ?? 0) > 1 && (
+                    <select
+                      aria-label={`${t(meta.title)} ${t("Card size")}`}
+                      title={t("Dashboard card size")}
+                      value={readModulePref(settings, m.id).gridSize ?? defaultGridSize(m.id)}
+                      onChange={(e) => setGridSize(m.id, e.target.value as GridSize)}
+                      className="me-1 h-7 rounded-[7px] border border-input bg-background px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                    >
+                      {(ALLOWED_GRID_SIZES[m.id] ?? []).map((sz) => (
+                        <option key={sz} value={sz}>
+                          {sz.replace("x", "×")}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {notchView === "modules" && (() => {
+                    const pref = readModulePref(settings, m.id);
+                    const curSz: ModuleSizeMode = pref.size ?? "auto";
+                    const hasStyles = (MODULE_STYLES[m.id]?.length ?? 0) > 0;
+                    return (
+                      <select
+                        aria-label={`${t(meta.title)} ${t("Notch size")}`}
+                        title={t("Notch size")}
+                        value={curSz}
+                        onChange={(e) => setNotchSize(m.id, e.target.value as ModuleSizeMode)}
+                        className="me-1 h-7 rounded-[7px] border border-input bg-background px-1.5 text-[11px] text-foreground outline-none focus:border-ring"
+                      >
+                        <option value="auto">{t("Default")}</option>
+                        {hasStyles && <option value="fit">{t("Fit")}</option>}
+                        <option value="compact">{t("Compact")}</option>
+                        <option value="standard">{t("Standard")}</option>
+                        <option value="tall">{t("Tall")}</option>
+                        {curSz === "custom" && <option value="custom">{t("Custom")}</option>}
+                      </select>
+                    );
+                  })()}
                   <Button
                     size="xs"
                     variant="ghost"

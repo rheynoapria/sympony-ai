@@ -5,6 +5,7 @@ mod artwork;
 mod brain;
 mod calendar;
 mod clipboard;
+mod colorpick;
 mod background;
 mod backup;
 mod commands;
@@ -15,13 +16,17 @@ mod bridge;
 mod eyes;
 mod askai;
 mod hands;
+mod feed;
 mod files;
+mod floating_chat;
+mod gcal;
 mod github;
 mod hooks;
 mod extras;
 mod hover;
 mod lang;
 mod mcp;
+mod native;
 mod media;
 mod notch;
 mod notif;
@@ -36,8 +41,10 @@ mod shortcut;
 mod speedtest;
 mod tele;
 mod todosync;
+mod updater;
 mod voice;
 mod watchers;
+mod wm;
 mod youtube;
 
 use commands::App;
@@ -73,6 +80,7 @@ pub fn hook_bridge(agent: &str, event: &str) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| settings_window::open(app, None)))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(shell::plugin())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -107,11 +115,11 @@ pub fn run() {
                     })
                 },
             };
-            let secrets = services::secrets::FileSecrets::open(&data_dir, Some(&platform::macos::keychain::Keychain), services::settings::SECRET_KEYS);
+            let secrets = services::secrets::FileSecrets::open(&data_dir, Some(&platform::os::keychain::Keychain), services::settings::SECRET_KEYS);
             for k in services::settings::RETIRED_KEYS {
                 let _ = platform::Secrets::set(&secrets, k, ""); // (AI goes through the agents now: no API keys kept)
             }
-            let deps = services::Deps::new(&data_dir, Arc::new(secrets), Arc::new(platform::macos::location::CoreLocation));
+            let deps = services::Deps::new(&data_dir, Arc::new(secrets), Arc::new(platform::os::location::CoreLocation));
             let mut reg = services::build(&deps);
             watchers::register_audio(&mut reg);
             watchers::register_system(&mut reg, app.handle());
@@ -120,7 +128,9 @@ pub fn run() {
             everyday::register(&mut reg, app.handle(), &data_dir);
             adhan::register(&mut reg, app.handle());
             github::register(&mut reg, app.handle());
+            feed::register(&mut reg, app.handle());
             todosync::register(&mut reg, app.handle(), &data_dir);
+            gcal::register(&mut reg, app.handle(), &data_dir);
             agents::register(&mut reg, app.handle());
             brain::register(&mut reg, app.handle());
             exec::register(&mut reg, app.handle());
@@ -142,9 +152,12 @@ pub fn run() {
             speedtest::register(&mut reg, app.handle());
             tele::register(&mut reg, app.handle());
             backup::register(&mut reg, app.handle());
+            updater::register(&mut reg, app.handle());
             voice::register(&mut reg, app.handle());
             youtube::register(&mut reg, app.handle());
             app.manage(App { settings: deps.settings.clone(), deps, log, data_dir, reg, ctx, warned: Mutex::new(Default::default()) });
+            app.manage(updater::UpdaterState::new());
+            app.manage(floating_chat::FloatingChat::default());
             voice::start(app.handle());
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -153,7 +166,9 @@ pub fn run() {
             app.manage(ob);
             notch::create(app.handle())?;
             hover::start(app.handle());
+            wm::start(app.handle());
             shell::setup(app.handle())?;
+            colorpick::sync_shortcut(app.handle());
             let force_ob = std::env::var("SYMPONY_ONBOARDING").as_deref() == Ok("1");
             let first_run = app.state::<App>().settings.get().get("onboarded").is_none_or(|v| v.is_null());
             if force_ob || first_run {
@@ -179,9 +194,28 @@ pub fn run() {
             lang::start(app.handle());
             extras::start(app.handle());
             radio::start(app.handle());
+            updater::start(app.handle());
             Ok(())
         })
         .invoke_handler(all_commands!())
-        .run(tauri::generate_context!())
-        .expect("error while running Sympony");
+        .build(tauri::generate_context!())
+        .expect("error while running Sympony")
+        .run(|app, event| {
+            // (the space Keep windows below Sympony took goes back to the other windows, and the notification
+            // pop-ups Sympony turned off come back; the log says how far quitting got)
+            let log = |s: &str| {
+                if let Some(a) = app.try_state::<App>() {
+                    a.log.line(s);
+                }
+            };
+            match event {
+                tauri::RunEvent::ExitRequested { code, .. } => log(&format!("quitting (code {code:?})")),
+                tauri::RunEvent::Exit => {
+                    wm::release();
+                    notif::release(app);
+                    log("quit: the strip's space and the notification pop-ups given back");
+                }
+                _ => {}
+            }
+        });
 }

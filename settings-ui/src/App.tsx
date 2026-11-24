@@ -6,6 +6,7 @@ import {
 import { ToastProvider } from "@/components/ui/knowns/toast";
 import { t } from "@/lib/i18n";
 import { notch, type Settings } from "@/lib/notch";
+import { detectOS } from "@/lib/platform";
 import { Rows } from "@/rows/Rows";
 import type { SectionBody } from "@/rows/types";
 import {
@@ -29,9 +30,11 @@ import { calendar } from "@/sections/calendar";
 import { weather } from "@/sections/weather";
 import { prayer } from "@/sections/prayer";
 import { dropactions } from "@/sections/dropactions";
+import { control } from "@/sections/control";
 import { hud } from "@/sections/hud";
 import { battery } from "@/sections/battery";
 import { github } from "@/sections/github";
+import { feed } from "@/sections/feed";
 import { voice } from "@/sections/voice";
 import {
   cursor,
@@ -49,7 +52,10 @@ import {
 import { Placeholder } from "@/components/shell/Placeholder";
 import { SectionHeader } from "@/components/shell/SectionHeader";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { UpdateBanner } from "@/components/shell/UpdateBanner";
 import { SectionIcon } from "@/components/shell/icons";
+import { hasPendingBadge, useUpdateState } from "@/lib/update";
+import { flushSectionItemsSeen, markSectionOpened } from "@/lib/whatsNew";
 
 const THEME_STORAGE_KEY = "sympony.settingsTheme";
 
@@ -65,6 +71,7 @@ export const BODIES: Record<string, SectionBody> = {
   aiusage,
   integrations,
   github,
+  feed,
   voice,
   media,
   notifications,
@@ -80,29 +87,13 @@ export const BODIES: Record<string, SectionBody> = {
   dock,
   dropactions,
   snap,
+  control,
   hud,
   battery,
   mirror,
   stats,
   about,
 };
-
-function detectOS(): OS {
-  if (typeof window !== "undefined" && !window.notch) {
-    const q = new URLSearchParams(window.location.search).get("os");
-    if (q === "macos" || q === "windows" || q === "linux") return q;
-  }
-  const fromHost = typeof window !== "undefined" ? window.SYMPONY_OS : undefined;
-  if (fromHost === "macos" || fromHost === "windows" || fromHost === "linux") {
-    return fromHost;
-  }
-  if (typeof navigator !== "undefined") {
-    const plat = navigator.platform || "";
-    if (/Win/i.test(plat)) return "windows";
-    if (/Linux/i.test(plat)) return "linux";
-  }
-  return "macos";
-}
 
 function readInitialTheme(): Theme {
   if (typeof window !== "undefined") {
@@ -144,6 +135,14 @@ function SettingsShell() {
   const [activePart, setActivePart] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({});
   const [version, setVersion] = useState<string>("");
+  const {
+    update,
+    check: checkUpdate,
+    install: installUpdate,
+    dismiss: dismissUpdate,
+    openPage: openUpdatePage,
+  } = useUpdateState();
+  const updateBadge = useMemo(() => hasPendingBadge(update), [update]);
   const [theme, setTheme] = useState<Theme>(readInitialTheme);
   const [systemDark, setSystemDark] = useState<boolean>(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -267,6 +266,28 @@ function SettingsShell() {
     [visible, secId]
   );
 
+  // Dismiss Sidebar "New" badge when a section is opened; flush inner row/module "New" badges
+  // when leaving the section or hiding/closing the Settings window.
+  useEffect(() => {
+    const id = activeSection.id;
+    markSectionOpened(id, os);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        flushSectionItemsSeen(id, os);
+      }
+    };
+    const onPageHide = () => {
+      flushSectionItemsSeen(id, os);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      flushSectionItemsSeen(id, os);
+    };
+  }, [activeSection.id, os]);
+
   const body = BODIES[activeSection.id];
 
   return (
@@ -281,6 +302,7 @@ function SettingsShell() {
         onSelect={handleSelectSection}
         theme={theme}
         onThemeChange={handleThemeChange}
+        updateBadge={updateBadge}
       />
 
       <div
@@ -309,6 +331,14 @@ function SettingsShell() {
             </span>
           </div>
         </header>
+
+        <UpdateBanner
+          update={update}
+          onInstall={() => void installUpdate()}
+          onDismiss={() => void dismissUpdate()}
+          onRetry={() => void checkUpdate(false)}
+          onOpenPage={() => void openUpdatePage()}
+        />
 
         <main ref={mainRef} className="kn-scroll flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto flex max-w-[740px] flex-col gap-5">

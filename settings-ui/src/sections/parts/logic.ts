@@ -35,16 +35,26 @@ export function placeName(l: PlaceLike | null | undefined): string {
   return [l.name, l.admin, l.country].filter(Boolean).join(", ");
 }
 
-export function locateMessage(r: unknown): LocateMsg {
+/** Where the location permission is: System Settings on a Mac, Settings → Privacy & security → Location on Windows. */
+export function locationSettingsUrl(os: OS): string {
+  return os === "windows"
+    ? "ms-settings:privacy-location"
+    : "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices";
+}
+
+export function locateMessage(r: unknown, os: OS = "macos"): LocateMsg {
   const res = r as {
     ok?: boolean;
     named?: boolean;
     reason?: string;
     place?: { name?: string; admin?: string; country?: string; lat?: number; lon?: number };
   } | null;
-  const how = t(
-    "Turn it on in System Settings → Privacy & Security → Location Services, then come back."
-  );
+  const win = os === "windows";
+  const how = win
+    ? t(
+        "Turn on Location services, “Let apps access your location” and “Let desktop apps access your location” in Settings → Privacy & security → Location, then come back."
+      )
+    : t("Turn it on in System Settings → Privacy & Security → Location Services, then come back.");
   if (res && res.ok && res.place) {
     const p = placeName(res.place);
     return {
@@ -58,27 +68,30 @@ export function locateMessage(r: unknown): LocateMsg {
   }
   if (res && res.reason === "off") {
     return {
-      text: `${t("Location Services is off on this Mac.")} ${how}`,
+      text: `${win ? t("Location services is off on this PC.") : t("Location Services is off on this Mac.")} ${how}`,
       settings: true,
     };
   }
   if (res && res.reason === "denied") {
     return {
-      text: `${t("macOS doesn’t let Sympony use your location.")} ${how}`,
+      text: `${win ? t("Windows doesn’t let Sympony use your location.") : t("macOS doesn’t let Sympony use your location.")} ${how}`,
       settings: true,
     };
   }
   return {
-    text: t(
-      "This Mac couldn’t find its location right now. Try again in a moment, or search for your city."
-    ),
+    text: win
+      ? t("This PC couldn’t find its location right now. Try again in a moment, or search for your city.")
+      : t(
+          "This Mac couldn’t find its location right now. Try again in a moment, or search for your city."
+        ),
   };
 }
 
 export function locateSub(
   st: LocateState,
   which: string,
-  cur: { lat: number; lon: number } | null
+  cur: { lat: number; lon: number } | null,
+  os: OS = "macos"
 ): string {
   const busy = st.busy === which;
   let m: LocateMsg | null = busy ? null : (st.msg[which] ?? null);
@@ -87,9 +100,13 @@ export function locateSub(
     ? t("Finding your location…")
     : m
       ? m.text
-      : t(
-          "Uses Location Services to find where this Mac is, once, and picks the city there"
-        );
+      : os === "windows"
+        ? t(
+            "Uses Windows’ location service to find where this PC is, once, and picks the city there (its name from OpenStreetMap)"
+          )
+        : t(
+            "Uses Location Services to find where this Mac is, once, and picks the city there"
+          );
 }
 
 export function keptHow(os: OS): string {

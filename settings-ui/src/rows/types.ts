@@ -20,6 +20,8 @@ export type FieldRow = {
   words?: string;
   also?: [string, string][];
   unset?: string | number | boolean;
+  /** Optional versioned key to display a dismissible "New" badge until seen */
+  newKey?: string;
 };
 
 export type Row =
@@ -37,6 +39,8 @@ export type Row =
       spot?: string;
       /** a search hit on it opens this part of its page (its `part`), e.g. Pony Assistant's tab */
       tab?: string;
+      /** Optional versioned key to display a dismissible "New" badge until seen */
+      newKey?: string;
     };
 
 export interface CustomPartProps {

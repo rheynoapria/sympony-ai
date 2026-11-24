@@ -8,6 +8,7 @@ import { StatusDot } from "@/components/ui/knowns/status-dot";
 import { Switch } from "@/components/ui/knowns/switch";
 import { Skeleton } from "@/components/ui/knowns/skeleton";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { cn } from "@/lib/knowns/utils";
 import type { CustomPartProps } from "@/rows/types";
@@ -151,7 +152,7 @@ function ServerForm({ server, onDone }: { server?: Server; onDone: (saved: boole
         )}
       </div>
       <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-        {t("Keys and headers are kept encrypted on this Mac and never go to the AI.")}
+        {onMac() ? t("Keys and headers are kept encrypted on this Mac and never go to the AI.") : t("Keys and headers are kept encrypted on this PC and never go to the AI.")}
       </p>
       {err && <p className="text-[12px] text-destructive">{err}</p>}
       <div className="flex justify-end gap-2">
@@ -184,7 +185,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       {found === null ? (
         <Skeleton className="h-16 w-full" />
       ) : found.length === 0 ? (
-        <p className="text-[12px] text-muted-foreground">{t("No MCP servers found in Claude’s settings on this Mac.")}</p>
+        <p className="text-[12px] text-muted-foreground">{onMac() ? t("No MCP servers found in Claude’s settings on this Mac.") : t("No MCP servers found in Claude’s settings on this PC.")}</p>
       ) : (
         <div className="flex flex-col divide-y divide-border/70">
           {found.map((f) => {

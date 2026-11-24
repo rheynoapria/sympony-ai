@@ -2,8 +2,13 @@
 //! Windows backend (UI Automation, SendInput) provides the same functions and `El`.
 #[cfg(target_os = "macos")]
 pub use crate::macos::ax::{
-    activate, app_name, app_version, bring, choose, click_at, default_browser, front_app, front_pid, installed, is_front, menu_path, open_apps, open_background, open_with, pid_of,
-    press_combo, press_key, read, screen_access, scroll_at, secure_input, settle, selection, trusted, type_all, type_text, typing_in, window, window_id, El,
+    activate, app_name, app_version, bring, choose, click_at, default_browser, double_click_at, drag, find_running_app, front_app, front_pid, installed, is_front, menu_path, mouse_move, open_apps, open_background, open_with, pid_of,
+    press_combo, press_key, read, right_click_at, screen_access, scroll_at, scroll_xy, secure_input, settle, selection, trusted, type_all, type_text, typing_in, window, window_id, window_id_matching, El,
+};
+#[cfg(target_os = "windows")]
+pub use crate::windows::ax::{
+    activate, app_name, app_version, bring, choose, click_at, default_browser, double_click_at, drag, find_running_app, front_app, front_pid, installed, is_front, menu_path, mouse_move, open_apps, open_background, open_with, pid_of,
+    press_combo, press_key, read, right_click_at, screen_access, scroll_at, scroll_xy, secure_input, settle, selection, trusted, type_all, type_text, typing_in, window, window_id, window_id_matching, El,
 };
 
 /// One element of a window, in reading order (`depth` from the window).
@@ -15,6 +20,9 @@ pub struct Node {
     /// what it's called: description, title, or (for a text field) its placeholder
     pub label: String,
     pub value: String,
+    /// numeric range for sliders/steppers (`AXMinValue`..`AXMaxValue`)
+    pub min_val: Option<f64>,
+    pub max_val: Option<f64>,
     pub enabled: bool,
     pub focused: bool,
     pub frame: (f64, f64, f64, f64),

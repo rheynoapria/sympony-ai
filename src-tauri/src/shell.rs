@@ -1,8 +1,8 @@
 //! The notch's open state, keyboard focus, dragging, the toggle shortcut and the tray.
 use crate::commands::App;
 use crate::notch::{Notch, LABEL};
-use objc2::MainThreadMarker;
-use platform::macos::{apps, displays::mouse_location};
+use platform::os::MainThreadMarker;
+use platform::os::{apps, displays::mouse_location};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -25,6 +25,16 @@ impl Drop for Driving {
     fn drop(&mut self) {
         DRIVING.store(false, Ordering::SeqCst);
     }
+}
+
+/// Folds the expanded notch out of the way when Hands needs to click/drag near the top of the screen.
+/// Returns `true` if the notch was open (caller may pause briefly for the close animation).
+pub fn yield_notch(app: &AppHandle) -> bool {
+    let was_open = app.try_state::<Shell>().is_some_and(|s| s.open.lock().unwrap().0);
+    if was_open {
+        let _ = app.emit_to(LABEL, "notch:yield", ());
+    }
+    was_open
 }
 
 #[derive(Default)]
@@ -69,7 +79,11 @@ pub fn focus(app: &AppHandle, want: bool) {
             // (the notch closing right after it opened Settings: Settings keeps the front, the app before doesn't
             // come back over it)
             let other = a.webview_windows().into_iter().any(|(label, ww)| label != LABEL && ww.is_visible().unwrap_or(false) && ww.is_focused().unwrap_or(false));
-            if let Some(pid) = back.filter(|_| !other && !crate::settings_window::opened_just_now()) {
+            if let Some(pid) = back.filter(|_| {
+                !other
+                    && !crate::settings_window::opened_just_now()
+                    && !crate::floating_chat::opened_just_now()
+            }) {
                 apps::activate_pid(pid);
             }
         }
@@ -91,7 +105,7 @@ pub fn drag(app: &AppHandle, action: &str) {
                     let _ = app.run_on_main_thread(move || {
                         let (Some(mtm), Some(win)) = (MainThreadMarker::new(), *a.state::<Notch>().win.lock().unwrap()) else { return };
                         // the mouseup may never reach the page (it went click-through, or reloaded): no button down ends it
-                        if !platform::macos::displays::mouse_down() {
+                        if !platform::os::displays::mouse_down() {
                             drag(&a, "end");
                             return;
                         }
@@ -106,7 +120,11 @@ pub fn drag(app: &AppHandle, action: &str) {
         "end" => {
             shell.dragging.store(false, Ordering::SeqCst);
             if let Some(x) = *shell.anchor.lock().unwrap() {
-                let frac = (x / platform::geometry::WIN_W * 1000.0).round() / 1000.0;
+                let win_w = app
+                    .try_state::<Notch>()
+                    .and_then(|n| n.win.lock().unwrap().map(|r| r.w))
+                    .unwrap_or(platform::geometry::WIN_W);
+                let frac = (x / win_w.max(1.0) * 1000.0).round() / 1000.0;
                 let out = app.state::<App>().settings.set(serde_json::json!({ "notchPosition": frac }));
                 let _ = app.emit("settings", out);
             }
@@ -117,7 +135,13 @@ pub fn drag(app: &AppHandle, action: &str) {
 
 /// The saved position as the frontend's anchor (window points).
 pub fn anchor_from_settings(app: &AppHandle) -> Option<f64> {
-    app.state::<App>().settings.get()["notchPosition"].as_f64().map(platform::geometry::anchor_px)
+    let win_w = app
+        .try_state::<Notch>()
+        .and_then(|n| n.win.lock().unwrap().map(|r| r.w))
+        .unwrap_or(platform::geometry::WIN_W);
+    app.state::<App>().settings.get()["notchPosition"]
+        .as_f64()
+        .map(|p| platform::geometry::anchor_px_for(p, win_w))
 }
 
 /// Tells the notch where `notchPosition` puts it (after Settings changed it, or a reset).
@@ -164,8 +188,8 @@ pub fn sync_shortcut(app: &AppHandle) {
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, sc, ev| {
-            // (the Teleprompter's reading keys go to it)
-            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) {
+            // (the Teleprompter's reading keys go to it, the colour picker's starts it)
+            if ev.state() == ShortcutState::Pressed && !crate::tele::pressed(app, sc) && !crate::colorpick::pressed(app, sc) {
                 let _ = app.emit_to(LABEL, "notch:toggle", ());
             }
         })
@@ -189,9 +213,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         });
     }
     let open = MenuItem::with_id(app, "open", "Open Sympony", true, None::<&str>)?;
+    let float_chat = MenuItem::with_id(app, "floating_chat", "Floating Pony Chat", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Sympony", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &settings, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &float_chat, &settings, &quit])?;
     // macOS: Pony's silhouette in black, a template the menu bar tints light or dark; Windows/Linux trays don't
     // tint, so they get the colour app icon
     #[cfg(target_os = "macos")]
@@ -207,8 +232,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "open" => {
                 let _ = app.emit_to(LABEL, "notch:toggle", ());
             }
+            "floating_chat" => crate::floating_chat::toggle(app),
             "settings" => crate::settings_window::open(app, None),
-            "quit" => app.exit(0),
+            "quit" => {
+                app.state::<App>().log.line("tray: Quit");
+                app.exit(0);
+            }
             _ => {}
         })
         .build(app)?;

@@ -26,6 +26,7 @@ const R4 = [
   "effects",
   "wallpaper",
   "github",
+  "feed",
 ] as const;
 
 for (const os of ["macos", "linux", "windows"] as OS[]) {

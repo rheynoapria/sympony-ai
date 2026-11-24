@@ -206,6 +206,7 @@ pub fn download_file_resumable(
     download_file_with_config(
         url,
         dest,
+        0,
         expected_sha256,
         progress,
         cancel,
@@ -216,6 +217,7 @@ pub fn download_file_resumable(
 fn download_file_with_config(
     url: &str,
     dest: &Path,
+    expected_size: u64,
     expected_sha256: &str,
     progress: impl Fn(u64, u64),
     cancel: &AtomicBool,
@@ -230,6 +232,9 @@ fn download_file_with_config(
 
     let part = part_path(dest);
     let existing = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+    if existing > 0 && expected_size > 0 {
+        progress(existing.min(expected_size), expected_size);
+    }
 
     let agent: ureq::Agent = config.into();
 
@@ -263,13 +268,21 @@ fn download_file_with_config(
                 .append(true)
                 .open(&part)
                 .map_err(|e| VoiceError::Engine(format!("open part: {e}")))?;
-            let tot = content_len.map(|c| existing + c).unwrap_or(existing);
+            let tot = content_len
+                .filter(|&c| c > 0)
+                .map(|c| existing + c)
+                .unwrap_or_else(|| expected_size.max(existing));
             (f, existing, tot)
         } else {
             let f = File::create(&part)
                 .map_err(|e| VoiceError::Engine(format!("create part: {e}")))?;
-            (f, 0u64, content_len.unwrap_or(0))
+            let tot = content_len.filter(|&c| c > 0).unwrap_or(expected_size);
+            (f, 0u64, tot)
         };
+
+        if total > 0 {
+            progress(written, total.max(written));
+        }
 
         let mut reader = resp.into_body().into_reader();
         let mut buf = [0u8; 65_536];
@@ -307,6 +320,10 @@ fn download_file_with_config(
     }
 
     if !expected_sha256.is_empty() {
+        let final_len = fs::metadata(&part).map(|m| m.len()).unwrap_or(expected_size);
+        if final_len > 0 {
+            progress(final_len, expected_size.max(final_len));
+        }
         let actual = sha256_file(&part)
             .map_err(|e| VoiceError::Engine(format!("hash part: {e}")))?;
         if !actual.eq_ignore_ascii_case(expected_sha256) {
@@ -336,6 +353,7 @@ pub fn download_in(
 ) -> Result<PathBuf, VoiceError> {
     let spec = find(id).ok_or(VoiceError::NoModel)?;
     let dest = base.join(spec.file);
+    let default_cfg = || download_agent_config(Duration::from_secs(20), Duration::from_secs(60));
     if spec.files.is_empty() {
         if dest.is_file() {
             if let Ok(actual) = sha256_file(&dest) {
@@ -345,7 +363,15 @@ pub fn download_in(
                 }
             }
         }
-        return download_file_resumable(spec.url, &dest, spec.sha256, progress, cancel);
+        return download_file_with_config(
+            spec.url,
+            &dest,
+            spec.size,
+            spec.sha256,
+            progress,
+            cancel,
+            default_cfg(),
+        );
     }
 
     fs::create_dir_all(&dest).map_err(|e| VoiceError::Engine(format!("create model dir: {e}")))?;
@@ -357,18 +383,20 @@ pub fn download_in(
             if let Ok(actual) = sha256_file(&fdest) {
                 if actual.eq_ignore_ascii_case(f.sha256) {
                     done_before += f.size;
-                    progress(done_before, total);
+                    progress(done_before.min(total), total);
                     continue;
                 }
             }
         }
         let base_done = done_before;
-        download_file_resumable(
+        download_file_with_config(
             f.url,
             &fdest,
+            f.size,
             f.sha256,
-            |cur, _| progress(base_done + cur, total),
+            |cur, _| progress((base_done + cur).min(total), total),
             cancel,
+            default_cfg(),
         )?;
         done_before += f.size;
     }
@@ -380,6 +408,7 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::net::TcpListener;
+    use std::sync::Mutex;
 
     #[test]
     fn download_timeout_is_per_read_not_total_body() {
@@ -412,8 +441,49 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let cfg = download_agent_config(Duration::from_secs(5), Duration::from_millis(500));
         let url = format!("http://{addr}/model.bin");
-        let out = download_file_with_config(&url, &dest, "", |_, _| {}, &cancel, cfg).unwrap();
+        let out = download_file_with_config(&url, &dest, 24, "", |_, _| {}, &cancel, cfg).unwrap();
         handle.join().unwrap();
         assert_eq!(fs::read(out).unwrap(), b"aaaabbbbccccddddeeeeffff");
+    }
+
+    #[test]
+    fn missing_content_length_falls_back_to_expected_size() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut req_buf = [0u8; 1024];
+            let _ = sock.read(&mut req_buf);
+            let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+            for chunk in [b"11111111", b"22222222", b"33333333"] {
+                let _ = sock.write_all(chunk);
+                let _ = sock.flush();
+                std::thread::sleep(Duration::from_millis(15));
+            }
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("chunked.bin");
+        let cancel = AtomicBool::new(false);
+        let events: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
+        let cfg = download_agent_config(Duration::from_secs(5), Duration::from_secs(5));
+        let url = format!("http://{addr}/chunked.bin");
+        download_file_with_config(
+            &url,
+            &dest,
+            24,
+            "",
+            |done, total| events.lock().unwrap().push((done, total)),
+            &cancel,
+            cfg,
+        )
+        .unwrap();
+        handle.join().unwrap();
+
+        let recorded = events.lock().unwrap().clone();
+        assert!(!recorded.is_empty());
+        assert!(recorded.iter().all(|&(_, total)| total == 24));
+        assert_eq!(recorded.first().copied(), Some((0, 24)));
+        assert_eq!(recorded.last().copied(), Some((24, 24)));
     }
 }

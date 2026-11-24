@@ -20,6 +20,7 @@
   const prevBtn = $('#prev');
   const nextBtn = $('#next');
   const backBtn = $('#btnBack');
+  const hideBtn = $('#btnHide');
   const collapseBtn = $('#btnCollapse');
   const settingsBtn = $('#btnSettings');
   const topMetaEl = $('#topMeta');
@@ -33,6 +34,7 @@
   const P = {
     moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
     music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    pip: '<path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>',
     cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
     chat: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
     todo: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
@@ -51,6 +53,7 @@
     bt: '<path d="m7 7 10 10-5 5V2l5 5L7 17"/>',
     lang: '<path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/>',
     git: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+    rss: '<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>',
     radio: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5M19.1 4.9C23 8.8 23 15.1 19.1 19"/><circle cx="12" cy="12" r="2"/>',
     star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>',
     globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>',
@@ -71,9 +74,13 @@
     cup: '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>',
     vol: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/>',
     volMute: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="m22 9-6 6M16 9l6 6"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+    micOff: '<line x1="2" y1="2" x2="22" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" y1="19" x2="12" y2="22"/>',
+    contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
     pods: '<path d="M7 4a3 3 0 0 0-3 3v4a3 3 0 0 0 3 3v6"/><path d="M17 4a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3v6"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
+    eyeOff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
     right: '<path d="m9 18 6-6-6-6"/>',
     cam: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
@@ -101,6 +108,7 @@
     bluetooth: 'bt',
     translate: 'lang',
     github: 'git',
+    feed: 'rss',
     radio: 'radio',
     bookmarks: 'star',
     worldclock: 'globe',
@@ -136,6 +144,7 @@
   prevBtn.innerHTML = ic('left');
   nextBtn.innerHTML = ic('right');
   backBtn.innerHTML = ic('left', 'width:15px;height:15px');
+  if (hideBtn) hideBtn.innerHTML = ic('eyeOff');
   collapseBtn.innerHTML = ic('up');
   settingsBtn.innerHTML = ic('gear');
 
@@ -231,7 +240,7 @@
   }
 
   function eventSourceInfo(ev) {
-    const raw = String((ev && (ev.link || ev.location)) || '').toLowerCase();
+    const raw = String((ev && (ev.url || ev.link || ev.location)) || '').toLowerCase();
     if (/zoom\.us|zoomgov\.com/.test(raw)) return { bundle: 'us.zoom.xos', name: 'Zoom', fb: fa('video') };
     if (/slack\.com/.test(raw)) return { bundle: 'com.tinyspeck.slackmacgap', name: 'Slack', fb: fa('hashtag') };
     if (/meet\.google\.com/.test(raw)) return { bundle: 'com.google.Chrome', alt: 'com.apple.Safari', name: 'Google Meet', fb: fa('video') };
@@ -266,8 +275,7 @@
     pillFocus: false,
     drag: null,
     swallowClickUntil: 0,
-    wAcc: 0,
-    wLock: 0,
+    wheelPager: window.NotchKit && NotchKit.createWheelPager ? NotchKit.createWheelPager() : null,
   };
 
   function isModulesView() {
@@ -367,7 +375,49 @@
     }, ms);
   }
 
+  function uniformOpenHeight(s) {
+    if (N.effectiveSizes) return Math.min(320, Math.max(116, N.effectiveSizes(s || st.settings).expandedHeightTall));
+    const raw = Number((s || st.settings || {}).expandedHeightTall);
+    return Number.isFinite(raw) && raw >= 116 ? Math.min(320, raw) : 268;
+  }
+
+  function frameForModule(modId, maxW, maxH) {
+    const s = st.settings || {};
+    const expW = N.effectiveSizes ? N.effectiveSizes(s).expandedWidth : (Number(s.expandedWidth) || 660);
+    const defH = uniformOpenHeight(s);
+    const capW = Number.isFinite(maxW) ? maxW : 780;
+    const capH = Number.isFinite(maxH) ? maxH : 340;
+    if (!modId || !window.StyleLib || !window.NotchKit || !NotchKit.resolveModuleFrame) {
+      const h = Math.min(capH, defH);
+      return { styleId: 'bento', surface: 'oled', width: Math.min(expW, capW), height: h, stageH: Math.max(96, h - 54) };
+    }
+    return NotchKit.resolveModuleFrame({
+      styleDef: StyleLib.styleDefFor(s, modId),
+      pref: StyleLib.prefFor(s, modId),
+      expandedWidth: expW,
+      defaultHeight: defH,
+      maxW: capW,
+      maxH: capH,
+    });
+  }
+
+  function applyPageStyleAttrs(pageEl, modId) {
+    if (!pageEl || !modId) return;
+    const f = frameForModule(modId, 780, 340);
+    pageEl.dataset.modStyle = f.styleId;
+    pageEl.dataset.modSurface = f.surface;
+  }
+
+  function syncAllPageStyleAttrs() {
+    $$('.tab-page', openEl).forEach((el) => {
+      const id = el.id && el.id.startsWith('page-') ? el.id.slice(5) : '';
+      if (id && !['drop', 'snap'].includes(id)) applyPageStyleAttrs(el, id);
+    });
+  }
+
   function hydrateSection(modId) {
+    const pageEl = $('#page-' + modId);
+    if (pageEl) applyPageStyleAttrs(pageEl, modId);
     if (modId === 'home') { N.renderMusic(true); N.renderCalendar(); if (N.renderHomeSection) N.renderHomeSection(); }
     else if (modId === 'shelf' && N.renderShelfSection) N.renderShelfSection();
     else if (modId === 'stats') N.drawStats();
@@ -516,7 +566,8 @@
     }
 
     cs.modIds = [];
-    cs.pages = NotchKit.packCards(ids, { hitl });
+    const customSizes = window.StyleLib ? StyleLib.gridSizesMap(st.settings) : null;
+    cs.pages = NotchKit.packCards(ids, { hitl, sizes: customSizes });
     if (!cs.pages.length) cs.pages = [{ cards: [{ id: 'home', x: 0, y: 0, w: 4, h: 2 }] }];
 
     const single = cs.pages.length <= 1;
@@ -650,11 +701,13 @@
 
     const pageEl = N.ensurePage(moduleId);
     if (!pageEl) return;
+    applyPageStyleAttrs(pageEl, moduleId);
 
     const order = dockModules();
     const prevIdx = prevMod ? order.indexOf(prevMod) : -1;
     const nextIdx = order.indexOf(moduleId);
-    const dir = (prevMod && prevMod !== moduleId && !opts.silent)
+    const slideOn = !st.settings || st.settings.fxTabSlide !== false;
+    const dir = (prevMod && prevMod !== moduleId && !opts.silent && slideOn)
       ? (nextIdx >= prevIdx ? 1 : -1)
       : 0;
 
@@ -744,9 +797,10 @@
       st.tab = nextMod;
       st.page = nextMod;
 
-      if (opts.instant) trackEl.classList.add('drag');
+      const instant = !!opts.instant || (st.settings && st.settings.fxTabSlide === false);
+      if (instant) trackEl.classList.add('drag');
       trackEl.style.transform = `translate3d(${-k * cs.sw}px, 0, 0)`;
-      if (opts.instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
+      if (instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
 
       prevBtn.classList.toggle('end', k === 0 || cs.pages.length <= 1);
       nextBtn.classList.toggle('end', k === cs.pages.length - 1 || cs.pages.length <= 1);
@@ -774,9 +828,10 @@
     st.page = 'page-' + k;
     if (!opts.silent) tabMemory.set(k);
 
-    if (opts.instant) trackEl.classList.add('drag');
+    const instant = !!opts.instant || (st.settings && st.settings.fxTabSlide === false);
+    if (instant) trackEl.classList.add('drag');
     trackEl.style.transform = `translate3d(${-k * cs.sw}px, 0, 0)`;
-    if (opts.instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
+    if (instant) { void trackEl.offsetWidth; trackEl.classList.remove('drag'); }
 
     prevBtn.classList.toggle('end', k === 0 || cs.pages.length <= 1);
     nextBtn.classList.toggle('end', k === cs.pages.length - 1 || cs.pages.length <= 1);
@@ -867,9 +922,30 @@
     }
   }
 
-  // Fixed open height: 40 top + 218 stage + 14 bottom = 272 (dock moved to separate #pill below)
+  function activeStyledModule() {
+    if (cs.special) return null;
+    if (cs.fullMod) return cs.fullMod;
+    if (cs.view === 'modules') return cs.modIds[cs.idx] || null;
+    return null;
+  }
+
+  // Dynamic open width & height: follows the active module's Style & Size override (Dashboard grid stays 272 px).
+  function width(maxW) {
+    const s = st.settings || {};
+    const expW = N.effectiveSizes ? N.effectiveSizes(s).expandedWidth : (Number(s.expandedWidth) || 660);
+    const modId = activeStyledModule();
+    if (!modId) return Math.min(expW, maxW);
+    return frameForModule(modId, maxW, 340).width;
+  }
+
   function height(maxH) {
-    return Math.min(maxH, 272);
+    const modId = activeStyledModule();
+    if (!modId) return Math.min(maxH, uniformOpenHeight(st.settings));
+    let h = frameForModule(modId, 780, maxH).height;
+    if (modId === 'home' && N.homeNeedsTall && N.homeNeedsTall()) h = Math.max(h, 236);
+    else if (modId === 'control' && N.controlNeedsTall && N.controlNeedsTall()) h = Math.max(h, 232);
+    else if (modId === 'calendar' && N.calendarNeedsTall && N.calendarNeedsTall()) h = Math.max(h, 232);
+    return Math.min(maxH, h);
   }
 
   function renderTop() {
@@ -901,6 +977,12 @@
     topBarsEl.style.display = hasMedia ? '' : 'none';
     topBarsEl.classList.toggle('off', !m.playing);
 
+    if (hideBtn) {
+      const s = st.settings || {};
+      const showHide = s.hideButton !== false && !s.autoHide && s.shellForm !== 'hidden' && s.shellForm !== 'drawer';
+      hideBtn.hidden = !showHide;
+    }
+
     let title = '';
     if (cs.special === 'drop') title = _t('Drop actions');
     else if (cs.special === 'snap') title = _t('Snap zones');
@@ -919,6 +1001,7 @@
   prevBtn.onclick = () => step(-1);
   nextBtn.onclick = () => step(1);
   backBtn.onclick = () => closeFull();
+  if (hideBtn) hideBtn.onclick = () => N.tuck();
   collapseBtn.onclick = () => N.closeNotch();
   settingsBtn.onclick = () => { api.openSettings(); N.closeNotch(); };
   topBarsEl.onclick = () => {
@@ -930,7 +1013,7 @@
 
   viewEl.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || cs.fullMod || cs.special) return;
-    if (e.target.closest('button, a, input, textarea, select, [contenteditable], .bar, .mc-sl-bar, .vsl, .wk-strip, [data-mseek], [draggable=true]')) return;
+    if (e.target.closest('button, a, input, textarea, select, [contenteditable], .bar, .mc-sl-bar, .vsl, .hsl, .wk-strip, [data-mseek], [draggable=true]')) return;
     const scx = e.target.closest('.sc-x');
     if (scx && scx.scrollWidth > scx.clientWidth + 2) return;
     cs.drag = { x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId };
@@ -967,20 +1050,24 @@
   window.addEventListener('pointerup', endDrag);
   window.addEventListener('pointercancel', endDrag);
 
-  // Horizontal trackpad swipe between pages
+  // Horizontal trackpad/wheel swipe between pages (momentum-safe single-step recognizer)
   viewEl.addEventListener('wheel', (e) => {
-    if (cs.special || cs.fullMod || cs.pages.length <= 1) return;
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    if (e.defaultPrevented || cs.special || cs.fullMod || cs.pages.length <= 1) return;
     const scx = e.target.closest('.sc-x');
     if (scx && scx.scrollWidth > scx.clientWidth + 2) return;
-    e.preventDefault();
-    if (Date.now() < cs.wLock) return;
-    cs.wAcc += e.deltaX;
-    if (Math.abs(cs.wAcc) > 40) {
-      step(Math.sign(cs.wAcc));
-      cs.wAcc = 0;
-      cs.wLock = Date.now() + 450;
+    if (!cs.wheelPager && window.NotchKit && NotchKit.createWheelPager) {
+      cs.wheelPager = NotchKit.createWheelPager();
     }
+    if (!cs.wheelPager) return;
+    const res = cs.wheelPager.feed({
+      deltaX: e.deltaX,
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode,
+      now: Date.now(),
+    });
+    if (!res.handled) return;
+    e.preventDefault();
+    if (res.dir) step(res.dir);
   }, { passive: false });
 
   // Menu notch (#pill) hover / focus reveal (bottom ~36 px of #notch, #hotzone, #pill; 280 ms hide delay)
@@ -1052,8 +1139,10 @@
     fullModule: () => cs.fullMod,
     activeModule: () => (cs.fullMod || (cs.view === 'modules' ? cs.modIds[cs.idx] || null : null)),
     viewMode: () => cs.view,
+    width,
     height,
     syncWidth,
+    syncStyleAttrs: syncAllPageStyleAttrs,
     renderTop,
     renderDock,
     hideDockTip,

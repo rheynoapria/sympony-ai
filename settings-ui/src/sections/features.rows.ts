@@ -322,6 +322,16 @@ export const CALENDAR_ROWS: readonly Row[] = [
     step: 1,
     unit: "min",
   },
+  { t: "h2", text: "Google Calendar" },
+  {
+    t: "lead",
+    html: "Connect your Google account directly from this device to read upcoming events, pick which calendars Sympony and Pony use, and create, move, or delete events on request. Disconnect anytime.",
+  },
+  {
+    t: "custom",
+    id: "googleCalendar",
+    label: "Google Calendar",
+  },
   { t: "h2", text: "Subscribed calendars (iCal / .ics)" },
   {
     t: "lead",
@@ -359,7 +369,7 @@ export const WEATHER_ROWS: readonly Row[] = [
     t: "toggle",
     k: "locationAuto",
     label: "Use my current location",
-    sub: "Follows this Mac: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.",
+    sub: "Follows this PC: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.",
     unset: true,
   },
   { t: "custom", id: "locate", label: "Detect my location" },

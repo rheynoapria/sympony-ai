@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 pub const NAMES: &[&str] = &["run_command", "read_file", "write_file", "edit_file", "list_dir"];
 
 /// Added to the system prompt when the tools are on.
-pub const RULES: &str = "Commands & files: you can run shell commands (run_command) and read, write and edit files (read_file, write_file, edit_file, list_dir) on this computer, like a coding agent. Work in small steps: look first (list_dir, read_file), then change; read a file before editing it; prefer edit_file over rewriting a whole file. Sympony itself asks the user on a card whenever a step needs their OK (deleting files always does), so don't also ask with ask_user; if they decline, don't try another way around it, ask what they want instead. Use absolute paths or ~. Keep commands non-interactive (no editors, pagers or prompts; pass --yes style flags only when the user asked for the change). Say briefly what you did and what came out.";
+pub const RULES: &str = "Commands & files: you can run shell commands (run_command) and read, write and edit files (read_file, write_file, edit_file, list_dir) on this computer, like a coding agent. Work in small steps: look first (list_dir, read_file), then change; read a file before editing it; prefer edit_file over rewriting a whole file. Sympony itself asks the user on a card whenever a step needs their OK (deleting files always does), so don't also ask with ask_user; if they decline, don't try another way around it, ask what they want instead. Use absolute paths or ~. Keep commands non-interactive (no editors, pagers or prompts; pass --yes style flags only when the user asked for the change). When screen_read and screen_do (Eyes & Hands) are active, prefer interactive UI automation over `osascript` / AppleScript for controlling desktop apps, Finder, browsers, and media players. Say briefly what you did and what came out.";
 
 pub fn tools() -> Vec<Value> {
     let f = |name: &str, about: &str, props: Value, req: &[&str]| {
@@ -33,6 +33,21 @@ pub fn tools() -> Vec<Value> {
         f("list_dir", "Lists a folder (names, / after folders).",
           json!({"path": {"type": "string", "description": "absolute or ~ path"}}), &["path"]),
     ]
+}
+
+/// The same Commands & files tools in MCP `tools/list` format (for Claude Code and other MCP-wired CLI agents).
+pub fn mcp_tools() -> Vec<Value> {
+    tools()
+        .into_iter()
+        .map(|t| {
+            let f = &t["function"];
+            json!({
+                "name": f["name"],
+                "description": f["description"],
+                "inputSchema": f["parameters"],
+            })
+        })
+        .collect()
 }
 
 /// `~` and `~/…` → the home folder.

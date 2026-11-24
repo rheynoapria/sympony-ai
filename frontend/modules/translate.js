@@ -38,7 +38,7 @@
   function providerLabel() {
     const a = N.aiAgent('translateAgent');
     if (a === undefined) { N.loadAgents().then(() => { const l = $('#trProv', page); if (l) l.textContent = providerLabel(); }); return '…'; }
-    return a ? N.aiLabel(a) : _t('No AI agent on this Mac');
+    return a ? N.aiLabel(a) : (N.MAC ? _t('No AI agent on this Mac') : _t('No AI agent on this PC'));
   }
 
   const cards = new Set();

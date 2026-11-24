@@ -184,8 +184,33 @@ function paintIcons() {
 }
 
 // ================================================================== layout / sizing
+function effectiveSizes(s = st.settings) {
+  const cfg = s || {};
+  const disp = st.display || {};
+  const cam = gapSetting() > 0 ? null : st.cam;
+  const fallbackW = (typeof screen !== 'undefined' && screen.width) ? screen.width : 1512;
+  const fallbackH = (typeof screen !== 'undefined' && screen.height) ? screen.height : 982;
+  if (window.NotchKit && typeof NotchKit.displayNotchSizes === 'function') {
+    return NotchKit.displayNotchSizes({
+      settings: cfg,
+      displayW: disp.w || fallbackW,
+      displayH: disp.h || fallbackH,
+      camW: cam ? cam.w : 0,
+      camH: cam ? cam.h : 0,
+    });
+  }
+  return {
+    mode: cfg.notchSizeMode === 'custom' ? 'custom' : 'auto',
+    notchWidth: Number(cfg.notchWidth) || 200,
+    notchHeight: Number(cfg.notchHeight) || 32,
+    expandedWidth: Number(cfg.expandedWidth) || 660,
+    expandedHeight: Number(cfg.expandedHeight) || 196,
+    expandedHeightTall: Number(cfg.expandedHeightTall) || 268,
+  };
+}
+
 function closedHeight() {
-  const h = st.settings ? st.settings.notchHeight : 32;
+  const h = effectiveSizes().notchHeight;
   const cam = camera();
   return cam ? Math.max(h, Math.ceil(cam.h)) : h;
 }
@@ -193,14 +218,19 @@ function closedHeight() {
 // A MacBook's camera notch: main says where it is in this window (notch:camera, macOS). While Sympony hangs from the top
 // edge over it, Sympony takes the camera's middle and is at least as tall: the part over the camera stays empty and
 // black, what Sympony shows goes to the sides of it (the time too), and the open notch's top bar keeps it free.
-const CAM_MARGIN = 8; // empty black beside the camera on each side
+// macOS auxiliaryTopLeftArea..auxiliaryTopRightArea already includes horizontal buffer around the physical camera.
+const CAM_MARGIN = 0;
 function camera() { return gapSetting() > 0 ? null : camNear(); }
 // the camera, when Sympony (where main puts its middle) would be over it at all
 function camNear() {
   const c = st.cam;
   if (!c) return null;
   const want = st.anchor == null ? window.innerWidth / 2 : st.anchor;
-  return Math.abs(want - c.x) < c.w / 2 + (st.settings ? st.settings.notchWidth : 200) / 2 ? c : null;
+  return Math.abs(want - c.x) < c.w / 2 + effectiveSizes().notchWidth / 2 ? c : null;
+}
+function onDisplay(d) {
+  st.display = d && d.w > 0 && d.h > 0 ? d : null;
+  renderClosed(); layout();
 }
 function onCamera(c) {
   st.cam = c && c.w > 0 && c.h > 0 ? c : null;
@@ -209,6 +239,7 @@ function onCamera(c) {
   renderClosed(); layout();
 }
 api.on('notch:camera', onCamera);
+if (api.onNotchDisplay) api.onNotchDisplay(onDisplay);
 
 function isTall(page) {
   const m = modules.get(page);
@@ -236,7 +267,7 @@ function fgStateOf() {
 function hasShellAlert() {
   if (st.open) return false;
   const now = Date.now();
-  return !!(voiceActive() || st.hudOnly || notifShowing() || claudeShowing() || st.adhan || teleStrip()
+  return !!(voiceActive() || feedSumActive() || st.hudOnly || notifShowing() || claudeShowing() || st.adhan || teleStrip()
     || (st.below && st.below.extra > 0)
     || (st.activity && st.activity.until > now)
     || now < st.peekUntil || now < (st.islandUntil || 0));
@@ -320,16 +351,23 @@ function layout() {
   }) : (st.open ? 'open' : 'pill');
   st.shell = shell;
 
+  const sz = effectiveSizes(s);
   let tiny = false;
   if (shell === 'open') {
-    w = Math.min(s.expandedWidth, window.innerWidth - 40);
+    const maxW = window.innerWidth - 40;
+    w = (window.N && N.carousel && N.carousel.width) ? N.carousel.width(maxW) : Math.min(sz.expandedWidth, maxW);
     if (window.N && N.carousel) N.carousel.syncWidth(w);
     // (room under it for its shadow, ~50 px, and a haptic bump: wm.rs WIN_H)
     const maxH = window.innerHeight - 70 - gap;
-    h = (window.N && N.carousel) ? N.carousel.height(maxH) : Math.min(isTall(st.page) ? s.expandedHeightTall : s.expandedHeight, maxH);
-    r = formCls === 'f-top' ? 38 : 28;
-    ear = (formCls === 'f-top' && !floating) ? 22 : 0;
+    h = (window.N && N.carousel) ? N.carousel.height(maxH) : Math.min(isTall(st.page) ? sz.expandedHeightTall : sz.expandedHeight, maxH);
+    const topInset = cam ? Math.max(40, Math.ceil(cam.h) + 4) : 40;
+    const botInset = h <= 148 ? 10 : 14;
+    const stageH = Math.max(60, h - topInset - botInset);
+    r = formCls === 'f-top' ? Math.min(38, Math.max(20, Math.round(h * 0.16))) : 24;
+    ear = (formCls === 'f-top' && !floating) ? Math.min(22, Math.max(14, Math.round(r * 0.6))) : 0;
+    notchEl.style.setProperty('--stage-top', topInset + 'px');
     notchEl.style.setProperty('--open-h', h + 'px');
+    notchEl.style.setProperty('--stage-h', stageH + 'px');
   } else if (shell === 'handle') {
     w = 5; h = 64; r = 3; ear = 0; tiny = true;
   } else if (shell === 'tuck') {
@@ -342,8 +380,16 @@ function layout() {
   } else {
     const act = currentActivity();
     const side = closedSide(act);
-    w = cam ? camWidth(act, side, cam) : closedMid(act, side) + side * 2;
-    notchEl.classList.toggle('cam-tight', !!cam && !side && !camClockShown(act) && !ponyIdleOn());
+    let camRes = null;
+    if (cam) {
+      camRes = camLayoutFor(act, side, cam);
+      w = camRes.width;
+      st.camClockOk = camRes.showClock;
+    } else {
+      st.camClockOk = true;
+      w = closedWidthFlat(act, side);
+    }
+    notchEl.classList.toggle('cam-tight', !!cam && !side && !(camRes && camRes.showClock) && !ponyIdleOn());
     h = rowH;
     // under-camera alert row (#below: prayer, device/charging, meeting, toast/todo alerts)
     const belowExtra = st.below && st.below.extra ? st.below.extra : 0;
@@ -359,15 +405,15 @@ function layout() {
     notchEl.style.setProperty('--strip-h', stripH + 'px');
     notchEl.style.setProperty('--peek-h', strip ? stripH + 'px' : '0px'); // the notifications go below it
     const underW = under ? lyricsWidth() : 0;
-    if (underW) w = Math.max(w, Math.min(underW, s.notchWidth + 300));
+    if (underW) w = Math.max(w, Math.min(underW, sz.notchWidth + 300));
     // inside: room for the song's widest line between the art and the visualizer, within limits; with Long
     // lines inside → scroll, only for about the notch's own width + 120 px of text (longer lines scroll)
     notchEl.style.setProperty('--lyr-side', side + 8 + 'px');
-    const textW = inline ? (s.lyricsLongLines === 'scroll' ? Math.min(inlineWidth(), s.notchWidth + 120) : inlineWidth()) : 0;
-    if (inline) w = Math.max(w, Math.min(textW + (side + 8) * 2 + 4, s.notchWidth + 340, window.innerWidth - 80));
-    if (act && act.kind.startsWith('hud') && s.hudStyle === 'panel') { h += 34; w = Math.max(w, s.notchWidth + 140); }
+    const textW = inline ? (s.lyricsLongLines === 'scroll' ? Math.min(inlineWidth(), sz.notchWidth + 120) : inlineWidth()) : 0;
+    if (inline) w = Math.max(w, Math.min(textW + (side + 8) * 2 + 4, sz.notchWidth + 340, window.innerWidth - 80));
+    if (act && act.kind.startsWith('hud') && s.hudStyle === 'panel') { h += 34; w = Math.max(w, sz.notchWidth + 140); }
     const rows = todoPanelRows();
-    if (rows) { h += rows * 20 + 8; w = Math.max(w, s.notchWidth + 220); }
+    if (rows) { h += rows * 20 + 8; w = Math.max(w, sz.notchWidth + 220); }
     notchEl.style.setProperty('--todo-panel-h', (rows ? rows * 20 + 8 : 0) + 'px'); // the track-title peek goes below it
     // Claude Code's card under that (the notifications go below it)
     const ccH = claudeHeight();
@@ -375,10 +421,10 @@ function layout() {
     if (ccH) {
       const maxClosedH = Math.max(rowH + 120, window.innerHeight - gap - 14);
       h = Math.min(maxClosedH, h + ccH + 6);
-      w = Math.max(w, 520, s.notchWidth + 280);
+      w = Math.max(w, 520, sz.notchWidth + 280);
     }
     // Windows notifications: a stack of cards under all of that
-    if (notifShowing()) { h += notifStackHeight(); w = Math.max(w, 440, s.notchWidth + 240); }
+    if (notifShowing()) { h += notifStackHeight(); w = Math.max(w, 440, sz.notchWidth + 240); }
     // the song's progress line (Settings → Media) stays right under the music: its row, or the lyrics line in the
     // strip under it; whatever stretches Sympony further down (notifications…) goes below the line
     const musicH = rowH + (strip ? (rows ? rows * 20 + 8 : 0) + stripH : 0);
@@ -389,7 +435,15 @@ function layout() {
     const expandedClosed = belowExtra > 0 || h > rowH;
     r = formCls === 'f-island' ? (expandedClosed ? 26 : 18) : floating ? Math.round(rowH / 2) : expandedClosed ? 26 : 16;
     ear = (formCls === 'f-top' && !floating) ? (expandedClosed ? 18 : 14) : 0;
-    if (cam) placeCamClock(act, side, cam, w);
+    if (cam && camRes) {
+      notchEl.style.setProperty('--clock-l', camRes.clockL + 'px');
+      notchEl.style.setProperty('--clock-w', camRes.clockW + 'px');
+      const clockEl = $('#idleClock');
+      if (clockEl && !camRes.showClock && clockEl.classList.contains('show')) {
+        clockEl.classList.remove('show');
+        clockKey = '';
+      }
+    }
   }
   if (shell === 'open' || shell === 'tuck' || shell === 'handle' || shell === 'hidden' || ts) progTop = -1;
 
@@ -503,21 +557,21 @@ function layout() {
     : (shell === 'tuck' || aside || shell === 'handle') ? { x: hit.x, y: hit.y, w: hit.w, h: hit.h + 8 }
     : { x: hit.x - ear - 2, y: hit.y, w: hit.w + ear * 2 + 4, h: hit.h + 12 }];
 
-  // Pony peek host under the closed notch: included in hit & vis ONLY while shown
+  // Pony peek host under the closed notch: clickable (`peekHit`) ONLY while shown, kept separate from `hit`/`vis`
+  // so approaching or hovering Pony lets Pony peek calmly without triggering `openOnHover` on the notch.
   const peekEl = $('#ponyPeek');
-  let peekRect = null;
+  let peekHit = null;
+  const allowPeek = canPonyPeek() && formCls === 'f-top';
   if (peekEl) {
-    if (ponyPeekShown && canPonyPeek()) {
-      const pTop = gap + h - 24;
+    if (ponyPeekShown && allowPeek) {
+      const pTop = gap + h - 22;
       peekEl.style.left = left + 'px';
       peekEl.style.top = pTop + 'px';
-      peekRect = { x: left - 38, y: gap + h - 4, w: 76, h: 38 };
-      hit = { ...hit, h: Math.max(hit.h, (gap + h + 34) - hit.y) };
+      peekHit = { x: left - 42, y: gap + h, w: 84, h: 42 };
     } else if (ponyPeekShown) {
       hidePonyPeek(true);
     }
   }
-  if (peekRect) vis.push(peekRect);
   if (pillBridge) vis.push(pillBridge);
   if (pillRect) vis.push(pillRect);
   const devBar = window.SYMPONY_SHELL_DEV ? $('#shellDevBar') : null;
@@ -527,11 +581,12 @@ function layout() {
   if (outline.vis.length) vis.push(...outline.vis);
   const round = (rc) => ({ x: Math.round(rc.x), y: Math.round(rc.y), w: Math.round(rc.w), h: Math.round(rc.h) });
   const near = asideMode() ? round({ x: left - w / 2 - ear - 6, y: 0, w: w + ear * 2 + 12, h: gap + h + 12 }) : null;
-  const peekBand = canPonyPeek()
-    ? round({ x: left - w / 2 - 40, y: gap + h - 10, w: w + 80, h: 70 })
+  const peekBand = allowPeek
+    ? round({ x: left - w / 2 - 40, y: gap + h, w: w + 80, h: 68 })
     : null;
   st.hitMsg = { x: Math.round(hit.x), y: Math.round(hit.y), w: Math.round(hit.w), h: Math.round(hit.h),
-    extra: bbRect ? round(bbRect) : null, vis: vis.map(round), strip: stripTint(artOpacity(inline), w, rowH, ear, left), near, near2: null, peek: peekBand };
+    extra: bbRect ? round(bbRect) : null, vis: vis.map(round), strip: stripTint(artOpacity(inline), w, rowH, ear, left),
+    near, near2: null, peek: peekBand, peekHit: peekHit ? round(peekHit) : null };
   sendHit();
   paintProgress();
   syncArrows();
@@ -558,7 +613,7 @@ function autoHidden() {
   if (!s || !autoHideOn() || st.open || st.hover || st.dragging || st.moving || st.snap || st.standby || st.adhan || st.hudOnly || st.typing || teleStrip()) return false;
   const now = Date.now();
   // stays down for a moment after the mouse leaves, and while an alert or a song title shows
-  return now >= (st.hoverUntil || 0) && !(st.activity && st.activity.until > now) && now >= st.peekUntil && now >= (st.islandUntil || 0) && !claudeShowing();
+  return now >= (st.hoverUntil || 0) && !feedSumActive() && !(st.activity && st.activity.until > now) && now >= st.peekUntil && now >= (st.islandUntil || 0) && !claudeShowing();
 }
 
 // Settings → General → Step aside, the other way round from Auto-hide: Sympony stays down with the time, and when the
@@ -592,11 +647,39 @@ function asideHover(inside) {
   if (st.nearIn && stepAsideOn()) later('rearm', 700, () => { if (st.nearIn && !st.hover && !st.near) { st.near = true; layout(); } });
 }
 
-// ================================================================== look (one look: pure OLED black)
+// ================================================================== look (black, glass, color)
 let progTop = -1; // where the song's progress line goes (layout); -1: along the bottom edge, as it always was
-function lookOf() { return 'black'; }
-function applyLook() {
+function lookOf(s) {
+  const raw = (s || st.settings || {}).notchLook;
+  return raw === 'glass' || raw === 'color' ? raw : 'black';
+}
+function hexToRgb(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [28, 43, 77];
+}
+function applyLook(s) {
+  const cfg = s || st.settings || {};
+  const look = lookOf(cfg);
   if (window.Tint) Tint.wall(false);
+  document.documentElement.dataset.look = look;
+  const targets = [notchEl, bubbleEl, $('#pill'), $('#dockTip'), $('#catBubble')].filter(Boolean);
+  for (const el of targets) el.dataset.look = look;
+  if (look === 'color') {
+    const col = /^#[0-9a-f]{6}$/i.test(cfg.notchColor || '') ? cfg.notchColor.toLowerCase() : '#1c2b4d';
+    const rgb = hexToRgb(col);
+    const light = window.Tint && typeof Tint.darkInk === 'function'
+      ? Tint.darkInk(rgb)
+      : (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.65;
+    for (const el of targets) {
+      el.style.setProperty('--notch-color', col);
+      el.classList.toggle('look-light', light);
+    }
+  } else {
+    for (const el of targets) {
+      el.style.removeProperty('--notch-color');
+      el.classList.remove('look-light');
+    }
+  }
   notchEl.style.removeProperty('--bg');
 }
 if (window.Tint) Tint.onChange((what) => { if (what === 'warm') paintAccent(); });
@@ -607,7 +690,7 @@ function sendHit() {
 
 function sideWidth(act) {
   switch (act.kind) {
-    case 'music': return showMiniControls() ? 84 : 44;
+    case 'music': return showMiniControls() ? 84 : 36;
     case 'hud-volume': case 'hud-brightness': case 'hud-lock': return st.settings.hudStyle === 'panel' ? 34 : 104;
     case 'hud-airplane': return st.settings.hudStyle === 'panel' ? 34 : 128;
     case 'hud-switch': return st.settings.hudStyle === 'panel' ? 34 : 112;
@@ -665,6 +748,7 @@ function openNotch(page) {
     if (N.carousel.onOpen) N.carousel.onOpen();
   }
   layout();
+  renderOpenVoice();
   renderMusic(true);
   renderCalendar();
   if (typeof refreshStatsCards === 'function') refreshStatsCards();
@@ -701,8 +785,8 @@ function closeNotch() {
       N.carousel.goTo(st.settings.defaultTab || 0, { instant: true, silent: true });
     }
   }
-  layout();
   renderClosed();
+  layout();
 }
 
 // "Reopen on the last tab" (Settings → Modules → Default): the page you last picked is kept in localStorage.
@@ -764,7 +848,7 @@ function bump() {
 }
 
 function scheduleClose() {
-  if (st.open && !st.hover && !st.dragging && !st.ctxOpen && !st.seeking && !st.typing && !st.snap && !st.moving) {
+  if (st.open && !st.hover && !st.dragging && !st.ctxOpen && !st.seeking && !st.typing && !st.snap && !st.moving && !voiceActive()) {
     later('close', st.settings.closeDelay, closeNotch);
   }
 }
@@ -784,7 +868,7 @@ api.onHover((inside) => {
     // paused pill: a click on that one brings the strip back)
     const overBubble = !!(bubbleEl && bubbleEl.matches(':hover'));
     const belowInteractive = !!$('#below.show button');
-    if (!overBubble && !belowInteractive && !notifShowing() && !claudeShowing() && !st.adhan && !tickShowing() && !teleMode() && !st.open && !st.typing && st.settings.openOnHover && !st.moving && !st.tucked) later('open', Math.max(st.settings.hoverDelay, 60), () => { if (!st.moving && !st.typing && !(bubbleEl && bubbleEl.matches(':hover'))) openNotch(); });
+    if (!overBubble && !belowInteractive && !notifShowing() && !claudeShowing() && !st.adhan && !tickShowing() && !teleMode() && !st.open && !st.typing && st.settings.openOnHover && !st.moving && !st.tucked) later('open', Math.max(st.settings.hoverDelay, 60), () => { if (!st.moving && !st.typing && !(bubbleEl && bubbleEl.matches(':hover'))) openNotch(feedSumActive() ? 'feed' : undefined); });
     if (!st.open) { renderClosed(); layout(); }
   } else {
     cancel('open');
@@ -841,6 +925,7 @@ notchEl.addEventListener('mousedown', (e) => {
       }
       const act = currentActivity();
       if (act && act.kind === 'tele') { N.tele.resume(); return; }
+      if (feedSumActive()) { openNotch('feed'); return; }
       if (act && act.kind === 'brief') { st.activity = null; openNotch('chat'); return; }
       if (act && act.kind === 'toast' && act.data && act.data.onboard) {
         st.activity = null; renderClosed(true); layout();
@@ -875,6 +960,14 @@ function tuck() {
 function untuck() { st.tucked = false; renderClosed(); layout(); }
 
 function handleToggle() {
+  if (st.tucked) {
+    st.tucked = false;
+    st.keyOpen = true;
+    openNotch();
+    st.openedByShortcut = true;
+    later('close', 5000, () => { if (st.openedByShortcut && !st.hover && !st.typing) closeNotch(); });
+    return;
+  }
   if (shellFormOf() === 'hidden') {
     if (st.open) {
       st.summoned = false;
@@ -932,6 +1025,22 @@ api.on('notch:reset', () => {
   hideCtx();
   endTyping();
   if (st.open) closeNotch(); else { renderClosed(); layout(); }
+});
+// Hands needs to click/drag near the top of the screen: fold the expanded notch cleanly out of the way.
+if (api.onNotchYield) api.onNotchYield(() => {
+  cancel('open');
+  st.hover = false;
+  if (st.open) closeNotch();
+});
+// Floating Pony Chat requested docking back to the notch (or opening a module from an action chip).
+if (api.onNotchOpenMod) api.onNotchOpenMod((mod) => {
+  const target = typeof mod === 'string' && mod ? mod : 'chat';
+  openNotch(target);
+  if (N.openModule) N.openModule(target);
+  if (target === 'chat') {
+    const inp = $('#chIn');
+    if (inp) N.focusField(inp);
+  }
 });
 
 // Leaving (wm.rs update_visibility): a fullscreen app came up on this display (Settings → General → Hide when an app
@@ -1051,8 +1160,36 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
-  if (!st.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !st.settings || st.settings.moduleShortcuts === false) return;
+  if (!st.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
   if (isEditableFocused(e.target) || arrowsBusy()) return;
+  // YouTube video mode: Shift+←/→ (or Shift+,/. `<`/`>`) seeks ±5s, J/L seeks ±10s, Space/K toggles playback,
+  // while plain ←/→ always slides between notch modules/pages.
+  if (isYtActive()) {
+    if (
+      (e.shiftKey && (e.key === 'ArrowRight' || e.code === 'Period'))
+      || e.key === '>'
+      || (!e.shiftKey && (e.key === 'l' || e.key === 'L'))
+    ) {
+      e.preventDefault();
+      ytSeekBy((e.key === 'l' || e.key === 'L') ? 10 : 5);
+      return;
+    }
+    if (
+      (e.shiftKey && (e.key === 'ArrowLeft' || e.code === 'Comma'))
+      || e.key === '<'
+      || (!e.shiftKey && (e.key === 'j' || e.key === 'J'))
+    ) {
+      e.preventDefault();
+      ytSeekBy((e.key === 'j' || e.key === 'J') ? -10 : -5);
+      return;
+    }
+    if (!e.shiftKey && (e.key === ' ' || e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      cmd('toggle');
+      return;
+    }
+  }
+  if (!st.settings || st.settings.moduleShortcuts === false) return;
   const arrow = !e.shiftKey && (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
   if (arrow) {
     e.preventDefault();
@@ -1074,7 +1211,8 @@ const NO_ARROW_PAGES = ['drop', 'snap'];
 let arrowsAsked = false; let hoverKeys = false;
 function syncArrows() {
   const s = st.settings;
-  const want = !!(s && s.moduleShortcuts !== false && st.open && !st.typing && !NO_ARROW_PAGES.includes(st.page) && (st.hover || st.keyOpen));
+  const ytOn = isYtActive();
+  const want = !!(st.open && !st.typing && !NO_ARROW_PAGES.includes(st.page) && (st.hover || st.keyOpen) && (ytOn || (s && s.moduleShortcuts !== false)));
   if (want !== arrowsAsked) { arrowsAsked = want; api.setArrows(want); }
   const ccKeys = !!(claudeShowing() && st.hover && !st.typing);
   const kb = (want || ccKeys) && st.hover && !st.typing;
@@ -1094,7 +1232,10 @@ function arrowTab(dir) {
     if (N.carousel.flashPill) N.carousel.flashPill(1200);
   }
 }
-api.on('notch:arrow', (dir) => { if (!isEditableFocused(null)) arrowTab(dir); });
+api.on('notch:arrow', (dir) => {
+  if (isEditableFocused(null)) return;
+  arrowTab(dir);
+});
 
 // ================================================================== live activities (closed state)
 function showActivity(kind, ms, data) {
@@ -1172,6 +1313,11 @@ api.on('notif', (n) => {
   // (Paseo's own notifications, an agent done or waiting, sound like the agents' cards do)
   if ((n.aumid === 'sh.paseo.desktop' || /^paseo$/i.test(n.app || '')) && st.settings.claudeSound !== false) chime();
   if (st.open) toast(n.icon ? `<img class="act-app" src="${esc(n.icon)}" alt="">` : fa('bell'), [n.app, n.title].filter(Boolean).join(': '), { ms: 4000 });
+  if (!st.open) {
+    outline.notifUntil = Date.now() + 3600;
+    outline.notifKey = String(n.id || Date.now());
+    later('notifGlow', 3650, outlineSync);
+  }
   renderClosed(); layout();
   bump();
 });
@@ -1481,7 +1627,7 @@ api.on('claude', (d) => {
 })();
 // the card's height (with the gap above it), drawn first at the width it gets; 0 while there's none
 function claudeHeight() {
-  if (claudeShowing()) notchEl.style.setProperty('--cc-w', Math.max(500, Math.min(540, st.settings.notchWidth + 260)) + 'px');
+  if (claudeShowing()) notchEl.style.setProperty('--cc-w', Math.max(500, Math.min(540, effectiveSizes().notchWidth + 260)) + 'px');
   renderClaude();
   const box = $('.claude-stack', notchEl);
   return box ? box.offsetHeight + 4 : 0;
@@ -2246,6 +2392,45 @@ function voiceActive() {
   return !!(st.voice && st.voice.state && st.voice.state !== 'idle');
 }
 
+st.feedSum = null;
+function feedSumActive() {
+  return !!(st.feedSum && st.feedSum.active);
+}
+function setFeedSum(next) {
+  st.feedSum = next && next.active ? { ...next } : null;
+  renderClosed();
+  layout();
+}
+function revealFeedSummary(title) {
+  st.feedSum = null;
+  st.ponyDoneUntil = Date.now() + 2800;
+  if (st.hudOnly) { renderClosed(); layout(); return; }
+  if (!st.open) {
+    if (st.tucked) st.tucked = false;
+    openNotch('feed');
+    st.openedByShortcut = true;
+    bump();
+    later('close', 18000, () => {
+      if (st.openedByShortcut && !st.hover && !st.typing) closeNotch();
+    });
+    return;
+  }
+  const activeMod = window.N && N.carousel && N.carousel.activeModule ? N.carousel.activeModule() : st.page;
+  if (activeMod !== 'feed') {
+    if (st.typing) {
+      toast(fa('wand-magic-sparkles'), _t('Summary ready: {title}', { title: String(title || '').slice(0, 42) }), {
+        ms: 6500, color: '#c084fc', side: 235, tab: 'feed',
+      });
+    } else {
+      openNotch('feed');
+      bump();
+    }
+  } else {
+    syncPonyMood();
+    outlineSync();
+  }
+}
+
 function voiceFmtTime(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(s / 60);
@@ -2272,12 +2457,60 @@ function voiceErrorLabel(err) {
 }
 
 function paintVoiceBars() {
-  const wrap = $('.v-bars', notchEl);
-  if (!wrap) return;
-  const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(st.voice.rms, 24) : new Array(24).fill(0.08);
-  const nodes = wrap.children;
-  for (let i = 0; i < nodes.length && i < bars.length; i++) {
-    nodes[i].style.transform = `scaleY(${bars[i].toFixed(3)})`;
+  $$('.v-bars', notchEl).forEach((wrap) => {
+    const count = wrap.children.length || 24;
+    const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(st.voice.rms, count) : new Array(count).fill(0.08);
+    const nodes = wrap.children;
+    for (let i = 0; i < nodes.length && i < bars.length; i++) {
+      nodes[i].style.transform = `scaleY(${bars[i].toFixed(3)})`;
+    }
+  });
+}
+
+function renderOpenVoice() {
+  const el = $('#openVoice');
+  if (!el) return;
+  const v = st.voice;
+  const active = !!(st.open && voiceActive());
+  el.classList.toggle('show', active);
+  el.classList.toggle('is-error', active && v.state === 'error');
+  el.classList.toggle('is-done', active && v.state === 'done');
+  if (!active) {
+    delete el.dataset.ponyMood;
+    return;
+  }
+  const showLive = !st.settings || st.settings.voiceLive !== false;
+  const steerBadge = v.agent && v.steer ? `<span class="v-lang v-steer">${fa('route')} ${esc(_t('Steer'))}</span>` : '';
+  const autoBadge = v.agent && !v.steer && v.autoUi ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')} ${esc(_t('Auto UI'))}</span>` : '';
+  const badge = `${steerBadge}${autoBadge}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+  if (v.state === 'listening') {
+    el.dataset.ponyMood = 'listening';
+    const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 12) : new Array(12).fill(0.08);
+    const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('listening', 2)}<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span><div class="v-bars ov-bars" aria-hidden="true">${barsHtml}</div>${badge}</div>`
+      + (showLive ? `<div class="v-live" dir="auto">${voiceTailHtml(v.partial, v.prevPartial)}</div>` : '');
+  } else if (v.state === 'transcribing') {
+    el.dataset.ponyMood = 'think';
+    const lbl = v.agent ? _t('Sending to Pony…') : _t('Writing…');
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('think', 2)}<span class="v-spin-dot"></span><span class="v-status-lbl">${esc(lbl)}</span><div class="v-shimmer" style="flex:1;min-width:60px" aria-hidden="true"><i></i></div>${badge}</div>`
+      + (showLive && v.partial ? `<div class="v-live dim" dir="auto">${voiceTailHtml(v.partial, '')}</div>` : '');
+  } else if (v.state === 'done') {
+    el.dataset.ponyMood = 'done';
+    el.innerHTML = `<div class="ov-top">${ponyEyeHtml('done', 2)}<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>${badge}</div>`
+      + (v.text ? `<div class="v-done-text" dir="auto">${esc(v.text)}</div>` : '');
+  } else if (v.state === 'error') {
+    delete el.dataset.ponyMood;
+    const actLabel = v.action === 'download' ? _t('Download') : v.action === 'mic' ? _t('Open Settings') : '';
+    const actBtn = actLabel ? `<button class="btn primary" data-voice-action="${esc(v.action)}">${esc(actLabel)}</button>` : '';
+    el.innerHTML = `<div class="ov-top"><span class="v-err-ico">${fa('circle-exclamation')}</span><span class="v-err-text">${esc(voiceErrorLabel(v.error))}</span>${actBtn}</div>`;
+    $$('[data-voice-action]', el).forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const a = b.dataset.voiceAction;
+        if (a === 'download') { api.openSettings('voice'); }
+        else if (a === 'mic') { api.svc('perm', 'request', 'microphone').catch(() => {}); }
+      };
+    });
   }
 }
 
@@ -2289,8 +2522,8 @@ function startVoiceClock() {
   stopVoiceClock();
   voiceClockIv = setInterval(() => {
     if (!st.voice || st.voice.state !== 'listening') { stopVoiceClock(); return; }
-    const el = $('.v-time', notchEl);
-    if (el) el.textContent = voiceFmtTime(Date.now() - st.voice.since);
+    const txt = voiceFmtTime(Date.now() - st.voice.since);
+    $$('.v-time', notchEl).forEach((el) => { el.textContent = txt; });
   }, 250);
 }
 
@@ -2299,9 +2532,13 @@ api.on('voice:state', (d) => {
   const next = info.state || 'idle';
   cancel('voiceDone');
   if (next === 'listening') {
+    cancel('close');
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice = {
       state: 'listening',
       agent: !!info.agent,
+      autoUi: !!info.autoUi,
+      steer: !!info.steer,
       since: Date.now(),
       lang: (info.lang || (st.settings && st.settings.voiceLanguage) || 'id').toUpperCase(),
       partial: '',
@@ -2313,41 +2550,51 @@ api.on('voice:state', (d) => {
     };
     startVoiceClock();
     renderClosed(true);
+    renderOpenVoice();
     layout();
   } else if (next === 'transcribing') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'transcribing';
     renderClosed(true);
+    renderOpenVoice();
     layout();
   } else if (next === 'done') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'done';
     if (info.text != null) st.voice.text = String(info.text);
     renderClosed(true);
+    renderOpenVoice();
     layout();
     later('voiceDone', 1200, () => {
       if (st.voice.state === 'done') {
         st.voice.state = 'idle';
         renderClosed(true);
+        renderOpenVoice();
         layout();
       }
     });
   } else if (next === 'error') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     st.voice.state = 'error';
     st.voice.error = String(info.error || 'Voice error');
     st.voice.action = info.action || null;
     renderClosed(true);
+    renderOpenVoice();
     layout();
     later('voiceDone', 3500, () => {
       if (st.voice.state === 'error') {
         st.voice.state = 'idle';
         renderClosed(true);
+        renderOpenVoice();
         layout();
       }
     });
   } else if (next === 'cancelled' || next === 'idle') {
     stopVoiceClock();
+    notchEl.style.setProperty('--v-energy', '0');
     if (st.voice.state !== 'done' || next === 'cancelled') {
       st.voice.state = 'idle';
       st.voice.partial = '';
@@ -2356,6 +2603,7 @@ api.on('voice:state', (d) => {
       st.voice.action = null;
       st.voice.rms = [];
       renderClosed(true);
+      renderOpenVoice();
       layout();
     }
   }
@@ -2366,6 +2614,8 @@ api.on('voice:level', (d) => {
   const r = d && typeof d.rms === 'number' ? d.rms : 0;
   st.voice.rms.push(r);
   if (st.voice.rms.length > 24) st.voice.rms.shift();
+  const energy = Math.min(1, Math.pow(Math.min(1, Math.max(0, r) * 5.0), 0.65));
+  notchEl.style.setProperty('--v-energy', energy.toFixed(3));
   paintVoiceBars();
 });
 
@@ -2375,8 +2625,8 @@ api.on('voice:partial', (d) => {
   if (!txt || txt === st.voice.partial) return;
   st.voice.prevPartial = st.voice.partial;
   st.voice.partial = txt;
-  const liveEl = $('.v-live', notchEl);
-  if (liveEl) liveEl.innerHTML = voiceTailHtml(st.voice.partial, st.voice.prevPartial);
+  const html = voiceTailHtml(st.voice.partial, st.voice.prevPartial);
+  $$('.v-live', notchEl).forEach((liveEl) => { liveEl.innerHTML = html; });
 });
 
 api.on('voice:result', (d) => {
@@ -2386,14 +2636,49 @@ api.on('voice:result', (d) => {
 
 api.on('voice:command', (d) => {
   const txt = d && d.text ? String(d.text).trim() : '';
-  if (!txt) return;
+  const isStop = !!(d && d.stop);
+  const isSteer = !!(d && d.steer);
+  const chat = window.N && N.chat;
+  const chatBusy = !!(chat && typeof chat.pending === 'function' && chat.pending());
+
+  // Live voice stop or mid-run steering: keep the screen unobstructed (don't yank the Notch open)
+  if (isStop) {
+    if (chatBusy && typeof chat.stop === 'function') chat.stop();
+    return;
+  }
+  if (isSteer) {
+    if (txt && chatBusy && typeof chat.steer === 'function') {
+      chat.steer(txt, { alreadySent: !!(d && d.steeredSession), session: (d && d.steeredSession) || '' });
+    }
+    return;
+  }
+
+  stopVoiceClock();
+  notchEl.style.setProperty('--v-energy', '0');
+  if (st.voice) {
+    st.voice.state = 'idle';
+    st.voice.partial = '';
+    st.voice.rms = [];
+  }
+  renderOpenVoice();
+  if (!txt) { renderClosed(true); layout(); return; }
   openNotch('chat');
   setTimeout(() => {
     if (window.N && N.chat && typeof N.chat.send === 'function') {
-      // (with Eyes on, where the user was when they spoke: Pony reads that window if the request is about it)
+      // (if a run started in the meantime, route as live steer instead of dropping the voice command)
+      if (typeof N.chat.pending === 'function' && N.chat.pending() && typeof N.chat.steer === 'function') {
+        N.chat.steer(txt);
+        return;
+      }
+      // (with Eyes on, pass front-window hint silently in context so Pony uses screen_read only when user intent refers to the screen)
       const sc = d.screen;
-      const note = sc && sc.app ? `The user spoke this while looking at ${sc.app}${sc.title ? ` — "${sc.title}"` : ''}. If the request is about what's on their screen ("this", "this page", "this email"), read it with screen_read first.` : '';
-      N.chat.send(txt, note ? { attach: [{ kind: 'text', name: `${_t('Screen')}: ${sc.app}`, text: note, size: note.length }] } : {});
+      const screenContext = sc && sc.app
+        ? `Background hint (not an attached file; ignore unless the user's intent actually refers to their screen): the app in front when they spoke was ${sc.app}${sc.title ? ` — "${sc.title}"` : ''}.`
+        : '';
+      const sendOpts = {};
+      if (screenContext) sendOpts.screenContext = screenContext;
+      if (typeof d.autoUi === 'boolean') sendOpts.autoUi = d.autoUi;
+      N.chat.send(txt, sendOpts);
     } else {
       const inp = $('#page-chat textarea, #page-chat input[type="text"]');
       if (inp) { inp.value = txt; inp.focus(); }
@@ -2499,7 +2784,7 @@ setInterval(() => {
     || (bb && ['pomodoro', 'timer', 'stopwatch'].includes(bb.kind))) renderClosed();
   // a countdown whose time came (the prayer's, an event's) leaves the list: what shows instead is drawn now, rather
   // than the countdown staying at 0:00 until something else draws the closed notch (GitHub #60)
-  else if (actKey(act) !== lastActKey) { renderClosed(true); layout(); }
+  else if (closedStateKeyOf(act) !== lastActKey) { renderClosed(true); layout(); }
   // an alert with a check waits while the mouse is on it
   if (st.hover) holdAlert(1500);
   // the System summary (and the FPS line) may need more room as its numbers change
@@ -2520,12 +2805,15 @@ function ponyIdleOn() {
 
 function currentPonyMood() {
   if (!window.NotchKit || !NotchKit.ponyMood) return 'idle';
+  const now = Date.now();
+  const voiceDone = st.voice && st.voice.state === 'done' ? now + 1000 : 0;
   return NotchKit.ponyMood({
     asking: !!(st.ponyAsking || (st.claude && st.claude.some((c) => c.source === 'pony'))),
     cardWaiting: !!(st.claude && st.claude.length > 0),
-    thinking: !!((st.voice && st.voice.state === 'transcribing') || (window.N && N.chat && N.chat.pending && N.chat.pending())),
-    doneUntil: st.ponyDoneUntil || 0,
-    now: Date.now(),
+    listening: !!(st.voice && st.voice.state === 'listening'),
+    thinking: !!((st.voice && st.voice.state === 'transcribing') || feedSumActive() || (window.N && N.chat && N.chat.pending && N.chat.pending())),
+    doneUntil: Math.max(st.ponyDoneUntil || 0, voiceDone),
+    now,
     playing: !!(st.media && st.media.playing),
     idleMs: st.ponyIdleMs || 0,
     locked: !!st.locked,
@@ -2556,9 +2844,12 @@ function ponyEyeHtml(mood, count) {
 }
 
 // Pony peek host under the closed notch
+const PONY_PEEK_GRIP_Y = 23;
 let ponyPeekShown = false;
 let ponyPeekByCursor = false;
+let ponyPeekHovering = false;
 let ponyPeekTimer = null;
+let ponyPeekLeaveTimer = null;
 let ponyPeekHandle = null;
 let lastPonyMood = 'idle';
 
@@ -2567,7 +2858,14 @@ function canPonyPeek() {
   if (!s || s.ponyPeek === false || ponyReducedMotion()) return false;
   if (st.open || st.hudOnly || claudeShowing() || notifShowing()) return false;
   if (st.shell === 'hidden' || st.shell === 'tuck' || st.shell === 'aside' || st.shell === 'handle') return false;
+  if (s.notchForm === 'island' || s.notchForm === 'drawer') return false;
   return true;
+}
+
+function syncPonyPeekHands(handle, mood) {
+  if (!handle || !handle.setHands) return;
+  if (ponyPeekHovering || mood === 'done') handle.setHands('wave');
+  else handle.setHands('grip', PONY_PEEK_GRIP_Y);
 }
 
 function ensurePonyPeekHandle() {
@@ -2575,15 +2873,28 @@ function ensurePonyPeekHandle() {
   const cv = $('#ponyPeekCanvas');
   if (!cv || !window.Pony) return null;
   const lk = ponyLook();
+  const mood = currentPonyMood();
   ponyPeekHandle = window.Pony.mount(cv, {
-    scale: 0.96,
+    scale: 0.9,
     shape: lk.shape,
     color: lk.color,
-    mood: currentPonyMood(),
-    floorFrac: 0.80,
+    mood,
+    floorFrac: 0.88,
+    shadow: false,
+    hop: 0.45,
   });
+  syncPonyPeekHands(ponyPeekHandle, mood);
   const host = $('#ponyPeek');
   if (host) {
+    host.onpointerenter = () => {
+      ponyPeekHovering = true;
+      if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
+      syncPonyPeekHands(ponyPeekHandle, currentPonyMood());
+    };
+    host.onpointerleave = () => {
+      ponyPeekHovering = false;
+      syncPonyPeekHands(ponyPeekHandle, currentPonyMood());
+    };
     host.onclick = (e) => {
       e.stopPropagation();
       if (ponyPeekHandle) ponyPeekHandle.poke();
@@ -2593,23 +2904,26 @@ function ensurePonyPeekHandle() {
   return ponyPeekHandle;
 }
 
-function showPonyPeek(ms = 3000, byCursor = false) {
+function showPonyPeek(ms = 3500, byCursor = false) {
   if (!canPonyPeek()) return false;
   const host = $('#ponyPeek');
   if (!host) return false;
+  if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
   const handle = ensurePonyPeekHandle();
   const lk = ponyLook();
+  const mood = currentPonyMood();
   if (handle) {
     if (handle.resume) handle.resume();
     handle.setLook(lk.shape, lk.color);
-    handle.setMood(currentPonyMood());
+    handle.setMood(mood);
+    syncPonyPeekHands(handle, mood);
   }
   const was = ponyPeekShown;
   ponyPeekShown = true;
   ponyPeekByCursor = !!byCursor;
   host.classList.add('show');
   host.setAttribute('aria-hidden', 'false');
-  if (ponyPeekTimer) clearTimeout(ponyPeekTimer);
+  if (ponyPeekTimer) { clearTimeout(ponyPeekTimer); ponyPeekTimer = null; }
   if (ms > 0) {
     ponyPeekTimer = setTimeout(() => {
       ponyPeekTimer = null;
@@ -2622,11 +2936,13 @@ function showPonyPeek(ms = 3000, byCursor = false) {
 
 function hidePonyPeek(skipLayout) {
   if (ponyPeekTimer) { clearTimeout(ponyPeekTimer); ponyPeekTimer = null; }
+  if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
   if (ponyPeekHandle && ponyPeekHandle.pause) ponyPeekHandle.pause();
   const host = $('#ponyPeek');
   const was = ponyPeekShown;
   ponyPeekShown = false;
   ponyPeekByCursor = false;
+  ponyPeekHovering = false;
   if (host) {
     host.classList.remove('show');
     host.setAttribute('aria-hidden', 'true');
@@ -2643,12 +2959,13 @@ function syncPonyMood() {
   if (ponyPeekHandle) {
     ponyPeekHandle.setLook(lk.shape, lk.color);
     ponyPeekHandle.setMood(mood);
+    syncPonyPeekHands(ponyPeekHandle, mood);
   }
   if (!canPonyPeek()) {
     if (ponyPeekShown) hidePonyPeek();
   } else if (mood !== lastPonyMood) {
-    if (mood === 'done') showPonyPeek(3000, false);
-    else if (mood === 'attention' && !claudeShowing()) showPonyPeek(3000, false);
+    if (mood === 'done') showPonyPeek(3500, false);
+    else if (mood === 'attention' && !claudeShowing()) showPonyPeek(3500, false);
   }
   if (mood !== lastPonyMood) window.dispatchEvent(new CustomEvent('pony:mood', { detail: mood })); // (the composer's Pony)
   lastPonyMood = mood;
@@ -2657,9 +2974,13 @@ function syncPonyMood() {
 // Rust-side cursor polling (hover.rs) drives peek even while the window ignores mouse events outside the hit rect
 api.on('pony:near', (near) => {
   if (near) {
-    showPonyPeek(3000, true);
+    showPonyPeek(0, true);
   } else if (ponyPeekShown && ponyPeekByCursor) {
-    hidePonyPeek();
+    if (ponyPeekLeaveTimer) clearTimeout(ponyPeekLeaveTimer);
+    ponyPeekLeaveTimer = setTimeout(() => {
+      ponyPeekLeaveTimer = null;
+      if (ponyPeekShown && ponyPeekByCursor && !ponyPeekHovering) hidePonyPeek();
+    }, 180);
   }
 });
 
@@ -2668,25 +2989,42 @@ document.addEventListener('pointermove', (e) => {
     if (ponyPeekShown) hidePonyPeek();
     return;
   }
-  const nearY = e.clientY >= st.box.bottom - 10 && e.clientY <= st.box.bottom + 60;
+  if (ponyPeekShown && ponyPeekHandle) {
+    const cx = (st.box.left + st.box.right) / 2;
+    ponyPeekHandle.lookAt((e.clientX - cx) / 100, (e.clientY - (st.box.bottom + 18)) / 60);
+  }
+  // Browser preview fallback (under Tauri, Rust `hover.rs` owns `pony:near` show/hide across click-through)
+  if (api.engine === 'rust') return;
+  const nearY = e.clientY >= st.box.bottom && e.clientY <= st.box.bottom + 68;
   const nearX = e.clientX >= st.box.left - 40 && e.clientX <= st.box.right + 40;
   if (nearY && nearX) {
-    showPonyPeek(3000, true);
-    if (ponyPeekHandle) {
-      const cx = (st.box.left + st.box.right) / 2;
-      ponyPeekHandle.lookAt((e.clientX - cx) / 100, (e.clientY - (st.box.bottom + 14)) / 60);
-    }
+    showPonyPeek(0, true);
   } else if (ponyPeekShown && ponyPeekByCursor) {
     hidePonyPeek();
   }
 });
 document.addEventListener('pointerleave', () => {
-  if (ponyPeekShown && ponyPeekByCursor) hidePonyPeek();
+  if (api.engine !== 'rust' && ponyPeekShown && ponyPeekByCursor) hidePonyPeek();
 });
 
 let lastActKey = '';
+let lastClosedL = null;
+let lastClosedM = null;
+let lastClosedR = null;
+let lastClosedB = null;
 // what the closed notch shows, as renderClosed keys it: the activity's kind (and a toast's text)
 const actKey = (act) => (act ? act.kind + (act.data && act.data.text ? act.data.text : '') : '');
+function closedStateKeyOf(act) {
+  const args = {
+    actKey: actKey(act),
+    claude: claudeShowing(),
+    notif: notifShowing(),
+    ponyMood: ponyIdleOn() ? currentPonyMood() : '',
+  };
+  return window.NotchKit && typeof NotchKit.closedStateKey === 'function'
+    ? NotchKit.closedStateKey(args)
+    : args.actKey + (args.claude ? '|cc' : '') + (args.notif ? '|nf' : '') + (args.ponyMood ? `|pony:${args.ponyMood}` : '');
+}
 function renderClosed(animate) {
   const left = $('#closedLeft');
   const mid = $('#closedMid');
@@ -2694,6 +3032,7 @@ function renderClosed(animate) {
   const belowEl = $('#below');
   const act = st.open ? null : currentActivity();
   const cam = !!camera();
+  notchEl.classList.toggle('cam', cam);
   let L = ''; let M = ''; let R = ''; let B = ''; let belowMeta = null; let panel = '';
   if (act) {
     switch (act.kind) {
@@ -2923,25 +3262,55 @@ function renderClosed(animate) {
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
-        const ponyOn = !!(st.settings && st.settings.ponyFace);
+        const steerTag = v.agent && v.steer
+          ? `<span class="v-lang v-steer">${fa('route')}${cam ? '' : ' ' + esc(_t('Steer'))}</span>`
+          : '';
+        const autoTag = v.agent && !v.steer && v.autoUi
+          ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')}${cam ? '' : ' ' + esc(_t('Auto UI'))}</span>`
+          : '';
+        const langBadge = `${steerTag}${autoTag}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
         if (v.state === 'listening') {
           const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 24) : new Array(24).fill(0.08);
           const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');
-          L = `<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span>`;
-          // (talking to Pony rather than dictating: the pill says so)
-          R = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+          const leftCore = `<span class="v-dot" role="status" aria-label="${esc(_t('Microphone active'))}"></span><span class="v-time clk">${esc(voiceFmtTime(Date.now() - v.since))}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('listening', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${langBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('listening', 2);
+            R = langBadge;
+          }
           B = `<div class="v-below v-listening"><div class="v-bars" aria-hidden="true">${barsHtml}</div>${showLive ? `<div class="v-live" dir="auto">${voiceTailHtml(v.partial, v.prevPartial)}</div>` : ''}</div>`;
           belowMeta = { extra: showLive ? 58 : 36, wide: 420 };
         } else if (v.state === 'transcribing') {
-          const face = ponyOn ? ponyEyeHtml('think', 2) : `<span class="v-spin-dot"></span>`;
-          L = `${face}<span class="v-status-lbl">${esc(_t('Writing…'))}</span>`;
-          R = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          const leftCore = `<span class="v-spin-dot"></span><span class="v-status-lbl">${esc(_t('Writing…'))}</span>`;
+          const rBadge = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('think', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${rBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('think', 2);
+            R = rBadge;
+          }
           const dimLive = showLive && v.partial ? `<div class="v-live dim" dir="auto">${voiceTailHtml(v.partial, '')}</div>` : '';
           B = `<div class="v-below v-transcribing"><div class="v-shimmer" aria-hidden="true"><i></i></div>${dimLive}</div>`;
           belowMeta = { extra: dimLive ? 52 : 32, wide: 420 };
         } else if (v.state === 'done') {
-          L = `<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>`;
-          R = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          const leftCore = `<span class="v-done-ico">${fa('check')}</span><span class="v-status-lbl">${esc(_t('Inserted'))}</span>`;
+          const rBadge = `<span class="v-lang">${esc(v.lang || 'ID')}</span>`;
+          if (cam) {
+            const eye = ponyEyeHtml('done', 1);
+            L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+            R = `<span class="pony-side">${eye}<span class="pony-outer">${rBadge}</span></span>`;
+          } else {
+            L = leftCore;
+            M = ponyEyeHtml('done', 2);
+            R = rBadge;
+          }
           B = `<div class="v-below v-done"><div class="v-done-text" dir="auto">${esc(v.text || '')}</div></div>`;
           belowMeta = { extra: 40, wide: 420 };
         } else if (v.state === 'error') {
@@ -2998,50 +3367,62 @@ function renderClosed(animate) {
       lastSlotSig = L + '|' + M + '|' + R;
     }
   }
-  const ponyMoodNow = currentPonyMood();
-  const key = actKey(act) + (claudeShowing() ? '|cc' : '') + (notifShowing() ? '|nf' : '') + (ponyIdleOn() ? `|pony:${ponyMoodNow}` : '');
+  const key = closedStateKeyOf(act);
   syncPonyMood();
   // a brief alert or HUD shows at full strength even if the closed notch is set to be see-through
-  notchEl.classList.toggle('alerting', st.hudOnly || !!(st.activity && st.activity.until > Date.now()));
+  notchEl.classList.toggle('alerting', st.hudOnly || feedSumActive() || !!(st.activity && st.activity.until > Date.now()));
   const closed = $('#closed');
-  if (animate && key && key !== lastActKey) { closed.classList.remove('swap'); void closed.offsetWidth; closed.classList.add('swap'); }
+  if (animate && key && key !== lastActKey) {
+    closed.classList.remove('swap');
+    void closed.offsetWidth;
+    closed.classList.add('swap');
+    // Remove `.swap` after swapIn finishes so subsequent minute/battery/title updates inside #closedMid never re-blink
+    later('closedSwap', 540, () => closed.classList.remove('swap'));
+  }
   lastActKey = key;
   closed.classList.toggle('kind-music', !!act && act.kind === 'music');
-  left.innerHTML = L;
-  if (mid) mid.innerHTML = M;
-  right.innerHTML = R;
+  if (lastClosedL !== L) { left.innerHTML = L; lastClosedL = L; }
+  if (mid && lastClosedM !== M) { mid.innerHTML = M; lastClosedM = M; }
+  if (lastClosedR !== R) { right.innerHTML = R; lastClosedR = R; }
   left.classList.toggle('show', !!L);
   right.classList.toggle('show', !!R);
   st.below = !st.open && belowMeta ? belowMeta : null;
   if (belowEl) {
-    belowEl.innerHTML = !st.open ? B : '';
+    const nextB = !st.open ? B : '';
+    const belowChanged = lastClosedB !== nextB;
+    if (belowChanged) {
+      belowEl.innerHTML = nextB;
+      lastClosedB = nextB;
+    }
     belowEl.classList.toggle('show', !st.open && !!B);
-    $$('button', belowEl).forEach((b) => {
-      b.onclick = (e) => {
-        e.stopPropagation();
-        if (b.dataset.adhan) endAdhan();
-        else if (b.dataset.todo) tickTodo(b.dataset.todo);
-        else if (b.dataset.snooze) snoozeTodo(b.dataset.snooze);
-        else if (b.dataset.timer) timerAlertDone(b.dataset.timer === 'add');
-        else if (b.dataset.tick === 'water') logWater();
-        else if (b.dataset.voiceAction) {
-          const act = b.dataset.voiceAction;
-          if (act === 'download') api.svc('voice', 'download', '0.6b').catch(() => {});
-          else if (api.openSettings) api.openSettings('voice');
-        }
-        else if (b.dataset.nfClose) {
-          dropNotif(b.dataset.nfClose);
-        }
-        else if (b.dataset.nfOpen) {
-          const n = st.notifs.find((x) => String(x.id) === b.dataset.nfOpen);
-          if (n) {
-            api.svc('notif', 'open', n.aumid, n.launch || '', n.activation || '');
-            if (n.hid) api.svc('notif', 'read', n.hid).catch(() => {});
+    if (belowChanged) {
+      $$('button', belowEl).forEach((b) => {
+        b.onclick = (e) => {
+          e.stopPropagation();
+          if (b.dataset.adhan) endAdhan();
+          else if (b.dataset.todo) tickTodo(b.dataset.todo);
+          else if (b.dataset.snooze) snoozeTodo(b.dataset.snooze);
+          else if (b.dataset.timer) timerAlertDone(b.dataset.timer === 'add');
+          else if (b.dataset.tick === 'water') logWater();
+          else if (b.dataset.voiceAction) {
+            const act = b.dataset.voiceAction;
+            if (act === 'download') api.svc('voice', 'download', '0.6b').catch(() => {});
+            else if (api.openSettings) api.openSettings('voice');
           }
-          dropNotif(b.dataset.nfOpen);
-        }
-      };
-    });
+          else if (b.dataset.nfClose) {
+            dropNotif(b.dataset.nfClose);
+          }
+          else if (b.dataset.nfOpen) {
+            const n = st.notifs.find((x) => String(x.id) === b.dataset.nfOpen);
+            if (n) {
+              api.svc('notif', 'open', n.aumid, n.launch || '', n.activation || '');
+              if (n.hid) api.svc('notif', 'read', n.hid).catch(() => {});
+            }
+            dropNotif(b.dataset.nfOpen);
+          }
+        };
+      });
+    }
   }
   renderBubble(bubbleActivity());
   renderClock();
@@ -3089,6 +3470,7 @@ function renderClosed(animate) {
   renderLangMark();
   renderAiMark();
   renderClaude();
+  renderOpenVoice();
   if (act && act.kind === 'music' && st.settings.realVisualizer) viz.ensure();
 }
 
@@ -3103,9 +3485,10 @@ const slotProbe = document.createElement('div');
 slotProbe.id = 'slotProbe'; slotProbe.setAttribute('aria-hidden', 'true');
 notchEl.appendChild(slotProbe);
 const slotSizes = new Map(); // html → its width
-let slotFit = { key: '', w: 0 };
+let slotFit = { key: '', l: 0, r: 0, w: 0 };
 function slotSize(html) {
-  let w = slotSizes.get(html);
+  const key = (notchEl.classList.contains('cam') ? 'cam|' : '') + html;
+  let w = slotSizes.get(key);
   if (w != null) return w;
   slotProbe.innerHTML = html;
   const walk = document.createTreeWalker(slotProbe, NodeFilter.SHOW_TEXT);
@@ -3113,15 +3496,21 @@ function slotSize(html) {
   w = Math.ceil(slotProbe.getBoundingClientRect().width);
   slotProbe.innerHTML = '';
   if (slotSizes.size > 60) slotSizes.clear();
-  slotSizes.set(html, w);
+  slotSizes.set(key, w);
   return w;
 }
-function slotsWidth(L, R) {
+function slotsMeasure(L, R) {
   const s = st.settings;
-  const w = Math.max(L ? slotSize(L) : 0, R ? slotSize(R) : 0);
-  const key = [s.idleLeft, s.idleRight, s.clock24h, s.showBatteryPercent, s.batteryStyle, Math.floor(Date.now() / 60000)].join('|');
-  slotFit = key === slotFit.key ? { key, w: Math.max(slotFit.w, w) } : { key, w };
-  return slotFit.w;
+  const lw = L ? slotSize(L) : 0;
+  const rw = R ? slotSize(R) : 0;
+  const key = [notchEl.classList.contains('cam') ? '1' : '0', s.idleLeft, s.idleRight, s.clock24h, s.showBatteryPercent, s.batteryStyle, Math.floor(Date.now() / 60000)].join('|');
+  slotFit = key === slotFit.key
+    ? { key, l: Math.max(slotFit.l, lw), r: Math.max(slotFit.r, rw), w: Math.max(slotFit.w, lw, rw) }
+    : { key, l: lw, r: rw, w: Math.max(lw, rw) };
+  return { leftW: slotFit.l, rightW: slotFit.r, side: slotFit.w };
+}
+function slotsWidth(L, R) {
+  return slotsMeasure(L, R).side;
 }
 let lastSlotSig = '';
 function slotHtml(kind) {
@@ -3195,29 +3584,64 @@ function slotHtml(kind) {
 }
 function idleSlots() {
   const s = st.settings;
-  if (!s || st.open) return { L: '', R: '', side: 0 };
+  if (!s || st.open) return { L: '', R: '', leftW: 0, rightW: 0, side: 0 };
   if (ponyIdleOn()) {
-    if (camera()) return { L: '', R: '', side: 74 };
+    if (camera()) {
+      const lCustom = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
+      const rCustom = s.idleRight && s.idleRight !== 'none' ? slotHtml(s.idleRight) : '';
+      const outer = lCustom || rCustom
+        ? Math.max(slotsWidth(lCustom, rCustom), clockWidth('time'))
+        : clockWidth('time');
+      const side = Math.max(48, outer + 18);
+      return { L: '', R: '', leftW: side, rightW: side, side };
+    }
     const L = s.idleLeft && s.idleLeft !== 'none' ? slotHtml(s.idleLeft) : '';
     const R = s.idleRight && s.idleRight !== 'none' && s.idleRight !== 'battery' ? slotHtml(s.idleRight) : '';
-    return { L, R, side: L || R ? slotsWidth(L, R) : 0 };
+    const m = L || R ? slotsMeasure(L, R) : { leftW: 0, rightW: 0, side: 0 };
+    return { L, R, ...m };
   }
   const L = slotHtml(s.idleLeft); const R = slotHtml(s.idleRight);
-  return { L, R, side: L || R ? slotsWidth(L, R) : 0 };
+  const m = L || R ? slotsMeasure(L, R) : { leftW: 0, rightW: 0, side: 0 };
+  return { L, R, ...m };
 }
-// The middle of the closed notch: General → Size → Width, or wider while nothing else is going on when the time
-// (or the day and time) needs more, so the slots never run into it: 10 px from each, 12 px from the edges
-function closedMid(act, side) {
+function clockAllowedWith(act) {
+  if (!act) return true;
+  if (!st.settings || st.settings.clockWithActivities === false) return false;
+  if (st.activity && st.activity.until > Date.now()) return false;
+  return window.NotchKit && typeof NotchKit.isClockActivity === 'function'
+    ? NotchKit.isClockActivity(act.kind)
+    : ['music', 'pomodoro', 'timer', 'stopwatch'].includes(act.kind);
+}
+// Closed-notch width on a display without a physical camera cutout: fits the time and sides cleanly without stacking
+// an empty `notchWidth` middle on top of `side * 2`.
+function closedWidthFlat(act, side) {
   const s = st.settings; const mode = s.idleClock || 'time';
-  if (st.open) return s.notchWidth;
-  if (ponyIdleOn()) return Math.max(s.notchWidth, 168);
-  if (act && act.kind === 'music' && !camera() && !lyricsInline() && st.media.title) return Math.max(s.notchWidth, 168);
-  if (mode === 'off') return s.notchWidth;
-  if (act) return Math.max(s.notchWidth, clockBeside(act, side, mode));
-  const need = clockWidth(mode) + (side ? 40 : 24);
-  // the keyboard language's mark at the right edge (the AI usage ring's at the left), and as much on the other side so
-  // the time stays in the middle
-  return Math.max(s.notchWidth, need + (!side ? Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom()) * 2 : 0));
+  const nw = effectiveSizes(s).notchWidth;
+  const maxW = Math.max(320, window.innerWidth - 80);
+  if (st.open) return nw;
+  if (ponyIdleOn()) {
+    const mid = Math.max(168, nw - side * 2);
+    return Math.min(maxW, Math.max(nw, mid + side * 2));
+  }
+  if (act && act.kind === 'music' && !camera() && !lyricsInline() && st.media.title) {
+    return window.NotchKit && NotchKit.closedWidthNoCam
+      ? NotchKit.closedWidthNoCam({ notchWidth: nw, midNeed: 168, side, pad: 0, maxW })
+      : Math.min(maxW, Math.max(nw, 168 + side * 2));
+  }
+  const marks = !side ? Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom()) * 2 : 0;
+  let midNeed = 0;
+  if (mode !== 'off') {
+    if (act) {
+      midNeed = clockAllowedWith(act) ? Math.max(clockBeside(act, side, mode), clockWidth('time') + 24) : 0;
+    } else {
+      midNeed = clockWidth(mode) + (side ? 24 : 0) + marks;
+    }
+  } else {
+    midNeed = marks;
+  }
+  return window.NotchKit && NotchKit.closedWidthNoCam
+    ? NotchKit.closedWidthNoCam({ notchWidth: nw, midNeed, side, pad: 28, maxW })
+    : Math.min(maxW, Math.max(nw, midNeed + 28 + side * 2));
 }
 // how wide the time (or the day and time) is in the closed notch, every digit counted as a 0
 function clockWidth(mode) {
@@ -3227,38 +3651,77 @@ function clockWidth(mode) {
   return Math.ceil(day + textWidth([n(hm(now))], `600 ${fs}px`));
 }
 
-// Over a MacBook's camera (camera()): the camera's width in the middle, then a side on each hand, both as wide, so
-// Sympony stays centred on the camera. The time takes a side too: the right one when nothing shows there, otherwise the
-// left, after what shows there.
+// Over a MacBook's camera (camera()): the camera's width in the middle, then balanced wings on each side so Sympony
+// stays centred on the camera. The time goes on the empty or narrower wing (and during music/timers uses compact time).
+function camClockMode(act) {
+  const mode = (st.settings && st.settings.idleClock) || 'time';
+  if (mode === 'off') return 'off';
+  return act ? 'time' : mode;
+}
 function camClockShown(act) {
   const s = st.settings;
   if (ponyIdleOn()) return false;
   if ((s.idleClock || 'time') === 'off' || st.open || lyricsInline()) return false;
   if (claudeShowing() || notifShowing()) return false;
   if (voiceActive()) return false; // dictating: the sides are the mic, timer and language, never the time
-  return !act || (s.clockWithActivities !== false && !(st.activity && st.activity.until > Date.now()));
+  return clockAllowedWith(act);
 }
 // (the marks at the edges, Caps Lock, AI usage, keyboard language: their room as closedSide made it, or with nothing
 // on the sides as closedMid gives it)
-function camPad(act, side) {
+function camPad(act, side, clockShown) {
   const marks = side > 0 ? parseFloat(notchEl.style.getPropertyValue('--mark-pad')) || 0 : Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom());
   // ponytail: nothing beside the camera but the edge marks (or nothing at all): hug the camera. The marks move to
   // 4 px from the edge (.cam-tight in notch.css) and keep 4 px to the camera: 4 + mark + 4 a side.
-  if (!side && !camClockShown(act)) return marks && marks - 4;
-  return (act && act.kind === 'music' ? 13 : 10) + marks;
+  if (!side && !clockShown) return marks && marks - 4;
+  return 8 + marks;
 }
-function camWidth(act, side, cam) {
+function camSideWidths(act, side) {
+  if (!act && !ponyIdleOn() && !claudeShowing() && !notifShowing()) {
+    const sl = idleSlots();
+    return { leftW: sl.leftW, rightW: sl.rightW };
+  }
+  if (ponyIdleOn()) return { leftW: side, rightW: side };
+  const lHtml = $('#closedLeft') ? $('#closedLeft').innerHTML : '';
+  const rHtml = $('#closedRight') ? $('#closedRight').innerHTML : '';
+  let leftW = lHtml ? slotSize(lHtml) : 0;
+  let rightW = rHtml ? slotSize(rHtml) : 0;
+  if (act) {
+    if (act.kind === 'music') {
+      leftW = Math.max(leftW, 24);
+      rightW = Math.max(rightW, showMiniControls() ? 70 : 26);
+    } else if (act.kind === 'pomodoro' || act.kind === 'timer' || act.kind === 'stopwatch') {
+      leftW = Math.max(leftW, 20);
+      rightW = Math.max(rightW, 42);
+    } else {
+      leftW = lHtml ? Math.max(leftW, Math.min(side, leftW)) : side;
+      rightW = rHtml ? Math.max(rightW, Math.min(side, rightW)) : side;
+    }
+  }
+  return { leftW, rightW };
+}
+function camLayoutFor(act, side, cam) {
   const s = st.settings;
-  const clock = camClockShown(act) ? clockWidth(s.idleClock || 'time') : 0;
-  const wing = side + (clock ? clock + (side ? 14 : 4) : 0);
-  return Math.max(s.notchWidth, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + camPad(act, side)) * 2));
-}
-function placeCamClock(act, side, cam, w) {
-  const pad = camPad(act, side);
-  const hasL = !!$('#closedLeft').innerHTML; const hasR = !!$('#closedRight').innerHTML;
-  const [a, b] = !hasR ? [w / 2 + cam.w / 2 + CAM_MARGIN, w - pad] : [pad + (hasL ? side + 4 : 0), w / 2 - cam.w / 2 - CAM_MARGIN];
-  notchEl.style.setProperty('--clock-l', Math.round(a) + 'px');
-  notchEl.style.setProperty('--clock-w', Math.max(0, Math.round(b - a)) + 'px');
+  const nw = effectiveSizes(s).notchWidth;
+  const wantClock = camClockShown(act);
+  const mode = camClockMode(act);
+  const clockW = wantClock && mode !== 'off' ? clockWidth(mode) : 0;
+  const { leftW, rightW } = camSideWidths(act, side);
+  const pad = camPad(act, Math.max(leftW, rightW, side), clockW > 0);
+  const maxW = Math.min(window.innerWidth - 80, Math.max(Math.ceil(cam.w) + 260, 480));
+  if (window.NotchKit && typeof NotchKit.camClosedLayout === 'function') {
+    return NotchKit.camClosedLayout({
+      camW: cam.w + CAM_MARGIN * 2,
+      leftW,
+      rightW,
+      clockW,
+      pad,
+      notchWidth: nw,
+      maxW,
+    });
+  }
+  const wing = Math.max(leftW, rightW) + (clockW ? clockW + 6 : 0);
+  const width = Math.min(maxW, Math.max(nw, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + pad) * 2)));
+  return { width, showClock: clockW > 0, clockRight: !rightW, clockL: pad, clockW };
 }
 // Settings → General → Clock size: the closed Sympony's time follows its Height. Normal is the size it always had (38 % of
 // the Height, 10 to 14 px), Small a little under it; Large and Extra large grow past 14 px, never over 70 % of the Height.
@@ -3303,15 +3766,16 @@ function renderClock() {
   }
   const mode = s.idleClock || 'time';
   const el = $('#idleClock');
-  const html = (mode === 'date' ? `<span class="d">${esc(now.toLocaleDateString(_tLocale(), { weekday: 'short', day: 'numeric' }))}</span>` : '') + `<span>${esc(hm(now))}</span>`;
   const act = currentActivity();
-  const brief = !!(st.activity && st.activity.until > Date.now());
   const cam = !!camera();
+  const dispMode = cam && act ? 'time' : mode;
+  const html = (dispMode === 'date' ? `<span class="d">${esc(now.toLocaleDateString(_tLocale(), { weekday: 'short', day: 'numeric' }))}</span>` : '') + `<span>${esc(hm(now))}</span>`;
   const hasMid = !!($('#closedMid') && $('#closedMid').innerHTML);
   const long = !cam && !!act && $$('#closed .act-text[style*="max-width"]').some((t) => t.scrollWidth > parseFloat(t.style.maxWidth) + 1);
   $('#closed').classList.toggle('roomy', long && !hasMid);
   let idle = mode !== 'off' && !st.open && !st.hudOnly && !lyricsInline() && !ponyIdleOn() && !hasMid && !claudeShowing() && !notifShowing() && !voiceActive()
-    && (!act || (s.clockWithActivities !== false && !brief && !long));
+    && (!cam || st.camClockOk !== false)
+    && (!act || (clockAllowedWith(act) && !long));
   if (idle && act && !cam) { if (el.innerHTML !== html) el.innerHTML = html; idle = clockFits(el); }
   const key = [html, idle, s.headerClock !== false].join('|');
   if (key === clockKey) return;
@@ -4252,8 +4716,21 @@ function onMedia(m) {
   renderLyrics();
 }
 
+// a seek from any progress bar (the notch's, the Music section's, the video's): shown at once, then sent
+function seekTo(sec) {
+  const d = st.media.duration || 0;
+  if (!d) return;
+  st.media.position = Math.max(0, Math.min(d, sec)); st.media.positionUpdated = Date.now();
+  cmd('seek', st.media.position);
+  updateProgress();
+}
+
 function cmd(action, value) {
   if (action === 'toggle') { st.media.playing = !st.media.playing; st.media.position = mediaPosition(); st.media.positionUpdated = Date.now(); renderMusic(); renderClosed(); layout(); }
+  else if (action === 'seek' && Number.isFinite(Number(value))) {
+    st.media.position = Math.max(0, Number(value));
+    st.media.positionUpdated = Date.now();
+  }
   api.helper({ cmd: 'media', action, value });
 }
 $('#btnPlay').onclick = () => cmd('toggle');
@@ -4308,13 +4785,7 @@ function bindSlider(bar, onSet, onDrag) {
   });
 }
 
-bindSlider($('#progress'), (f) => {
-  const d = st.media.duration || 0;
-  if (!d) return;
-  st.media.position = f * d; st.media.positionUpdated = Date.now();
-  cmd('seek', f * d);
-  updateProgress();
-}, (f) => {
+bindSlider($('#progress'), (f) => seekTo(f * (st.media.duration || 0)), (f) => {
   $('#tElapsed').textContent = fmt(f * (st.media.duration || 0));
   $('#tRemain').textContent = '-' + fmt((1 - f) * (st.media.duration || 0));
 });
@@ -4327,6 +4798,10 @@ function onVolume(v) {
   st.volume = v;
   if (v.initial || !prev || !st.settings.hudEnabled) return;
   showHud('volume');
+  const prevEff = prev.muted ? 0 : prev.level;
+  const curEff = v.muted ? 0 : v.level;
+  if (curEff <= 0 && prevEff > 0) triggerHudBounce('down');
+  else if (curEff >= 100 && prevEff < 100) triggerHudBounce('up');
 }
 function onBrightness(b) {
   const prev = st.brightness;
@@ -4351,14 +4826,15 @@ function showHud(kind) {
 // go further (audio.rs at_the_end, only for the keys Sympony takes over). The HUD shows, its bar stretches past that end
 // and springs back, and the speaker wiggles. A held key repeats: one bounce at a time (the HUD drawn again at every
 // repeat would start it over each time).
-api.on('hud:edge', (end) => {
+function triggerHudBounce(end) {
   const s = st.settings;
   if (!s || !s.fxHudBounce || !s.hudEnabled || !st.volume || notchEl.classList.contains('hud-bounce')) return;
   if (st.open && st.page === 'control') return; // (its own slider shows the volume)
   showHud('volume');
   notchEl.classList.add('hud-bounce', end === 'down' ? 'hb-down' : 'hb-up');
   later('hudBounce', 460, () => notchEl.classList.remove('hud-bounce', 'hb-down', 'hb-up'));
-});
+}
+api.on('hud:edge', triggerHudBounce);
 
 // ---- Caps Lock, Num Lock, Scroll Lock
 // main reads their toggle state (lockkeys.rs) and says when one changes: On / Off for a moment, like the volume
@@ -4486,7 +4962,7 @@ function renderLangMark() {
 // long name next to a narrow middle (and a very long one is cut short)
 function langHudSide(text) {
   const need = Math.ceil(textWidth([text], '600 12px')) + 25 + 34 + 24; // the keyboard, the name, the code, a gap
-  return Math.max(112, Math.min(210, Math.ceil((need - st.settings.notchWidth) / 2)));
+  return Math.max(112, Math.min(210, Math.ceil((need - effectiveSizes().notchWidth) / 2)));
 }
 
 // ---- AI usage
@@ -4612,6 +5088,7 @@ api.onCalendar(({ events, errors }) => {
 
 function renderCalendar() {
   const box = $('#calendarBox');
+  if (!box || !st.settings) return;
   box.style.display = st.settings.calendarEnabled ? '' : 'none';
   if (!st.settings.calendarEnabled || !st.open) return;
   const today = startOfDay(Date.now());
@@ -5232,7 +5709,7 @@ function shelfFly(items, before) {
 // the count on the Shelf's tab bumps once it went up (the Shelf may take a moment longer than the flight)
 function shelfFlyLanded(before, tries) {
   if (st.shelf.length <= before) { if (tries < 15) setTimeout(() => shelfFlyLanded(before, tries + 1), 100); return; }
-  const b = $('#shelfBadge');
+  const b = $('#shelfBadge') || $('#dock button[data-id="shelf"]');
   if (!b || b.classList.contains('shelf-bump')) return;
   b.classList.add('shelf-bump');
   b.addEventListener('animationend', () => b.classList.remove('shelf-bump'), { once: true });
@@ -5326,7 +5803,7 @@ function sysText(label, value, title, c) {
 let sysWide = { until: 0, side: 0 };
 function sysSide() {
   const need = $('#closedLeft').scrollWidth + $('#closedRight').scrollWidth + 28;
-  const side = Math.max(90, Math.ceil((need - st.settings.notchWidth) / 20) * 10);
+  const side = Math.max(90, Math.ceil((need - effectiveSizes().notchWidth) / 20) * 10);
   const until = st.activity ? st.activity.until : 0;
   sysWide = until === sysWide.until ? { until, side: Math.max(sysWide.side, side) } : { until, side };
   return sysWide.side;
@@ -5336,7 +5813,7 @@ function sysSide() {
 let fpsWide = { pid: 0, side: 0 };
 function fpsSide() {
   const need = $('#closedLeft').scrollWidth + $('#closedRight').scrollWidth + 28;
-  const side = Math.max(80, Math.ceil((need - st.settings.notchWidth) / 20) * 10);
+  const side = Math.max(80, Math.ceil((need - effectiveSizes().notchWidth) / 20) * 10);
   const pid = ((st.stats || {}).fps || {}).pid || 0;
   fpsWide = pid === fpsWide.pid ? { pid, side: Math.max(fpsWide.side, side) } : { pid, side };
   return fpsWide.side;
@@ -5451,6 +5928,7 @@ api.on('pomodoro', (p) => {
   st.pomodoro = p;
   callModule('pomodoro', 'update', p);
   if (!st.open && wasRunning !== p.running) { renderClosed(true); layout(); }
+  else if (!st.open) outlineSync();
 });
 api.on('pomodoro:done', (d) => {
   if (d.sound) chime('done');
@@ -5467,6 +5945,7 @@ api.on('timer', (t) => {
   // running again ("+5 min" on another display, or a new one): its "Time's up" goes on every display
   if (t.active && st.activity && st.activity.data && st.activity.data.timer) st.activity = null;
   if (!st.open && was !== t.running) { renderClosed(true); layout(); }
+  else if (!st.open) outlineSync();
 });
 api.on('timer:done', (d) => {
   if (d.sound) chime('done');
@@ -5500,17 +5979,21 @@ const GLOW_KINDS = { 'todo-alert': 'amber', meeting: 'amber', prayer: 'amber', '
 const GLOW_MAX = 20000; // an alert that stays up longer (a brief waiting to be opened, the adhan) glows its first 20 s
 const GLOW_EASE = 'cubic-bezier(0.45, 0.05, 0.3, 1)';
 // grows from the bottom middle to the whole outline, then its tail runs out to the ends
+// (uses strokeDashoffset on a static `100 200` dasharray so WebKit/WKWebView interpolates smoothly)
 const GLOW_TRACE = [
-  { offset: 0, strokeDasharray: '0 200', strokeDashoffset: '0', opacity: 0, easing: GLOW_EASE },
+  { offset: 0, strokeDashoffset: '100', opacity: 0, easing: GLOW_EASE },
   { offset: 0.08, opacity: 1, easing: GLOW_EASE },
-  { offset: 0.45, strokeDasharray: '100 200', strokeDashoffset: '0', easing: GLOW_EASE },
-  { offset: 0.8, strokeDasharray: '100 200', strokeDashoffset: '-100', opacity: 1, easing: GLOW_EASE },
-  { offset: 1, strokeDasharray: '100 200', strokeDashoffset: '-100', opacity: 0 },
+  { offset: 0.45, strokeDashoffset: '0', opacity: 1, easing: GLOW_EASE },
+  { offset: 0.82, strokeDashoffset: '-100', opacity: 1, easing: GLOW_EASE },
+  { offset: 1, strokeDashoffset: '-100', opacity: 0 },
 ];
 const outline = { svg: null, glow: '', anims: [], glowOff: 0, src: null, since: 0, timer: '', blinkUntil: 0, blinkAnim: null, tick: 0,
-  live: false, target: '', geom: '', raf: 0, still: 0, vis: [], burst: null };
+  live: false, target: '', geom: '', raf: 0, still: 0, vis: [], burst: null, notifUntil: 0, notifKey: '', previewUntil: 0 };
 
-function outlineShown() { return !st.open && !st.hudOnly && !st.unseen && !leaveSt.out && !notchEl.classList.contains('autohidden'); }
+function outlineShown() {
+  return !st.open && !st.hudOnly && !st.unseen && !st.tucked && !leaveSt.out
+    && !notchEl.classList.contains('autohidden') && !notchEl.classList.contains('gone');
+}
 
 // An alert's glow color: its kind's, or for a toast the one it asked for (`glow`: a water or break reminder, the Timer's
 // "Time's up", a Bluetooth device connecting or running low); the Timer's comes once its end blink is over
@@ -5532,8 +6015,20 @@ function outlineGlow() {
     const short = a && (a.kind === 'charging' || (a.data && a.data.glowLoops === 2));
     return { c, key: c === 'blue' && a && a.kind !== 'toast' ? 'ai' : outline.since, loops: short ? 2 : Infinity };
   }
-  // AI Chat working on an answer: the Buddy's bubble, a brief, or one asked in the tab before Sympony closed
-  if (window.N && N.chat && N.chat.pending()) return { c: 'blue', key: 'ai', loops: Infinity };
+  // Voice dictation actively listening or transcribing: gentle cyan-blue outline glow
+  if (st.voice && (st.voice.state === 'listening' || st.voice.state === 'transcribing')) {
+    return { c: 'blue', key: 'voice:' + st.voice.state, loops: Infinity };
+  }
+  // Agent approval / question card waiting in the closed notch
+  if (claudeShowing()) return { c: 'amber', key: 'claude', loops: Infinity };
+  // AI Chat or Pony Feed Summary working on an answer before Sympony closed: standard outer notch glow
+  if ((window.N && N.chat && N.chat.pending()) || feedSumActive()) {
+    return { c: 'blue', key: feedSumActive() ? 'feed-sum' : 'ai', loops: Infinity };
+  }
+  // Fresh notification arriving while closed: brief 2-loop blue outline
+  if (now < outline.notifUntil && notifShowing()) return { c: 'blue', key: 'notif:' + outline.notifKey, loops: 2 };
+  // Instant 1-loop preview when toggling Glowing outline ON in Settings
+  if (now < outline.previewUntil) return { c: 'blue', key: 'preview:' + outline.previewUntil, loops: 1 };
   return null;
 }
 
@@ -5566,8 +6061,8 @@ function outlineSync() {
   if (!s) return;
   notchEl.classList.toggle('shelf-swell', !!s.fxShelfFly); // files fly into the Shelf: its page swells during a drag (notch.css)
   const shown = outlineShown();
-  // (the hourly chime's light is asked for in its own setting, so it doesn't wait for fxGlow)
-  const glow = shown ? (s.fxGlow && outlineGlow()) || chimeLight() : null;
+  // (the hourly chime's light and interactive Feed summary glow run directly without waiting for fxGlow)
+  const glow = shown ? (((s.fxGlow || feedSumActive()) && outlineGlow()) || chimeLight()) : null;
   const blink = shown && !glow && s.fxTimerLine && Date.now() < outline.blinkUntil;
   const run = shown && !glow && !blink ? outlineTimer() : null;
   const live = !!(glow || blink || run);
@@ -5607,11 +6102,12 @@ function outlineSync() {
   else if (!run && outline.tick) { clearInterval(outline.tick); outline.tick = 0; }
   // the shape to follow: drawn again when the notch is heading for another size, or the line just came
   const target = ['--w', '--h', '--r', '--ear'].map((k) => notchEl.style.getPropertyValue(k)).join('|') + notchEl.classList.contains('floating');
+  if (live && !outline.geom) outline.geom = outlineDraw();
   if (live && (!outline.live || target !== outline.target)) { outline.live = true; outlineFollow(); }
   outline.live = live; outline.target = target;
   // touchscreen mode: the glow round the edge is part of what's drawn (layout)
   const b = st.box; const ear = parseFloat(notchEl.style.getPropertyValue('--ear')) || 0;
-  animVis(live && b ? [{ x: b.left - ear - 12, y: Math.max(0, b.bottom - b.h - 12), w: b.w + ear * 2 + 24, h: b.h + 24 }] : []);
+  animVis(live && b ? [{ x: b.left - ear - 16, y: Math.max(0, b.bottom - b.h - 16), w: b.w + ear * 2 + 32, h: b.h + 32 }] : []);
 }
 // what the animations draw outside the notch, for touchscreen mode (layout sends it with the rest)
 function animVis(list) {
@@ -5654,7 +6150,7 @@ function outlineDraw() {
     d += ` L${x(0)},${n(e)}`;
     return e ? `${d} A${n(e)} ${n(e)} 0 0 ${1 - sw} ${x(-e)},0` : d;
   };
-  const pad = 12; const bw = n(w + (ear + pad) * 2); const bh = n(h + pad * 2);
+  const pad = 16; const bw = n(w + (ear + pad) * 2); const bh = n(h + pad * 2);
   const svg = outline.svg;
   svg.setAttribute('viewBox', `${n(-ear - pad)} ${-pad} ${bw} ${bh}`);
   Object.assign(svg.style, { left: `${n(-ear - pad)}px`, top: `${-pad}px`, width: `${bw}px`, height: `${bh}px` });
@@ -5764,7 +6260,8 @@ api.onHelper((msg) => {
 function previewSize(prev, s) {
   const tall = prev.expandedHeightTall !== s.expandedHeightTall;
   const normal = prev.expandedHeight !== s.expandedHeight;
-  if (!tall && !normal && prev.expandedWidth === s.expandedWidth) return;
+  const modeChanged = prev.notchSizeMode !== s.notchSizeMode;
+  if (!tall && !normal && !modeChanged && prev.expandedWidth === s.expandedWidth) return;
   if (st.open && !st.previewing) return;
   // the width is the same on every tab; a height belongs to either the tall tabs or the others
   const fits = (id) => (!tall && !normal) || isTall(id) === tall;
@@ -5775,12 +6272,67 @@ function previewSize(prev, s) {
   later('close', 1500, () => { st.previewing = false; if (!st.hover && !st.typing) closeNotch(); });
 }
 
+function applyCardStyle(s) {
+  if (!window.StyleLib) return;
+  const cs = StyleLib.cardStyleOf(s);
+  notchEl.dataset.cardSurface = cs.surface;
+  notchEl.dataset.cardRadius = cs.radius;
+  notchEl.dataset.cardDensity = cs.density;
+  if (window.N && N.carousel && N.carousel.syncStyleAttrs) N.carousel.syncStyleAttrs();
+}
+
+function previewStyleChange(prev, s) {
+  const prevMap = (prev && prev.moduleStyles) || {};
+  const nextMap = (s && s.moduleStyles) || {};
+  const prevGrid = window.StyleLib ? JSON.stringify(StyleLib.gridSizesMap(prev)) : '';
+  const nextGrid = window.StyleLib ? JSON.stringify(StyleLib.gridSizesMap(s)) : '';
+  if (prevGrid !== nextGrid && window.N && N.carousel) N.carousel.rebuild();
+
+  const keys = new Set([...Object.keys(prevMap), ...Object.keys(nextMap)]);
+  const changedMods = [];
+  for (const k of keys) {
+    if (JSON.stringify(prevMap[k] || null) !== JSON.stringify(nextMap[k] || null)) changedMods.push(k);
+  }
+  const cardChanged = JSON.stringify(prev && prev.cardStyle) !== JSON.stringify(s && s.cardStyle);
+  if (!changedMods.length && !cardChanged) return;
+
+  if (changedMods.includes('home')) renderHomeSection();
+  if (st.open && !st.previewing) return;
+
+  let target = null;
+  if (changedMods.length === 1) {
+    const id = changedMods[0];
+    // If only gridSize changed in dashboard mode, keep dashboard visible; otherwise open that module directly.
+    const onlyGrid = prevMap[id] && nextMap[id]
+      && prevMap[id].style === nextMap[id].style
+      && prevMap[id].size === nextMap[id].size
+      && prevMap[id].width === nextMap[id].width
+      && prevMap[id].height === nextMap[id].height
+      && prevMap[id].surface === nextMap[id].surface
+      && prevMap[id].gridSize !== nextMap[id].gridSize;
+    if (!onlyGrid) target = id;
+  } else if (changedMods.length > 1) {
+    const cur = window.N && N.carousel ? N.carousel.activeModule() : null;
+    target = (cur && changedMods.includes(cur)) ? cur : changedMods[0];
+  }
+  st.previewing = true;
+  if (target) {
+    openNotch(target);
+    if (window.N && N.openModule) N.openModule(target);
+  } else {
+    openNotch();
+  }
+  later('close', 2600, () => { st.previewing = false; if (!st.hover && !st.typing) closeNotch(); });
+}
+
 function applySettings(s) {
   const prev = st.settings;
   st.settings = s;
   if (prev && prev.mediaColors !== s.mediaColors) applyMediaColors();
   notchEl.classList.toggle('glow-on', !!s.colorGlow);
+  notchEl.classList.toggle('no-tab-slide', s.fxTabSlide === false);
   applyWaveStyle(s);
+  applyCardStyle(s);
   $('#mirror').classList.toggle('hidden', !s.mirrorEnabled);
   $('#mirror').classList.toggle('circle', s.mirrorShape === 'circle');
   if (!s.mediaEnabled) st.media = { active: false };
@@ -5801,7 +6353,15 @@ function applySettings(s) {
   renderLyrics();
   renderClosed();
   layout();
-  if (prev) previewSize(prev, s);
+  if (prev && !prev.fxGlow && s.fxGlow) {
+    outline.previewUntil = Date.now() + 1900;
+    later('glowPreview', 1950, outlineSync);
+    outlineSync();
+  }
+  if (prev) {
+    previewSize(prev, s);
+    previewStyleChange(prev, s);
+  }
 }
 api.onSettings(applySettings);
 
@@ -5893,8 +6453,10 @@ let homeSecSub = 'music'; // 'music' | 'lyrics' | 'mirror'
 // (yt.url) in an iframe, driven over postMessage. blocked: refused by YouTube (100/101/150/153); dismissed: ♫.
 // state: the player's YT state; played: ms it has played since this video was loaded (NotchKit.ytCover)
 // videoAt: when Now Playing last had a video (ytGrace); cmdAt: when play/pause was last sent (ytCommand)
+// tAt: when the player last told its time (t); rate: its speed now (the tab's, nudged: nudge); lead: how far ahead
+// of the tab a seek aims, learned from where the last one landed (landing: that's still to be seen)
 const yt = { url: null, want: false, blocked: new Set(), dismissed: new Set(), frame: null, id: null, ready: false,
-  t: 0, d: 0, state: -1, stateAt: 0, played: 0, seekAt: 0, videoAt: 0, cmdAt: 0, rate: 1 };
+  t: 0, tAt: 0, d: 0, state: -1, stateAt: 0, played: 0, seekAt: 0, videoAt: 0, cmdAt: 0, rate: 1, nudge: 1, lead: 0.2, landing: false };
 // the video view: kept while the notch is closed (paused, so reopening Music shows it at once) but never built then,
 // and kept through the moment between two videos in the same tab
 function ytShows(m) {
@@ -5902,12 +6464,51 @@ function ytShows(m) {
   if (NotchKit.ytView(m, st.settings, yt.blocked, yt.dismissed)) return yt.want || !!yt.frame;
   return !!m.active && !m.video && NotchKit.ytGrace(!!yt.frame, Date.now() - yt.videoAt);
 }
+function isYtActive() {
+  const mod = (window.N && N.carousel) ? (N.carousel.fullModule() || N.carousel.activeModule()) : st.page;
+  return !!(st.open && mod === 'home' && ytShows(st.media || {}));
+}
+let ytToastTimer = null;
+function ytFlash(text) {
+  const box = $('#page-home .mc-video');
+  const toastEl = box && $('.mc-v-toast', box);
+  if (!toastEl) return;
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  if (ytToastTimer) clearTimeout(ytToastTimer);
+  ytToastTimer = setTimeout(() => { toastEl.classList.remove('show'); ytToastTimer = null; }, 700);
+}
+function ytSeekBy(deltaSec) {
+  const m = st.media || {};
+  const d = Number(m.duration) || 0;
+  const cur = mediaPosition();
+  const target = d > 0 ? Math.max(0, Math.min(d - 0.5, cur + deltaSec)) : Math.max(0, cur + deltaSec);
+  cmd('seek', target);
+  if (yt.frame && yt.ready) {
+    ytPost({ type: 'seek', at: target });
+    yt.t = target;
+    yt.seekAt = Date.now();
+  }
+  const box = $('#page-home .mc-video');
+  if (box && d > 0) {
+    const frac = Math.max(0, Math.min(1, target / d));
+    const th = $('.mc-v-thin i', box);
+    if (th) th.style.transform = `scaleX(${frac.toFixed(4)})`;
+    const barI = $('[data-mseek] i', box);
+    if (barI) barI.style.transform = `scaleX(${frac.toFixed(4)})`;
+    const elT = $('.mc-p-el', box);
+    const remT = $('.mc-p-rem', box);
+    if (elT) elT.textContent = fmt(target);
+    if (remT) remT.textContent = '-' + fmt(Math.max(0, d - target));
+  }
+  ytFlash(deltaSec > 0 ? `+${Math.round(deltaSec)}s »` : `« ${Math.round(deltaSec)}s`);
+}
 function ytPost(msg) {
   if (yt.frame && yt.frame.contentWindow) yt.frame.contentWindow.postMessage(msg, new URL(yt.url).origin);
 }
 function ytTeardown() {
   if (yt.frame) yt.frame.remove();
-  Object.assign(yt, { frame: null, id: null, ready: false, t: 0, d: 0, state: -1, played: 0, cmdAt: 0, rate: 1 });
+  Object.assign(yt, { frame: null, id: null, ready: false, t: 0, tAt: 0, d: 0, state: -1, played: 0, cmdAt: 0, rate: 1, nudge: 1, landing: false });
 }
 function ytPaint(el, m) {
   const vid = m.video || yt.id; // (between two videos: the last one until the next is found)
@@ -5915,7 +6516,7 @@ function ytPaint(el, m) {
     ytTeardown();
     el.className = 'c bare mc-music mc-video';
     el.innerHTML = '<img class="mc-v-glow" alt=""><iframe class="mc-v-frame" allow="autoplay; encrypted-media"></iframe><img class="mc-v-thumb" alt="">'
-      + '<span class="mc-app-chip mc-v-chip"></span><div class="mc-v-thin"><i></i></div><div class="mc-v-ov"></div>';
+      + '<span class="mc-app-chip mc-v-chip"></span><div class="mc-v-toast" aria-live="polite"></div><div class="mc-v-thin"><i></i></div><div class="mc-v-ov"></div>';
     yt.frame = $('.mc-v-frame', el);
     yt.frame.src = yt.url;
   }
@@ -5925,7 +6526,7 @@ function ytPaint(el, m) {
     yt.id = vid;
     const thumb = `https://i.ytimg.com/vi/${encodeURIComponent(vid)}/hqdefault.jpg`;
     $('.mc-v-glow', el).src = thumb; $('.mc-v-thumb', el).src = thumb;
-    yt.state = -1; yt.played = 0; el.classList.add('cover');
+    yt.state = -1; yt.played = 0; yt.d = 0; el.classList.add('cover'); // (d: the last video's length is no ad)
     if (yt.ready) { ytPost({ type: 'load', id: vid, at: mediaPosition(), playing: yt.want && !!m.playing }); yt.cmdAt = Date.now(); yt.rate = 1; }
   }
   const app = appLabel(m.app); const iconUrl = mediaAppIconUrl(m);
@@ -5935,30 +6536,48 @@ function ytPaint(el, m) {
   const frac = d ? Math.max(0, Math.min(1, pos / d)) : 0;
   const ic = N.ic || (() => '');
   const fill = !!(st.settings && st.settings.ytVideoFill);
+  const rate = Number(m.rate) || 1;
+  const canSeek = !!(d && m.canSeek !== false);
+  const leftBadge = rate !== 1
+    ? `<span class="mc-v-badge" title="${esc(_t('Playback speed'))}">${esc(Number(rate.toFixed(2)))}×</span>`
+    : `<span class="mc-v-badge" title="${esc('Shift + ← / → (±5s) · ← / → slide')}" style="opacity:0.78">⇧ ← / → 5s</span>`;
   $('.mc-v-ov', el).innerHTML = `<div class="mc-v-ttl t1" dir="auto">${esc(m.title || '')}</div><div class="mc-v-sub t1" dir="auto">${esc(m.artist || '')}</div>`
     + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(d ? fmt(pos) : '0:00')}</span>`
     + `<div class="bar${d ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
     + `<span class="n mc-p-rem" style="font-size:11px">${esc(d ? '-' + fmt(Math.max(0, d - pos)) : '0:00')}</span></div>`
-    + `<div class="mc-v-ctl"><span></span><div class="mc-v-mid">`
-    + `<button type="button" class="mc-m-btn" data-mc="prev" ${m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
+    + `<div class="mc-v-ctl"><div class="mc-v-left">${leftBadge}</div><div class="mc-v-mid">`
+    + `<button type="button" class="mc-m-btn" data-mc="prev" ${m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:17px;height:17px')}</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="-10" ${canSeek ? '' : 'disabled'} title="-10s (Shift+← / J)">−10s</button>`
     + `<button type="button" class="mc-m-btn play" data-mc="toggle" title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="10" ${canSeek ? '' : 'disabled'} title="+10s (Shift+→ / L)">+10s</button>`
+    + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
     + `</div><div class="mc-v-right">`
     + `<button type="button" class="mc-round-btn" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}</button>`
+    + `<button type="button" class="mc-round-btn" data-mfloat="1" title="${esc(_t('Floating video'))}">${ic('pip')}</button>`
     + `<button type="button" class="mc-round-btn" data-mfill="1" title="${esc(fill ? _t('Fit') : _t('Fill'))}">${fa(fill ? 'compress' : 'expand')}</button>`
     + `<button type="button" class="mc-round-btn" data-mmusic="1" title="${esc(_t('Back to the music'))}">${ic('music')}</button>`
     + `</div></div>`;
   $$('[data-mc]', el).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); cmd(b.dataset.mc); }; });
+  $$('[data-yskip]', el).forEach((b) => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      ytSeekBy(Number(b.dataset.yskip) || 0);
+    };
+  });
   const seekBar = $('[data-mseek]', el);
-  if (seekBar && d && m.canSeek !== false) {
+  if (seekBar && canSeek) {
     seekBar.onclick = (e) => {
       e.stopPropagation();
       const r = seekBar.getBoundingClientRect();
-      api.helper({ cmd: 'media.seek', position: Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width))) * d });
+      const target = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width))) * d;
+      cmd('seek', target);
+      if (yt.frame && yt.ready) { ytPost({ type: 'seek', at: target }); yt.t = target; yt.seekAt = Date.now(); }
     };
   }
   $('[data-mout]', el).onclick = (e) => { e.stopPropagation(); N.openModule('control'); callModule('control', 'showSound'); };
   $('[data-mfill]', el).onclick = (e) => { e.stopPropagation(); api.setSettings({ ytVideoFill: !fill }); };
+  // the video in its own small window over everything (picture in picture), to watch while working; the notch closes
+  $('[data-mfloat]', el).onclick = (e) => { e.stopPropagation(); api.svc('yt', 'float', true).catch(() => {}); closeNotch(); };
   $('[data-mmusic]', el).onclick = (e) => { e.stopPropagation(); yt.dismissed.add(vid); ytTeardown(); renderHomeSection(); };
 }
 window.addEventListener('message', (e) => {
@@ -5970,7 +6589,7 @@ window.addEventListener('message', (e) => {
   } else if (d.type === 'state') {
     if (Number(d.s) !== yt.state) { yt.state = Number(d.s); yt.stateAt = Date.now(); }
   } else if (d.type === 'time') {
-    yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0;
+    yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0; yt.tAt = Date.now();
   } else if (d.type === 'error' && [100, 101, 150, 153].includes(Number(d.code))) {
     if (yt.id) yt.blocked.add(yt.id);
     ytTeardown(); renderHomeSection();
@@ -5992,15 +6611,19 @@ setInterval(() => {
   const box = $('#page-home .mc-video');
   if (!!box !== ytShows(m) && (want || box)) renderHomeSection(); // (a video found or gone since the last paint)
   if (!yt.frame || !yt.ready || !yt.frame.isConnected) return;
-  const settling = yt.state === 3 || yt.state === -1 || now - yt.seekAt < 3000;
-  const r = NotchKit.ytSync({ t: yt.t, d: yt.d, target: mediaPosition(), npDur: m.duration || 0, playing: !!m.playing, settling });
+  const settling = yt.state === 3 || yt.state === -1 || now - yt.seekAt < 1000;
+  const r = NotchKit.ytSync({ t: yt.t, ageMs: now - yt.tAt, state: yt.state, rate: yt.rate, d: yt.d, target: mediaPosition(),
+    npDur: m.duration || 0, playing: !!m.playing, settling, nudging: yt.nudge !== 1, lead: yt.lead });
   // (play/pause from what the player reports: a dropped pause is sent again; closed or elsewhere it waits paused)
   const c = NotchKit.ytCommand({ wantPlay: want && r.play, state: yt.state, sinceCmdMs: now - yt.cmdAt });
   if (c) { ytPost({ type: c }); yt.cmdAt = now; }
   if (!want) return;
-  if (r.seek !== null) { ytPost({ type: 'seek', at: r.seek }); yt.t = r.seek; yt.seekAt = now; }
-  const rate = m.rate || 1;
-  if (rate !== yt.rate) { ytPost({ type: 'rate', r: rate }); yt.rate = rate; } // (a tab at 1.5×, 2×…)
+  // where the last seek landed, once the copy plays steadily after it: the next one aims better
+  if (yt.landing && yt.state === 1 && now - yt.stateAt > 700 && now - yt.seekAt > 1000) { yt.lead = NotchKit.ytLead(yt.lead, r.drift); yt.landing = false; }
+  if (r.seek !== null) { ytPost({ type: 'seek', at: r.seek }); yt.t = r.seek; yt.tAt = now; yt.seekAt = now; yt.landing = !!m.playing; }
+  yt.nudge = r.seek === null ? r.nudge : 1;
+  const rate = (m.rate || 1) * yt.nudge; // (a tab at 1.5×, 2×…; a little faster or slower to catch up)
+  if (rate !== yt.rate) { ytPost({ type: 'rate', r: rate }); yt.rate = rate; }
   if (yt.state === 1) yt.played += dt;
   if (box) {
     box.classList.toggle('ad', r.ad);
@@ -6064,29 +6687,71 @@ function paintMusicPlayer(el, inSection) {
     ? `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'mirror' ? ' on' : ''}" data-mmirror="1" title="${esc(_t('Mirror'))}">${ic('cam')}</button>`
     : '';
 
+  const homeStyle = inSection && window.StyleLib ? StyleLib.styleIdFor(st.settings, 'home') : 'bento';
   el.className = 'c bare mc-music';
-  el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
-    + `<div class="mc-m-col">`
-    + `<div class="row" style="gap:10px"><div style="min-width:0;flex:1" data-mopen="1">`
-    + `<div class="t1" dir="auto" style="font-size:21px;font-weight:700;letter-spacing:-0.02em">${esc(titleStr)}</div>`
-    + `<div class="sub t1" dir="auto" style="font-size:13px">${esc(artistStr)}</div></div>${eqHtml}</div>`
-    + lyricHtml
-    + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
-    + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
-    + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
-    + `<div class="row mc-m-ctls"><div class="row" style="gap:4px">`
-    + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
-    + `</div><div class="row" style="gap:6px">`
-    + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
-    + mirrorBtn
-    + (inSection && m.video && yt.dismissed.has(m.video) && !yt.blocked.has(m.video) && st.settings && st.settings.ytVideo !== false
-      ? `<button type="button" class="mc-round-btn" data-myt="1" title="${esc(_t('Show the video'))}">${fa('play')}</button>` : '')
-    + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
-    + `</div></div></div>`;
+  if (homeStyle === 'strip') {
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-strip-mid">`
+      + `<div style="min-width:0" data-mopen="1">`
+      + `<div class="t1" dir="auto" style="font-size:16px;font-weight:700;letter-spacing:-0.02em;line-height:1.2">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:12px;line-height:1.25">${esc(artistStr)}</div></div>`
+      + `<div class="row mc-m-prog" style="margin-top:0"><span class="n mc-p-el" style="font-size:10.5px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:10.5px">${esc(remStr)}</span></div></div>`
+      + `<div class="mc-strip-right">`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:16px;height:16px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:16px;height:16px')}</button>`
+      + `${eqHtml}`
+      + `${mirrorBtn}`
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div>`;
+  } else if (homeStyle === 'cover') {
+    const oneLyr = has3Lyr && curL ? `<div class="t1 sub" style="font-size:11.5px;color:var(--text);opacity:0.78" data-mlyr="1">♪ ${esc(curL)}</div>` : '';
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-cover-col">`
+      + `<div class="row" style="gap:10px;align-items:flex-start"><div style="min-width:0;flex:1" data-mopen="1">`
+      + `<div class="t1 mc-cover-ttl" dir="auto">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:13px;margin-top:1px">${esc(artistStr)}</div></div>${eqHtml}</div>`
+      + `${oneLyr}`
+      + `<div class="row mc-m-prog" style="margin-top:0"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
+      + `<div class="row mc-m-ctls" style="margin-top:0"><div class="row" style="gap:4px">`
+      + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
+      + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
+      + `</div><div class="row" style="gap:6px">`
+      + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
+      + `${mirrorBtn}`
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div></div></div>`;
+  } else {
+    el.innerHTML = `<div class="mc-art-box" data-mopen="1">${artHtml}</div>`
+      + `<div class="mc-m-col">`
+      + `<div class="row" style="gap:10px"><div style="min-width:0;flex:1" data-mopen="1">`
+      + `<div class="t1" dir="auto" style="font-size:21px;font-weight:700;letter-spacing:-0.02em">${esc(titleStr)}</div>`
+      + `<div class="sub t1" dir="auto" style="font-size:13px">${esc(artistStr)}</div></div>${eqHtml}</div>`
+      + lyricHtml
+      + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(elStr)}</span>`
+      + `<div class="bar${canSeek ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
+      + `<span class="n mc-p-rem" style="font-size:11px">${esc(remStr)}</span></div>`
+      + `<div class="row mc-m-ctls"><div class="row" style="gap:4px">`
+      + `<button type="button" class="mc-m-btn dim${m.shuffle ? ' on' : ''}" data-mc="shuffle" ${!has || !m.canShuffle ? 'disabled' : ''} title="${esc(_t('Shuffle'))}">${ic('shuffle', 'width:15px;height:15px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="prev" ${!has || m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn play" data-mc="toggle" ${!has ? 'disabled' : ''} title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn" data-mc="next" ${!has || m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:18px;height:18px')}</button>`
+      + `<button type="button" class="mc-m-btn dim${m.repeat && m.repeat !== 'none' ? ' on' : ''}" data-mc="repeat" ${!has || !m.canRepeat ? 'disabled' : ''} title="${esc(_t('Repeat'))}">${ic('repeat', 'width:15px;height:15px')}</button>`
+      + `</div><div class="row" style="gap:6px">`
+      + `<button type="button" class="mc-out-chip" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}<span>${esc(outLabel)}</span></button>`
+      + mirrorBtn
+      + (inSection && m.video && yt.dismissed.has(m.video) && !yt.blocked.has(m.video) && st.settings && st.settings.ytVideo !== false
+        ? `<button type="button" class="mc-round-btn" data-myt="1" title="${esc(_t('Show the video'))}">${fa('play')}</button>` : '')
+      + `<button type="button" class="mc-round-btn${inSection && homeSecSub === 'lyrics' ? ' on' : ''}" data-mlyr="1" title="${esc(_t('Lyrics'))}">${ic('lyrics')}</button>`
+      + `</div></div></div>`;
+  }
 
   scrollPlainPlayer(el, true);
   $$('[data-mc]', el).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); cmd(b.dataset.mc); }; });
@@ -6095,18 +6760,18 @@ function paintMusicPlayer(el, inSection) {
       e.stopPropagation();
       if (st.settings && !st.settings.lyricsEnabled) api.setSettings({ lyricsEnabled: true, homeLyrics: true });
       else if (st.settings && !st.settings.homeLyrics) api.setSettings({ homeLyrics: true });
-      if (inSection && homeSecSub === 'lyrics') { homeSecSub = 'music'; renderHomeSection(); }
-      else { homeSecSub = 'lyrics'; N.openModule('home'); renderHomeSection(); }
+      if (inSection && homeSecSub === 'lyrics') { homeSecSub = 'music'; renderHomeSection(); layout(); }
+      else { homeSecSub = 'lyrics'; N.openModule('home'); renderHomeSection(); layout(); }
     };
   });
   const ytBtn = $('[data-myt]', el);
-  if (ytBtn) ytBtn.onclick = (e) => { e.stopPropagation(); yt.dismissed.delete(m.video); renderHomeSection(); };
+  if (ytBtn) ytBtn.onclick = (e) => { e.stopPropagation(); yt.dismissed.delete(m.video); renderHomeSection(); layout(); };
   const mBtn = $('[data-mmirror]', el);
   if (mBtn) {
     mBtn.onclick = (e) => {
       e.stopPropagation();
-      if (inSection && homeSecSub === 'mirror') { homeSecSub = 'music'; stopMirror(); renderHomeSection(); }
-      else { homeSecSub = 'mirror'; N.openModule('home'); renderHomeSection(); startMirror(); }
+      if (inSection && homeSecSub === 'mirror') { homeSecSub = 'music'; stopMirror(); renderHomeSection(); layout(); }
+      else { homeSecSub = 'mirror'; N.openModule('home'); renderHomeSection(); startMirror(); layout(); }
     };
   }
   const outBtn = $('[data-mout]', el);
@@ -6129,9 +6794,15 @@ function paintMusicPlayer(el, inSection) {
       e.stopPropagation();
       const r = seekBar.getBoundingClientRect();
       const f = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
-      api.helper({ cmd: 'media.seek', position: f * d });
+      cmd('seek', f * d);
+      const barI = $('i', seekBar);
+      if (barI) barI.style.transform = `scaleX(${f.toFixed(4)})`;
     };
   }
+}
+
+function homeNeedsTall() {
+  return homeSecSub === 'lyrics' || homeSecSub === 'mirror' || ytShows(st.media || {});
 }
 
 function renderHomeSection() {
@@ -6892,10 +7563,10 @@ function dayInfo(now = Date.now()) {
 
 // Shared helpers for module files.
 window.N = {
-  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, setTab, toast, bump, layout, chime: (kind) => chime(kind, true),
+  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, effectiveSizes, chime: (kind) => chime(kind, true),
   openEvent, startOfDay, DAY, cmd, mediaPosition, appLabel, progressRing, fa, prayerTimes, nextPrayer,
   meter, meterLevel, ring, appIconImg, agentIconUrl, mountHitlCard, refreshHitlCards, renderHitlSection,
-  ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk,
+  ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk, setFeedSum, revealFeedSummary,
   pony: {
     mood: currentPonyMood,
     sync: () => { renderClosed(); layout(); },
@@ -6905,18 +7576,58 @@ window.N = {
     peekHandle: () => ponyPeekHandle,
   },
   handleToggle, devShell: { set: setDevShell, reset: () => setDevShell(null) },
-  ensurePage, callModule, enabledTabs, moduleOf, moduleEnabled, drawStats, renderMusic, renderCalendar, renderShelfSection, renderHomeSection, renderStatsSection, stopMirror, endTyping, isTall, syncArrows, arrowsBusy, notifBellOn,
+  ensurePage, callModule, enabledTabs, moduleOf, moduleEnabled, drawStats, renderMusic, renderCalendar, renderShelfSection, renderHomeSection, homeNeedsTall, renderStatsSection, stopMirror, endTyping, isTall, syncArrows, arrowsBusy, notifBellOn,
   focusField(el) { beginTyping(); setTimeout(() => el.focus(), 30); },
   async boot() {
     paintIcons();
     applySettings(await api.getSettings());
-    // no update watcher: the binary's two update URLs are dead (tools/patch_updates.py), and its settings are kept off
-    { const s = st.settings; if (s.updateCheck || s.autoUpdate || s.usageCount) api.setSettings({ updateCheck: false, autoUpdate: false, usageCount: false }); }
+    // Legacy usage counter stays off; updateCheck & autoUpdate are active for the dual-channel updater.
+    { const s = st.settings; if (s.usageCount) api.setSettings({ usageCount: false }); }
+    // Listen for dual-channel update state (Stable vs Beta dot badge on Settings button + 1-time subtle notch toast)
+    const onUpdateState = (u) => {
+      if (!u || typeof u !== 'object') return;
+      st.update = u;
+      const btn = $('#btnSettings');
+      const avail = u.availableVersion && (u.status === 'available' || u.status === 'ready' || u.status === 'downloading');
+      const dismissed = u.dismissedVersion && u.dismissedVersion === u.availableVersion;
+      const showDot = !!(avail && (!dismissed || u.status === 'ready' || u.status === 'downloading'));
+      const isBeta = u.availableChannel === 'beta';
+      if (btn) {
+        btn.classList.toggle('has-update', showDot);
+        btn.classList.toggle('update-beta', showDot && isBeta);
+        btn.classList.toggle('update-stable', showDot && !isBeta);
+        btn.title = showDot
+          ? (isBeta
+            ? _t('Beta update available: v{v}', { v: u.availableVersion })
+            : _t('Update available: v{v}', { v: u.availableVersion }))
+          : _t('Settings');
+      }
+      if (avail && !dismissed && (u.status === 'available' || u.status === 'ready')) {
+        const key = `${u.availableChannel || 'stable'}:${u.availableVersion}`;
+        let seen = '';
+        try { seen = localStorage.getItem('sympony.updateNotified') || ''; } catch (e) { /* ignore */ }
+        if (seen !== key || u.preview) {
+          try { if (!u.preview) localStorage.setItem('sympony.updateNotified', key); } catch (e) { /* ignore */ }
+          if (isBeta) {
+            toast(fa('flask'), _t('Sympony v{v} Beta available', { v: u.availableVersion }), {
+              ms: 5500, color: '#f59e0b', glow: '#f59e0b', glowLoops: 2, side: 255, settings: 'about',
+            });
+          } else {
+            toast(fa('arrow-down'), _t('Sympony v{v} available', { v: u.availableVersion }), {
+              ms: 5500, color: '#38bdf8', glow: '#38bdf8', glowLoops: 2, side: 235, settings: 'about',
+            });
+          }
+        }
+      }
+    };
+    if (typeof api.onUpdate === 'function') api.onUpdate(onUpdateState);
+    if (typeof api.updateState === 'function') api.updateState().then(onUpdateState).catch(() => {});
     // Stacked notifications (swipe one sideways to dismiss it) start out on, once: turning them off in Settings → Animations stays
     try { if (!localStorage.getItem('sympony.stackedOn')) { localStorage.setItem('sympony.stackedOn', '1'); if (!st.settings.fxNotifStack) api.setSettings({ fxNotifStack: true }); } } catch (e) { /* no storage: the setting decides */ }
     dropCatalog = await api.svc('actions', 'catalog');
     const state = await api.helperState();
     // the camera and the notch's place are also in it: their events can come before this page listens
+    if ('display' in state) onDisplay(state.display);
     if ('camera' in state) onCamera(state.camera);
     if (state.anchor != null) { st.anchor = state.anchor; layout(); }
     if (state.volume) onVolume({ ...state.volume, initial: true });

@@ -1,12 +1,33 @@
-//! Google sign-in for to-do sync, the way installed apps do it: the browser opens Google's page, Google sends the
-//! browser back to a one-time listener on 127.0.0.1, and the code it carries (checked by `state`, bound by PKCE)
-//! becomes the tokens.
+//! Google sign-in for Calendar & Tasks sync, the way installed apps do it: the browser opens Google's page, Google
+//! sends the browser back to a one-time listener on 127.0.0.1, and the code it carries (checked by `state`, bound by
+//! PKCE) becomes the tokens.
 use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::aead::OsRng;
 use base64::Engine;
 use sha2::{Digest, Sha256};
 
-pub const SCOPES: &str = "https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/userinfo.email";
+pub const SCOPE_CALENDAR_EVENTS: &str = "https://www.googleapis.com/auth/calendar.events";
+pub const SCOPE_CALENDAR_LIST: &str = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+pub const SCOPE_TASKS: &str = "https://www.googleapis.com/auth/tasks";
+pub const SCOPE_EMAIL: &str = "https://www.googleapis.com/auth/userinfo.email";
+
+pub const SCOPES: &str = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/userinfo.email";
+
+/// Splits Google's space-delimited `scope` string into distinct granted scopes.
+pub fn parse_scopes(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for s in raw.split_whitespace() {
+        if !s.is_empty() && !out.iter().any(|x| x == s) {
+            out.push(s.to_string());
+        }
+    }
+    out
+}
+
+/// Whether `scopes` grants `want` (exact match or matching suffix such as `"auth/tasks"`).
+pub fn has_scope(scopes: &[String], want: &str) -> bool {
+    scopes.iter().any(|s| s == want || s.ends_with(want))
+}
 
 fn b64url(b: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
@@ -90,7 +111,11 @@ pub fn done_page(indonesian: bool, what: &str, result: Result<&str, &str>) -> St
             false,
             tr("Belum berhasil masuk", "Sign-in didn’t finish").to_string(),
             esc(e),
-            tr("Coba lagi dari Sympony: Pengaturan → Pony Assistant.", "Try again from Sympony: Settings → Pony Assistant.").to_string(),
+            if what == "Sympony AI" {
+                tr("Coba lagi dari Sympony: Pengaturan → Pony Assistant.", "Try again from Sympony: Settings → Pony Assistant.").to_string()
+            } else {
+                tr("Coba lagi dari Pengaturan Sympony.", "Try again from Sympony Settings.").to_string()
+            },
         ),
     };
     let badge = if ok {

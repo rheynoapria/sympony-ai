@@ -1,11 +1,13 @@
 import type { OS } from "./registry.ts";
 
-export const MODULES_KEYS = ["notchView", "modules", "defaultTab", "rememberTab"] as const;
+export const MODULES_KEYS = ["notchView", "modules", "defaultTab", "rememberTab", "cardStyle", "moduleStyles"] as const;
 
 export interface ModuleMeta {
   icon: string;
   title: string;
   sub: string;
+  /** Optional versioned key to display a dismissible "New" badge in Settings -> Modules */
+  newKey?: string;
 }
 
 export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
@@ -70,6 +72,12 @@ export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
     title: "GitHub",
     sub: "Pull requests to review",
   },
+  feed: {
+    icon: "BookOpenText",
+    title: "Feed & RSS",
+    sub: "Hacker News, GitHub Trending, Google News, Indonesian news and custom RSS",
+    newKey: "v0.2b5:mod:feed",
+  },
   radio: {
     icon: "Radio",
     title: "Radio",
@@ -103,7 +111,7 @@ export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
   notifs: {
     icon: "Bell",
     title: "Notifications",
-    sub: "Recent notifications from your Mac and browser",
+    sub: "Recent notifications from your PC and browser",
   },
 };
 
@@ -114,6 +122,9 @@ export function moduleMetaFor(id: string, os: OS): ModuleMeta {
       title: "Speed test",
       sub: "Ping, download and upload, against Cloudflare’s speed test",
     };
+  }
+  if (id === "notifs" && os === "macos") {
+    return { ...MODULE_META.notifs, sub: "Recent notifications from your Mac and browser" };
   }
   return MODULE_META[id] ?? { icon: "Boxes", title: id, sub: "" };
 }

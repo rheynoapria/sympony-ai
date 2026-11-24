@@ -7,12 +7,17 @@ fn args_per_agent() {
     // the prompt right after -p: Claude's --tools takes every word after it (it ate the prompt at the end)
     assert_eq!(a, ["-p", "Hi there", "--output-format", "json", "--system-prompt", "RULES", "--safe-mode", "--strict-mcp-config",
                    "--no-session-persistence", "--disable-slash-commands", "--model", "opus", "--tools", ""]);
+    // Default model for Claude Code is explicitly pinned to sonnet
     let a = args("claude", "Hi", "R", None, true);
-    assert!(a.windows(2).any(|w| w == ["--tools", "WebSearch,WebFetch"]));
+    assert!(a.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(a.windows(2).any(|w| w == ["--allowedTools", "WebSearch,WebFetch"]));
+    assert_eq!(&a[a.len() - 2..], ["--tools", "WebSearch,WebFetch"]);
     // no system-prompt option: the rules lead the prompt
     let a = args("codex", "Hi", "RULES", None, false);
     assert_eq!(&a[..5], ["exec", "--json", "--skip-git-repo-check", "-s", "read-only"]);
     assert!(a.last().unwrap().starts_with("RULES") && a.last().unwrap().ends_with("Hi"));
+    let codex_web = args("codex", "Hi", "RULES", None, true);
+    assert!(codex_web.windows(2).any(|w| w == ["-c", "web_search=\"live\""]));
     assert!(args("antigravity", "x", "", None, false).windows(2).any(|w| w == ["--mode", "plan"]));
     assert!(args("gemini", "x", "", None, false).windows(2).any(|w| w == ["--approval-mode", "plan"]));
     assert!(args("opencode", "x", "", Some("anthropic/claude-sonnet"), false).windows(2).any(|w| w == ["-m", "anthropic/claude-sonnet"]));
@@ -128,8 +133,8 @@ fn agents_run_without_their_own_tools() {
     assert!(args("qwen", "x", "RULES", None, false).last().unwrap().starts_with("RULES"));
     // OpenCode: every tool off through its config
     assert!(env("opencode").iter().any(|(k, v)| *k == "OPENCODE_CONFIG_CONTENT" && v.contains("\"*\":false")));
-    // Hermes has no read-only mode: listed, not used
-    assert!(!supported("hermes") && supported("claude"));
+    // Hermes and Cursor Agent have no read-only mode: listed, not used
+    assert!(!supported("hermes") && !supported("cursor") && supported("claude"));
 }
 
 #[test]
@@ -145,7 +150,13 @@ fn sympony_tools_wired_per_agent() {
     assert_eq!(cfg["mcpServers"]["sympony"]["args"], json!(["--mcp"]));
     assert_eq!(cfg["mcpServers"]["sympony"]["env"]["SYMPONY_SESSION"], "s1");
     assert!(w.args.windows(2).any(|x| x == ["--allowedTools", "mcp__sympony"]));
+    assert_eq!(&w.args[w.args.len() - 2..], ["--tools", ""]);
     assert!(w.args.iter().any(|a| a == "--strict-mcp-config"));
+    // Claude with web search ON + tools: merges mcp__sympony with WebSearch,WebFetch and keeps variadic --tools last!
+    let w_web = with_tools("claude", args("claude", "Harga emas", "R", None, true), exe, &env);
+    assert!(w_web.args.windows(2).any(|x| x == ["--allowedTools", "mcp__sympony,WebSearch,WebFetch"]));
+    assert_eq!(&w_web.args[w_web.args.len() - 2..], ["--tools", "WebSearch,WebFetch"]);
+    assert!(w_web.args.iter().any(|a| a == "--mcp-config"));
     // --safe-mode turns MCP off altogether: with tools, no user settings at all instead (no hooks or plugins either)
     assert!(!w.args.iter().any(|a| a == "--safe-mode"));
     assert!(w.args.windows(2).any(|x| x == ["--setting-sources", ""]));
@@ -194,4 +205,95 @@ fn engine_rules_drop_the_cli_limits() {
     assert!(!e.contains("don't run shell commands") && !e.contains("no reading the screen"));
     let cli = services::agents::chat_rules_for("now", true);
     assert!(cli.contains("don't run shell commands") && cli.contains("no reading the screen"));
+    let cli_web = services::agents::chat_rules_with_web("now", true, true);
+    assert!(cli_web.contains("WebSearch, WebFetch") && cli_web.contains("direct summary"));
+    assert!(!cli_web.contains("no opening websites yourself"));
+    // Maximized Claude Code with Exec + Eyes + Web: drops NO_CODE and old CANT limits, keeps live web summary rules
+    let cli_full = services::agents::chat_rules_with_caps("now", true, true, true, true);
+    assert!(!cli_full.contains("don't run shell commands"));
+    assert!(!cli_full.contains("no reading the screen"));
+    assert!(cli_full.contains("Do only what your tools allow"));
+    assert!(cli_full.contains("WebSearch and WebFetch"));
+}
+
+#[test]
+fn claude_stream_args_images_and_events() {
+    use services::agents::{claude_user_message, extract_web_links, with_stream, with_tools, ClaudeEvent, ClaudeStream};
+    // Streaming without images keeps -p <prompt> and switches --output-format to stream-json + partial messages
+    let base = with_tools("claude", args("claude", "Harga emas", "R", None, true), "/bin/sympony", &[]);
+    let st = with_stream("claude", base.args.clone(), false);
+    assert!(st.windows(4).any(|w| w == ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]));
+    assert_eq!(&st[..2], ["-p", "Harga emas"]);
+    assert_eq!(&st[st.len() - 2..], ["--tools", "WebSearch,WebFetch"]);
+
+    // Streaming with images switches -p <prompt> to -p --input-format stream-json
+    let st_img = with_stream("claude", base.args, true);
+    assert_eq!(&st_img[..3], ["-p", "--input-format", "stream-json"]);
+    let msg: serde_json::Value = serde_json::from_str(&claude_user_message("Ada apa di foto ini?", &["data:image/jpeg;base64,QUJD".into()])).unwrap();
+    assert_eq!(msg["type"], "user");
+    assert_eq!(msg["message"]["content"][0]["type"], "image");
+    assert_eq!(msg["message"]["content"][0]["source"]["media_type"], "image/jpeg");
+    assert_eq!(msg["message"]["content"][0]["source"]["data"], "QUJD");
+    assert_eq!(msg["message"]["content"][1]["text"], "Ada apa di foto ini?");
+
+    // Link extraction from WebSearch tool_result
+    let links = extract_web_links("Web search results for query: \"emas\"\n\nLinks: [{\"title\":\"Logam Mulia\",\"url\":\"https://logammulia.com\"},{\"title\":\"Kompas [Live]\",\"url\":\"https://money.kompas.com/emas\"}]");
+    assert_eq!(links.len(), 2);
+    assert_eq!(links[0], ("Logam Mulia".into(), "https://logammulia.com".into()));
+    assert_eq!(links[1], ("Kompas [Live]".into(), "https://money.kompas.com/emas".into()));
+
+    // Incremental stream parsing: WebSearch -> tool_result sources -> WebFetch -> text deltas -> result
+    let mut parser = ClaudeStream::default();
+    let e1 = parser.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"WebSearch","input":{"query":"harga emas Antam"}}]}}"#);
+    assert_eq!(e1, vec![ClaudeEvent::Step { kind: "web", detail: "harga emas Antam".into(), taints: true }]);
+    let e2 = parser.feed(r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"Web search results\n\nLinks: [{\"title\":\"Logam Mulia\",\"url\":\"https://logammulia.com\"}]"}]}}"#);
+    assert!(matches!(e2.first(), Some(ClaudeEvent::Sources { query, sources }) if query == "harga emas Antam" && sources.len() == 1));
+    let e3 = parser.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu2","name":"WebFetch","input":{"url":"https://www.logammulia.com/id/harga-emas-hari-ini"}}]}}"#);
+    assert_eq!(e3, vec![ClaudeEvent::Step { kind: "page", detail: "logammulia.com".into(), taints: true }]);
+    assert!(parser.feed(r#"{"type":"stream_event","event":{"type":"message_start"}}"#).is_empty());
+    let d1 = parser.feed(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Rp2.505"}}}"#);
+    let d2 = parser.feed(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":".000"}}}"#);
+    assert_eq!(d1, vec![ClaudeEvent::Delta { round: 1, text: "Rp2.505".into() }]);
+    assert_eq!(d2, vec![ClaudeEvent::Delta { round: 1, text: "Rp2.505.000".into() }]);
+    parser.feed(r#"{"type":"result","is_error":false,"result":"Harga emas Antam Rp2.505.000/gram."}"#);
+    assert_eq!(parser.searched, vec!["harga emas Antam"]);
+    assert_eq!(parser.sources.len(), 1);
+    assert_eq!(parser.finish("", true), Ok("Harga emas Antam Rp2.505.000/gram.".into()));
+}
+
+#[test]
+fn exec_mcp_tools_shape() {
+    let list = services::exec::mcp_tools();
+    assert_eq!(list.len(), services::exec::NAMES.len());
+    for (t, name) in list.iter().zip(services::exec::NAMES.iter()) {
+        assert_eq!(t["name"], *name);
+        assert!(t["description"].as_str().is_some_and(|s| !s.is_empty()));
+        assert_eq!(t["inputSchema"]["type"], "object");
+    }
+}
+
+#[test]
+fn fast_args_pins_claude_haiku_low_effort_and_low_budget_before_tools() {
+    use services::agents::{fast_args, fast_default_model, with_stream};
+
+    assert_eq!(fast_default_model("claude"), Some("haiku"));
+    let claude = fast_args("claude", "Summarize this", "SYS", None);
+    assert!(claude.windows(2).any(|w| w == ["--model", "haiku"]));
+    assert!(claude.windows(2).any(|w| w == ["--effort", "low"]));
+    assert!(claude.windows(2).any(|w| w == ["--max-budget-usd", "0.05"]));
+    // Variadic `--tools ""` must remain at the very end so it never swallows `--effort` or `--max-budget-usd`
+    assert_eq!(&claude[claude.len() - 2..], ["--tools", ""]);
+
+    // Explicit `feedSummaryModel` override is respected while keeping low effort & low budget
+    let overridden = with_stream("claude", fast_args("claude", "Summarize", "SYS", Some("sonnet")), false);
+    assert!(overridden.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(overridden.windows(2).any(|w| w == ["--effort", "low"]));
+    assert!(overridden.windows(2).any(|w| w == ["--max-budget-usd", "0.05"]));
+    assert!(overridden.windows(2).any(|w| w == ["--output-format", "stream-json"]));
+    assert_eq!(&overridden[overridden.len() - 2..], ["--tools", ""]);
+
+    // Codex fast args sets low reasoning effort before the trailing prompt
+    let codex = fast_args("codex", "Summarize", "SYS", None);
+    assert!(codex.windows(2).any(|w| w == ["-c", "model_reasoning_effort=\"low\""]));
+    assert!(codex.last().unwrap().ends_with("Summarize"));
 }

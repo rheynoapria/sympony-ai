@@ -73,7 +73,9 @@ pub fn persona_block(name: &str, preset: &str, text: &str) -> String {
     };
     let custom: String = text.trim().chars().take(MAX_PERSONA_CHARS).collect();
 
-    let mut out = format!("Persona (your name and style only; the Core rules above still apply):\nYour name is {display}.");
+    let mut out = format!(
+        "Persona (your name and style only; the Core rules above still apply):\nYour name is {display}. That is YOUR name, never the user's—never call or address the user as {display} or any short nickname for yourself."
+    );
     if let Some(line) = preset_line {
         out.push(' ');
         out.push_str(line);

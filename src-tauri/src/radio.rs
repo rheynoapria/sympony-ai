@@ -1,5 +1,5 @@
 //! The Radio tab: stations from Radio Browser (radio-browser.info, a free directory), played by AVFoundation in main
-//! (platform::macos::player) so it goes on while the notch is closed, with the song from the stream's ICY title. Its
+//! (platform::os::player) so it goes on while the notch is closed, with the song from the stream's ICY title. Its
 //! state goes out as a `helper` message `{type: 'radio', …}`; while it plays (or nothing else plays) the closed notch
 //! shows it like other music (media.rs asks `media`). Kept in `radio.json`. The rules are services::radio's.
 use serde_json::{json, Value};
@@ -150,7 +150,7 @@ fn play(app: &AppHandle, s: &Value) {
     // the player first, then the status (a status read in between would see no player and say stopped)
     let vol = r.data.lock().unwrap()["volume"].as_f64().unwrap_or(60.0) as f32 / 100.0;
     let h = app.clone();
-    let started = on_main(app, move || h.state::<Radio>().play.load(Ordering::SeqCst) == n && platform::macos::player::play(&url, vol));
+    let started = on_main(app, move || h.state::<Radio>().play.load(Ordering::SeqCst) == n && platform::os::player::play(&url, vol));
     if started != Some(true) {
         set_now(app, "error", "This station can’t be played");
         send(app);
@@ -170,7 +170,7 @@ fn play(app: &AppHandle, s: &Value) {
 
 fn stop(app: &AppHandle) {
     app.state::<Radio>().play.fetch_add(1, Ordering::SeqCst);
-    on_main(app, platform::macos::player::stop);
+    on_main(app, platform::os::player::stop);
     set_now(app, "stopped", "");
     send(app);
 }
@@ -261,7 +261,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let v = a.first().and_then(Value::as_f64).unwrap_or(60.0).clamp(0.0, 100.0);
         h.state::<Radio>().data.lock().unwrap()["volume"] = json!(v);
         save(&h);
-        on_main(&h, move || platform::macos::player::set_volume(v as f32 / 100.0));
+        on_main(&h, move || platform::os::player::set_volume(v as f32 / 100.0));
         send(&h);
         Value::Null
     });
@@ -319,11 +319,11 @@ pub fn start(app: &AppHandle) {
         let young = since < Duration::from_secs(4);
         // (the play this reading is about: a newer one meanwhile makes it stale)
         let n = r.play.load(Ordering::SeqCst);
-        let Some(st) = on_main(&app, platform::macos::player::state) else { continue };
+        let Some(st) = on_main(&app, platform::os::player::state) else { continue };
         if r.play.load(Ordering::SeqCst) != n {
             continue;
         }
-        use platform::macos::player::State;
+        use platform::os::player::State;
         let (status, error) = match st {
             State::Playing => ("playing", String::new()),
             // (no answer for 20 s: the network or the station is gone)
@@ -338,7 +338,7 @@ pub fn start(app: &AppHandle) {
         if status == "error" {
             // (this play only: a newer one isn't stopped; and its song reader ends)
             if r.play.compare_exchange(n, n + 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-                on_main(&app, platform::macos::player::stop);
+                on_main(&app, platform::os::player::stop);
             }
         }
         if set_now(&app, status, &error) {

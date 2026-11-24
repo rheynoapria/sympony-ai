@@ -3,6 +3,7 @@ import { plainText } from "../rows/logic.ts";
 import { applyOs } from "../rows/os.ts";
 import type { Row } from "../rows/types.ts";
 import { GENERAL_ROWS } from "./general.rows.ts";
+import { FEED_ROWS } from "./feed.rows.ts";
 import { VOICE_ROWS } from "./voice.rows.ts";
 import { AI_ROWS, AIUSAGE_ROWS, INTEGRATIONS_ROWS } from "./ai.rows.ts";
 import {
@@ -42,9 +43,13 @@ export interface SectionMeta {
   group: SectionGroup;
   title: string;
   subtitle: string;
+  /** The subtitle on a Mac, where it names the computer (`subtitle` is the PC's). */
+  macSubtitle?: string;
   icon: string;
   tint?: string;
   words?: string[];
+  /** Optional versioned key to display a dismissible "New" badge in the Sidebar until opened */
+  newKey?: string;
 }
 
 export interface SearchHit {
@@ -189,10 +194,12 @@ export const SECTIONS: readonly SectionMeta[] = [
     id: "voice",
     group: "features",
     title: "Voice",
-    subtitle: "Speak Indonesian anywhere on your Mac, completely on-device",
+    subtitle: "Speak Indonesian anywhere on your PC, completely on-device",
+    macSubtitle: "Speak Indonesian anywhere on your Mac, completely on-device",
     icon: "Mic",
     tint: "#ef4444",
     words: ["voice", "suara", "dikte", "dictation", "stt", "mikrofon", "kamus", "dictionary"],
+    newKey: "v0.2b5:sec:voice",
   },
   {
     id: "todo",
@@ -202,6 +209,16 @@ export const SECTIONS: readonly SectionMeta[] = [
     icon: "CheckSquare",
     tint: "#f59e0b",
     words: ["tasks", "google tasks", "sync", "checklist"],
+  },
+  {
+    id: "feed",
+    group: "features",
+    title: "Feed & RSS",
+    subtitle: "Hacker News, GitHub Trending, Google News, Indonesian news, custom RSS, and Pony summaries.",
+    icon: "BookOpenText",
+    tint: "#f59e0b",
+    words: ["feed", "rss", "atom", "news", "berita", "hacker news", "github trending", "google news", "ringkas", "summary"],
+    newKey: "v0.2b5:sec:feed",
   },
   {
     id: "media",
@@ -323,6 +340,15 @@ export const SECTIONS: readonly SectionMeta[] = [
     words: ["window", "tiling", "layouts", "halves", "thirds"],
   },
   {
+    id: "control",
+    group: "system",
+    title: "Control",
+    subtitle: "Control center layout styles, quick toggles, brightness, volume, and sound output.",
+    icon: "LayoutDashboard",
+    tint: "#3b82f6",
+    words: ["control", "control center", "quick settings", "wifi", "bluetooth", "focus", "brightness", "volume", "sound", "output", "sliders", "style", "layout", "minimal", "compact", "macos", "mixer", "bento"],
+  },
+  {
     id: "hud",
     group: "system",
     title: "HUD",
@@ -374,12 +400,13 @@ export const SECTIONS: readonly SectionMeta[] = [
 // Copied verbatim from frontend/settings.js:939-971
 export const SEARCH_WORDS: Readonly<Record<string, string>> = {
   general: "color colour picker eyedropper pipette hex rgb hsl screen pixel ambil warna pipet",
-  modules: "tabs order default module remember last turn on off teleprompter prompter autocue script read camera naskah glance ringkas notch view per modul dashboard tampilan",
-  calendar: "google outlook icloud ical ics link feeds local events meeting reminder show calendar refresh",
-  weather: "city location unit celsius fahrenheit forecast show weather detect my location gps lokasi",
-  prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk",
+  modules: "tabs order default module remember last turn on off teleprompter prompter autocue script read camera naskah glance ringkas notch view per modul dashboard tampilan style layout library bento compact minimal oled card size grid",
+  calendar: "google outlook icloud ical ics link feeds local events meeting reminder show calendar refresh style layout compact today week strip",
+  weather: "city location unit celsius fahrenheit forecast show weather detect my location gps lokasi style layout horizon minimal",
+  prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk style layout timeline bento focus",
   dropactions: "drop actions shelf files convert compress image pdf share clipboard copy copied paste history pin remember salin tempel riwayat phone mobile qr code wi-fi wifi send receive hp ponsel kirim terima app launcher apps",
   snap: "snap zones window layouts drag halves thirds",
+  control: "control center quick settings toggles wifi bluetooth focus keep awake brightness volume sliders sound output audio style layout minimal oled dock compact split macos glass deck studio mixer bento classic",
   hud: "volume brightness hud style panel caps num scroll lock keyboard indicator airplane microphone mic mute touchpad windows pop-up osd input language layout fullscreen full screen game games video",
   dock: "search button find magnifier magnifying glass windows+s cari pencarian calendar date today day icon tanggal hari ini",
   effects: "animation animations effects motion glow light outline border timer genie popup window minimize restore confetti celebrate karaoke lyrics swipe stack notifications bounce volume slide tabs shelf fly",
@@ -472,6 +499,8 @@ export const SYNONYMS: Readonly<Record<string, string>> = {
   ingatan: "memory",
   keahlian: "skills skill",
   kepribadian: "persona",
+  kontrol: "control",
+  berita: "news feed rss",
 };
 
 export type RowsFor = readonly Row[] | ((os: OS) => readonly Row[]);
@@ -505,6 +534,7 @@ const REGISTERED_ROWS = new Map<string, RowsFor>([
   ["cursor", CURSOR_ROWS],
   ["wallpaper", WALLPAPER_ROWS],
   ["github", GITHUB_ROWS],
+  ["feed", FEED_ROWS],
 ]);
 
 export function registerSectionRows(sectionId: string, rows: RowsFor): void {
@@ -520,7 +550,9 @@ export function sectionRows(id: string, os: OS): Row[] {
 
 export function sectionsFor(os: OS): SectionMeta[] {
   const hidden = HIDDEN_BY_OS[os];
-  return SECTIONS.filter((s) => !hidden.has(s.id));
+  return SECTIONS.filter((s) => !hidden.has(s.id)).map((s) =>
+    os === "macos" && s.macSubtitle ? { ...s, subtitle: s.macSubtitle } : s
+  );
 }
 
 export function resolveSection(id: string | null | undefined, os: OS): string {

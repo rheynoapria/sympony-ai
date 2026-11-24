@@ -4,6 +4,7 @@ import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-lay
 import { Button } from "@/components/ui/knowns/button";
 import { StatusDot } from "@/components/ui/knowns/status-dot";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { cn } from "@/lib/knowns/utils";
 import { useAgents } from "@/lib/agents";
@@ -93,14 +94,14 @@ function IntegrationsOverview({ settings }: CustomPartProps) {
         ? ["ok", t("Connected")]
         : ["warn", t("Connected · requests hidden")]
       : c.state === "nodir"
-        ? ["off", t("Not on this Mac")]
+        ? ["off", onMac() ? t("Not on this Mac") : t("Not on this PC")]
         : c.state === "bad"
           ? ["warn", t("Settings file has an error")]
           : ["warn", t("Not connected: Install below")];
 
   const ps: ["ok" | "warn" | "off", string] =
     !p || !p.found
-      ? ["off", t("Not on this Mac")]
+      ? ["off", onMac() ? t("Not on this Mac") : t("Not on this PC")]
       : !p.running
         ? ["warn", t("Paseo isn’t running")]
         : settings.paseoEnabled === false || !settings.claudeHooks
@@ -331,7 +332,7 @@ function PaseoPart({ settings }: CustomPartProps) {
 
   const text =
     !p || !p.found
-      ? t("Paseo isn’t installed on this Mac.")
+      ? onMac() ? t("Paseo isn’t installed on this Mac.") : t("Paseo isn’t installed on this PC.")
       : !p.running
         ? t("Paseo is installed but its daemon isn’t running: open Paseo.")
         : settings.paseoEnabled === false || !settings.claudeHooks

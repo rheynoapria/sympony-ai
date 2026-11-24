@@ -64,6 +64,7 @@ window.MODULE_ICONS = {
   translate: fa('language'),
   chat: fa('wand-magic-sparkles'),
   github: fa('github', 'brands'),
+  feed: fa('rss'),
   radio: fa('radio'),
   bookmarks: fa('bookmark'),
   aiusage: fa('gauge'),
@@ -76,7 +77,7 @@ window.MODULE_ICONS = {
 window.MODULE_TITLES = {
   home: _t('Home'), calendar: _t('Calendar'), prayer: _t('Prayer Times'), control: _t('Control'), shelf: _t('Shelf'), todo: _t('Todo'), notes: _t('Notes'), pomodoro: _t('Pomodoro'),
   weather: _t('Weather'), health: _t('Health'), screentime: _t('Screen Time'), dayprogress: _t('Day Progress'),
-  bluetooth: _t('Bluetooth & Wi-Fi'), stats: _t('System'), translate: _t('Translate'), chat: _t('Pony'), github: 'GitHub',
+  bluetooth: _t('Bluetooth & Wi-Fi'), stats: _t('System'), translate: _t('Translate'), chat: _t('Pony'), github: 'GitHub', feed: _t('Feed & RSS'),
   radio: _t('Radio'),
   bookmarks: _t('Bookmarks'),
   aiusage: _t('AI usage'),
@@ -86,7 +87,7 @@ window.MODULE_TITLES = {
   notifs: _t('Notifications'),
 };
 // shorter names where the active tab shows its name
-window.MODULE_SHORT = { bluetooth: 'Bluetooth', prayer: _t('Prayer') };
+window.MODULE_SHORT = { bluetooth: 'Bluetooth', prayer: _t('Prayer'), feed: _t('Feed') };
 // Linux: the Bluetooth & Wi-Fi tab is the Speed test alone (modules/bluetooth.js); a Mac has all three
 if (window.SYMPONY_OS === 'linux') {
   window.MODULE_ICONS.bluetooth = fa('gauge-high');

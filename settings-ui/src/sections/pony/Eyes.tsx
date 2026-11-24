@@ -15,10 +15,19 @@ export function PonyEyes({ settings, set }: Props) {
   const on = settings.ponyEyes === true;
   const skip = Array.isArray(settings.ponyEyesSkip) ? (settings.ponyEyesSkip as string[]) : [];
   const [perm, setPerm] = useState<string | null>(null);
+  const [screenPerm, setScreenPerm] = useState<string | null>(null);
   const [apps, setApps] = useState<{ open: AppItem[]; never: AppItem[] }>({ open: [], never: [] });
 
   const check = () =>
-    void (notch.svc("perm", "status") as Promise<Record<string, string>>).then((s) => setPerm(s?.accessibility ?? null)).catch(() => setPerm(null));
+    void (notch.svc("perm", "status") as Promise<Record<string, string>>)
+      .then((s) => {
+        setPerm(s?.accessibility ?? null);
+        setScreenPerm(s?.screenRecording ?? null);
+      })
+      .catch(() => {
+        setPerm(null);
+        setScreenPerm(null);
+      });
   useEffect(() => {
     if (!on) return;
     check();
@@ -31,6 +40,7 @@ export function PonyEyes({ settings, set }: Props) {
 
   const nameOf = (id: string) => apps.open.find((a) => a.id === id)?.name ?? id.split(".").pop() ?? id;
   const allowed = perm === "granted" || perm === "authorized";
+  const screenAllowed = screenPerm === "granted" || screenPerm === "authorized";
 
   return (
     <Ability
@@ -53,6 +63,14 @@ export function PonyEyes({ settings, set }: Props) {
               </Button>
             </div>
           )}
+          {allowed && screenPerm !== null && !screenAllowed && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground">
+              <span>{t("Optional: allow Screen Recording for OCR and visual screenshots (canvases, charts, unlabeled icons).")}</span>
+              <Button size="xs" variant="secondary" onClick={() => void notch.svc("perm", "request", "screenRecording", true).catch(() => {})}>
+                {t("Allow")}
+              </Button>
+            </div>
+          )}
           {/* Hands: acting on what Eyes see */}
           <div className="flex items-start gap-3" data-k="ponyHands">
             <span className="icon-tile mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px]" style={tileStyle("MousePointerClick")} aria-hidden="true">
@@ -68,6 +86,20 @@ export function PonyEyes({ settings, set }: Props) {
             </div>
             <Switch checked={settings.ponyHands === true} aria-label={t("Hands")} onCheckedChange={(checked) => void set({ ponyHands: checked })} />
           </div>
+          {settings.ponyHands === true && (
+            <div className="flex items-start gap-3 border-t border-border/60 pt-2.5" data-k="ponyAutoUi">
+              <span className="icon-tile mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px]" style={tileStyle("Zap")} aria-hidden="true">
+                <BrandIcon name="Zap" className="size-4" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="text-[13px] font-medium text-foreground">{t("Auto UI")}</div>
+                <div className="text-[12px] leading-snug text-muted-foreground">
+                  {t("Let Pony run multi-step UI tasks, watch apps until responses finish, summarize results, and continue automatically (financial and destructive actions still ask first)")}
+                </div>
+              </div>
+              <Switch checked={settings.ponyAutoUi === true} aria-label={t("Auto UI")} onCheckedChange={(checked) => void set({ ponyAutoUi: checked })} />
+            </div>
+          )}
           <div className="flex flex-col gap-1.5 border-t border-border/60 pt-2.5 text-[12px] text-muted-foreground" data-k="ponyEyesSkip">
             <span>{t("Never read:")}</span>
             <div className="flex flex-wrap items-center gap-1.5">

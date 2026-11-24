@@ -1,6 +1,6 @@
 //! Volume, brightness, Caps Lock and the input language every 200 ms, the battery every 30 s: a `helper` message
 //! only when a reading changed. The System tab's numbers (`stats`, and `net` for the speeds) every second.
-use platform::macos::{radios, system};
+use platform::os::{radios, system};
 use serde_json::{json, Value};
 use services::watch::{lockkeys_changed, Watch};
 use std::collections::HashMap;
@@ -57,7 +57,7 @@ pub fn start(app: &AppHandle) {
             if let Some(((code, name, count), prev)) = system::input_source().and_then(|v| lang.update(v)) {
                 send(&app, "inputlang", json!({ "code": code, "name": name, "count": count, "changed": prev.is_some() }));
             }
-            if power_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(30)) {
+            if power_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(2)) {
                 power_at = Some(Instant::now());
                 if let Some((p, _)) = pow.update(system::power()) {
                     send(&app, "power", p);
@@ -100,7 +100,7 @@ pub fn start(app: &AppHandle) {
                 *STATS.lock().unwrap() = reading.clone();
                 let _ = app.emit("stats", reading);
                 let on = |b: bool| if b { "on" } else { "off" };
-                let r = json!({ "wifi": radios::wifi_on().map(on), "bluetooth": on(radios::bluetooth_on()), "airplane": null });
+                let r = json!({ "wifi": radios::wifi_on().map(on), "bluetooth": on(radios::bluetooth_on()), "airplane": radios::airplane() });
                 if let Some((r, _)) = radios.update(r) {
                     send(&app, "radios", r);
                 }
@@ -122,7 +122,7 @@ pub fn start(app: &AppHandle) {
                 if idle_watch.update((asleep, locked)).is_some() || (idle_ms >= 60_000 && beat % 15 == 0) {
                     send(&app, "idle", json!({ "idleMs": idle_ms, "locked": locked }));
                 }
-                keep_awake(app.state::<crate::commands::App>().settings.bool_or("keepAwake", false));
+                system::keep_awake(app.state::<crate::commands::App>().settings.bool_or("keepAwake", false));
                 let (rx, tx, wired) = system::network();
                 let _ = app.emit("helper", json!({ "type": "net", "rx": rx, "tx": tx, "t": chrono::Utc::now().timestamp_millis(), "wired": wired }));
             }
@@ -167,24 +167,6 @@ pub fn register_audio(reg: &mut services::Registry) {
 /// The network now: `{ssid, quality}` (null when not on Wi-Fi, or macOS doesn't tell the name).
 fn wifi() -> Value {
     radios::wifi_ssid().map(|s| json!({ "ssid": s, "quality": services::stats::wifi_quality(radios::wifi_rssi()) })).unwrap_or(Value::Null)
-}
-
-/// Keep awake (Control tab): macOS's own `caffeinate` keeps the display on while it runs, tied to Sympony's life.
-fn keep_awake(on: bool) {
-    static CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
-    let mut c = CHILD.lock().unwrap();
-    match (on, c.is_some()) {
-        (true, false) => {
-            *c = std::process::Command::new("/usr/bin/caffeinate").args(["-di", "-w", &std::process::id().to_string()]).spawn().ok();
-        }
-        (false, true) => {
-            if let Some(mut ch) = c.take() {
-                let _ = ch.kill();
-                let _ = ch.wait();
-            }
-        }
-        _ => {}
-    }
 }
 
 /// `system.toggle(id)` (the Control tab's tiles) and `stats.wifi`.
@@ -239,6 +221,27 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
         radios::wifi_leave();
         Ok(json!({ "ok": true }))
     }));
+    // the Wi-Fi and Bluetooth tabs' switches, and airplane mode where there's one (Windows)
+    reg.add("radios.set", Box::new(|_, a| {
+        let on = a.get(1).and_then(Value::as_bool).unwrap_or(false);
+        let ok = match a.first().and_then(Value::as_str).unwrap_or("") {
+            "wifi" => radios::set_wifi(on),
+            "bluetooth" => {
+                radios::set_bluetooth(on);
+                true
+            }
+            "airplane" => radios::set_airplane(on),
+            _ => false,
+        };
+        Ok(json!({ "ok": ok }))
+    }));
+    // the Control tab's Focus tile where an app may switch Do not disturb (Windows; on a Mac it opens Focus' settings)
+    // (known: it could be read; mode: how strict, as the notification history shows it)
+    reg.add("notif.dnd", Box::new(|_, _| {
+        let on = system::focus_on();
+        Ok(json!({ "known": true, "on": on, "mode": if on { "priority" } else { "off" } }))
+    }));
+    reg.add("notif.setDnd", Box::new(|_, a| Ok(json!({ "ok": system::set_focus(a.first().and_then(Value::as_bool).unwrap_or(false)) }))));
     let h = app.clone();
     reg.add("system.toggle", Box::new(move |ctx, a| {
         let flip = |k: &str| {
@@ -260,9 +263,11 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
             "keepAwake" => flip("keepAwake"),
             "eyeBreaks" => flip("healthEyeBreaks"),
             "lock" => radios::lock_screen(),
-            "screenshot" => {
-                let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.screenshot.launcher"]).status();
+            "airplane" => {
+                radios::set_airplane(!radios::airplane().unwrap_or(false));
             }
+            "colorPick" => crate::colorpick::pick(&h),
+            "screenshot" => system::screenshot(),
             other => (ctx.log)(&format!("system.toggle: {other} isn't on a Mac")),
         }
         Ok(Value::Null)

@@ -23,6 +23,9 @@ const ICONS: Record<string, () => ReactNode> = {
   Skills: () => tint("Wand2", "#a855f7"),
   Memory: () => tint("Brain", "#6366f1"),
   Appearance: () => tint("Palette", "#f472b6"),
+  "Style & Layout": () => tint("Palette", "#ec4899"),
+  "Control behavior": () => tint("SlidersHorizontal", "#3b82f6"),
+  "Module Style Library": () => tint("LayoutGrid", "#8b5cf6"),
   "Scheduled briefs": () => tint("CalendarClock", "#0ea5e9"),
   // voice
   "Voice setup": () => tint("AudioWaveform", "#ec4899"),
@@ -48,6 +51,7 @@ const ICONS: Record<string, () => ReactNode> = {
   "Try it": () => tint("MousePointerClick", "#3b82f6"),
   Default: () => tint("Star", "#f59e0b"),
   Info: () => tint("Info", "#3b82f6"),
+  Updates: () => tint("Download", "#0ea5e9"),
   "Back up and restore": () => tint("DatabaseBackup", "#14b8a6"),
   // features
   Reminders: () => tint("BellRing", "#ef4444"),
@@ -57,6 +61,7 @@ const ICONS: Record<string, () => ReactNode> = {
   Lyrics: () => tint("MicVocal", "#ec4899"),
   YouTube: () => tint("MonitorPlay", "#ef4444"),
   VLC: () => tint("Clapperboard", "#f97316"),
+  "Google Calendar": () => tint("Calendar", "#4285f4"),
   "Subscribed calendars (iCal / .ics)": () => tint("CalendarPlus", "#ef4444"),
   "Local events": () => tint("CalendarDays", "#f43f5e"),
   Location: () => tint("MapPin", "#22c55e"),
@@ -64,6 +69,11 @@ const ICONS: Record<string, () => ReactNode> = {
   Adhan: () => tint("MoonStar", "#10b981"),
   "What’s new": () => tint("Gift", "#ec4899"),
   Guide: () => tint("BookOpenText", "#3b82f6"),
+  // feed & rss
+  "Built-in sources": () => tint("BookOpenText", "#f59e0b"),
+  "Google News topics": () => tint("Search", "#4285f4"),
+  "Custom RSS & Atom feeds": () => tint("Globe", "#0ea5e9"),
+  "Sync & Pony summary": () => tint("Sparkles", "#8b5cf6"),
 };
 
 /** The icon for a card titled `title` (its English text, before translation); a neutral one when none fits. */

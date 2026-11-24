@@ -193,22 +193,66 @@
       : '';
 
     const cityTitle = ((w.location && w.location.name) || _t('Weather')).split(',')[0].trim();
+    const style = window.StyleLib ? StyleLib.styleIdFor(N.st.settings, 'weather') : 'bento';
+
+    if (style === 'horizon') {
+      const ribbon = series.slice(0, 6);
+      const ribbonHtml = ribbon.map((h, k) => {
+        const hr = k === 0 ? _t('Now|short') : `${hourOf(h.time)}:00`;
+        const pop = Math.round(Number(h.pop) || 0);
+        const code = h.code != null ? h.code : c.code;
+        return `<div class="wx-hz-slot${k === 0 ? ' now' : ''}">`
+          + `<span class="sub n" style="font-size:10px;font-weight:600">${esc(hr)}</span>`
+          + `${wxSvg(code, c.day !== false, 16)}`
+          + `<b class="n" style="font-size:13.5px">${Math.round(Number(h.temp))}°</b>`
+          + `<span class="n" style="font-size:9.5px;color:${pop >= 20 ? '#60a5fa' : 'var(--mute)'}">${pop >= 15 ? `${pop}%` : '·'}</span></div>`;
+      }).join('');
+      page.innerHTML = `<div class="wx-hz-wrap sl-pane">`
+        + `<div class="wx-hz-left" id="wxCityTile" title="${esc(_t('Choose city'))}">`
+        + `<div class="row" style="gap:8px;align-items:center">${wxSvg(c.code, c.day !== false, 28)}<div class="big wx-hz-temp">${Math.round(c.temp)}°</div></div>`
+        + `<div class="t1" dir="auto" style="font-weight:700;font-size:13px;margin-top:3px">${esc(window.weatherLabel(c.code))}</div>`
+        + `<div class="sub t1" style="font-size:11px">${esc(cityTitle)} · H ${hi}° L ${lo}°</div>`
+        + `</div>`
+        + `<div style="display:flex;flex-direction:column;gap:6px;min-width:0">`
+        + `<div class="row" style="justify-content:space-between;font-size:11px"><span class="sub">${esc(_t('24 hours'))}</span>${rainPill || (sr && ss ? `<span class="sub n">☀ ${esc(sr)} · ☾ ${esc(ss)}</span>` : '')}</div>`
+        + `<div class="wx-hz-ribbon">${ribbonHtml}</div></div></div>`;
+      const ct = $('#wxCityTile', page);
+      if (ct) ct.onclick = () => api.openSettings('weather');
+      return;
+    }
+
+    if (style === 'minimal') {
+      const metaChips = chips.map(([lbl, val, col]) => `<div class="row" style="justify-content:space-between;gap:14px;font-size:11.5px"><span class="sub">${esc(lbl)}</span><b class="n" style="color:${col}">${esc(val)}</b></div>`).join('');
+      page.innerHTML = `<div class="wx-min-wrap sl-pane" id="wxCityTile" title="${esc(_t('Choose city'))}">`
+        + `<div class="row" style="gap:14px;align-items:center;min-width:0">`
+        + `${wxSvg(c.code, c.day !== false, 42)}`
+        + `<div class="big wx-min-temp">${Math.round(c.temp)}°</div>`
+        + `<div style="min-width:0"><div class="t1" dir="auto" style="font-size:15.5px;font-weight:700">${esc(window.weatherLabel(c.code))}</div>`
+        + `<div class="sub t1" style="font-size:12px;margin-top:2px">${esc(cityTitle)}</div>`
+        + `<div class="sub t1 n" style="font-size:11px;margin-top:2px">${esc(rangeLine)}</div></div></div>`
+        + `<div style="display:flex;flex-direction:column;gap:4px;min-width:130px;padding-left:14px;border-left:1px solid rgba(255,255,255,0.1)">${metaChips}`
+        + (sr && ss ? `<div class="row" style="justify-content:space-between;gap:10px;font-size:11px;margin-top:2px"><span style="color:#fbbf24">☀ ${esc(sr)}</span><span style="color:#c9b6ff">☾ ${esc(ss)}</span></div>` : '')
+        + `</div></div>`;
+      const ct = $('#wxCityTile', page);
+      if (ct) ct.onclick = () => api.openSettings('weather');
+      return;
+    }
 
     page.innerHTML = `<div style="display:grid;grid-template-columns:200px minmax(0,1fr) 168px;grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
-      + `<div class="c" id="wxCityTile" style="padding:12px;cursor:pointer" title="${esc(_t('Choose city'))}">`
+      + `<div class="c" id="wxCityTile" style="padding:10px 12px;cursor:pointer;min-height:0" title="${esc(_t('Choose city'))}">`
       + `${N.hd('cloudsun', cityTitle)}`
-      + `<span style="position:absolute;right:12px;top:30px">${wxSvg(c.code, c.day !== false, 44)}</span>`
-      + `<div class="big" style="font-size:58px;margin-top:auto;line-height:0.95">${Math.round(c.temp)}°</div>`
-      + `<div class="t1" dir="auto" style="font-weight:700;font-size:13px;margin-top:4px">${esc(window.weatherLabel(c.code))}</div>`
+      + `<span style="position:absolute;right:12px;top:26px">${wxSvg(c.code, c.day !== false, 38)}</span>`
+      + `<div class="big wx-bento-temp">${Math.round(c.temp)}°</div>`
+      + `<div class="t1" dir="auto" style="font-weight:700;font-size:13px;margin-top:3px">${esc(window.weatherLabel(c.code))}</div>`
       + `<div class="sub t1" style="font-size:11px">${esc(rangeLine)}</div>`
       + `${chipsHtml}</div>`
-      + `<div class="c" style="padding:10px 12px">`
+      + `<div class="c" style="padding:10px 12px;min-height:0">`
       + `<div class="row" style="justify-content:space-between;gap:6px;flex:none"><span class="hd" style="color:var(--dim)">${N.ic('day', 'width:12px;height:12px')}<span>${esc(_t('24 hours'))}</span></span>${rainPill}</div>`
-      + `<svg viewBox="0 0 ${W} ${H + 26}" style="width:100%;height:auto;max-height:172px;display:block;margin-top:auto;overflow:visible">`
+      + `<svg viewBox="0 0 ${W} ${H + 26}" preserveAspectRatio="xMidYMid meet" style="width:100%;flex:1;min-height:0;max-height:164px;display:block;margin-top:auto;overflow:visible">`
       + `${barsHtml}<line x1="0" y1="${H + 4}" x2="${W}" y2="${H + 4}" stroke="#24242c"/>`
       + `<polyline points="${linePts}" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
       + `${markersHtml}</svg></div>`
-      + `<div class="c" style="padding:10px 12px;gap:1px">${daysHtml}${sunRowHtml}</div>`
+      + `<div class="c sc-y" style="padding:10px 12px;gap:1px;min-height:0">${daysHtml}${sunRowHtml}</div>`
       + `</div>`;
 
     const ct = $('#wxCityTile', page);
@@ -220,6 +264,7 @@
     tall: true,
     init(p) { page = p; ensureWatch(); render(N.data.weather); },
     show() { render(N.data.weather); if (N.data.weather && Date.now() - (N.data.weather.updatedAt || 0) > 30 * 60000) api.svc('weather', 'refresh'); },
+    onSettings() { render(N.data.weather); renderCards(N.data.weather); },
     card(el, size) {
       ensureWatch();
       const slot = { el, size };

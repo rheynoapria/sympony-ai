@@ -22,6 +22,8 @@ interface TodoSyncState {
   ready?: Record<string, boolean>;
   signingIn?: boolean;
   signedIn?: boolean;
+  hasTasksScope?: boolean;
+  hasCalendarScope?: boolean;
   account?: string;
   list?: { id: string; name?: string } | null;
   last?: string | number | null;
@@ -196,14 +198,18 @@ export function TodoSyncPart({ settings, set }: CustomPartProps) {
           }
         >
           <Button size="sm" variant="primary" onClick={() => run("signIn")}>
-            {t("Sign in")}
+            {provider === "google" ? t("Sign in with Google") : t("Sign in")}
           </Button>
         </SettingsRow>
       ) : (
         <>
           <SettingsRow
             label={t("Account")}
-            description={st.account || t("Signed in")}
+            description={
+              provider === "google" && st.account
+                ? t("Connected to {account} (shared with Google Calendar). Disconnect anytime.", { account: st.account })
+                : st.account || t("Signed in")
+            }
           >
             <Button
               size="sm"
@@ -214,9 +220,20 @@ export function TodoSyncPart({ settings, set }: CustomPartProps) {
                 run("signOut");
               }}
             >
-              {t("Sign out")}
+              {provider === "google" ? t("Disconnect") : t("Sign out")}
             </Button>
           </SettingsRow>
+
+          {provider === "google" && st.hasTasksScope === false && (
+            <SettingsRow
+              label={t("Google Tasks permission needed")}
+              description={t("Your current Google sign-in doesn’t include Google Tasks access. Reconnect to sync tasks.")}
+            >
+              <Button size="sm" variant="primary" onClick={() => run("signIn")}>
+                {t("Reconnect Google")}
+              </Button>
+            </SettingsRow>
+          )}
 
           <SettingsRow
             label={t("List")}

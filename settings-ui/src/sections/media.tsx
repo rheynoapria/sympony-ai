@@ -6,6 +6,7 @@ import { cn } from "@/lib/knowns/utils";
 import { Rows } from "@/rows/Rows";
 import type { CustomPart, CustomPartProps, SectionBody } from "@/rows/types";
 import { MEDIA_ROWS } from "./media.rows";
+import { ModuleStyleCard } from "./parts/ModuleStyleCard";
 import { YtStatusPart } from "./parts/YtStatus";
 
 const FALLBACK_PALETTES: Record<string, SymponyPalette> = {
@@ -188,15 +189,18 @@ export const media: SectionBody = {
   rows: [...MEDIA_ROWS],
   customs: CUSTOMS,
   render: (props) => (
-    <Rows
-      sectionId="media"
-      rows={MEDIA_ROWS}
-      customs={CUSTOMS}
-      settings={props.settings}
-      set={props.set}
-      os={props.os}
-      part={props.part}
-      onNavigate={props.onNavigate}
-    />
+    <div className="flex flex-col gap-4">
+      <ModuleStyleCard moduleId="home" settings={props.settings} set={props.set} />
+      <Rows
+        sectionId="media"
+        rows={MEDIA_ROWS}
+        customs={CUSTOMS}
+        settings={props.settings}
+        set={props.set}
+        os={props.os}
+        part={props.part}
+        onNavigate={props.onNavigate}
+      />
+    </div>
   ),
 };

@@ -1,16 +1,21 @@
 //! Sympony Voice V1 runtime: state machine wiring, lazy local/cloud engines,
 //! global modifier triggers, `voice.*` svc handlers, and `voice:*` events.
 //! Kept outside `crates/contract/contract.json` so core parity stays 216/216.
+use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use platform::macos::voice::{mic_status, MacInsert, MacTrigger};
+use platform::os::voice::mic_status;
+#[cfg(target_os = "macos")]
+use platform::os::voice::{MacInsert as NativeInsert, MacTrigger as NativeTrigger};
+#[cfg(target_os = "windows")]
+use platform::os::voice::{WinInsert as NativeInsert, WinTrigger as NativeTrigger};
 use platform::voice::{Capture, CpalCapture, Insert, InsertResult, Trigger, TriggerEvent, VoiceKey};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -77,7 +82,12 @@ fn total_ram_bytes() -> u64 {
         }
         mem
     }
-    #[cfg(not(target_os = "macos"))]
+    // the memory installed (16 GB reads 16 GB, as hw.memsize does), so the light model and 1.7b are offered alike
+    #[cfg(target_os = "windows")]
+    {
+        platform::os::system::installed_memory().unwrap_or(8 * 1024 * 1024 * 1024)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         8 * 1024 * 1024 * 1024
     }
@@ -111,7 +121,9 @@ struct ActiveDownload {
     id: String,
     done: u64,
     total: u64,
+    phase: String,
     status: String,
+    seq: u64,
 }
 
 type DictStamp = Option<(Option<SystemTime>, u64)>;
@@ -139,17 +151,21 @@ pub struct VoiceRuntime {
     screen: Mutex<Option<(String, String)>>,
     /// The app that had keyboard focus when dictation started, so synthetic ⌘V never pastes into a switched app.
     target_pid: Mutex<Option<i32>>,
-    trigger: MacTrigger,
-    cmd_trigger: MacTrigger,
+    trigger: NativeTrigger,
+    cmd_trigger: NativeTrigger,
     capture: CpalCapture,
-    insert: MacInsert,
+    insert: NativeInsert,
     qwen: Mutex<Option<LoadedQwen>>,
     zipformer: Mutex<Option<LoadedZipformer>>,
     active_stream: Mutex<Option<Box<dyn Stream>>>,
     stream_stop: Arc<AtomicBool>,
     download_cancel: Arc<AtomicBool>,
+    download_worker_running: AtomicBool,
+    download_seq: AtomicU64,
+    download_queue: Mutex<VecDeque<String>>,
     active_download: Mutex<Option<ActiveDownload>>,
     light_suggested: AtomicBool,
+    ax_waiting: AtomicBool,
 }
 
 impl VoiceRuntime {
@@ -168,17 +184,21 @@ impl VoiceRuntime {
             mode: Mutex::new(VoiceMode::Dictate),
             screen: Mutex::new(None),
             target_pid: Mutex::new(None),
-            trigger: MacTrigger::new(),
-            cmd_trigger: MacTrigger::new(),
+            trigger: NativeTrigger::new(),
+            cmd_trigger: NativeTrigger::new(),
             capture: CpalCapture::new(),
-            insert: MacInsert::new(),
+            insert: NativeInsert::new(),
             qwen: Mutex::new(None),
             zipformer: Mutex::new(None),
             active_stream: Mutex::new(None),
             stream_stop: Arc::new(AtomicBool::new(false)),
             download_cancel: Arc::new(AtomicBool::new(false)),
+            download_worker_running: AtomicBool::new(false),
+            download_seq: AtomicU64::new(1),
+            download_queue: Mutex::new(VecDeque::new()),
             active_download: Mutex::new(None),
             light_suggested: AtomicBool::new(light_suggested),
+            ax_waiting: AtomicBool::new(false),
         });
         Self::start_idle_reaper(Arc::clone(&rt));
         rt
@@ -452,7 +472,13 @@ impl VoiceRuntime {
                     }
                 });
             }
-            Err(e) => self.log(&format!("voice: can't watch {key_str}: {e:?}")),
+            Err(e) => {
+                self.log(&format!("voice: can't watch {key_str}: {e:?}"));
+                // (macOS: the key needs Accessibility, watched for until granted; Windows has no such permission)
+                if cfg!(target_os = "macos") && !platform::os::banners::trusted(false) {
+                    self.watch_for_accessibility();
+                }
+            }
         }
 
         let cmd_key = s
@@ -468,6 +494,7 @@ impl VoiceRuntime {
                 .start(VoiceKey::from_setting(&cmd_key), ctx)
                 .is_ok()
             {
+                self.log(&format!("voice: listening for command key {cmd_key}"));
                 let rt = Arc::clone(self);
                 thread::spawn(move || {
                     while let Ok(ev) = crx.recv() {
@@ -476,6 +503,38 @@ impl VoiceRuntime {
                 });
             }
         }
+    }
+
+    fn watch_for_accessibility(self: &Arc<Self>) {
+        if self
+            .ax_waiting
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let rt = Arc::clone(self);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(2));
+                let enabled = rt
+                    .settings()
+                    .get("voiceEnabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if !enabled {
+                    rt.ax_waiting.store(false, Ordering::SeqCst);
+                    break;
+                }
+                if platform::os::banners::trusted(false) {
+                    rt.ax_waiting.store(false, Ordering::SeqCst);
+                    rt.log("voice: Accessibility granted — starting dictation trigger");
+                    rt.sync_triggers();
+                    let _ = rt.app.emit("voice:perm", json!({ "accessibility": "granted" }));
+                    break;
+                }
+            }
+        });
     }
 
     fn handle_trigger(self: &Arc<Self>, ev: TriggerEvent, mode: VoiceMode) {
@@ -488,15 +547,29 @@ impl VoiceRuntime {
         };
         if matches!(mapped, TriggerEv::HoldStart | TriggerEv::DoubleTap) {
             let s = self.settings();
-            // (one key, two ways: typing in a text field it dictates there; anywhere else what's said goes to Pony)
-            let mode = if mode == VoiceMode::Dictate && s.get("voiceAgentAuto").and_then(Value::as_bool).unwrap_or(true) && !self.typing() {
+            // (one key, two ways: typing in a text field dictates there; anywhere else — or while Pony is
+            // actively running so the user can steer Pony mid-run even if Hands just focused a text field —
+            // what's said goes straight to Pony)
+            let active_chat = crate::agents::has_active_chat(&self.app);
+            let mode = if mode == VoiceMode::Dictate
+                && s.get("voiceAgentAuto").and_then(Value::as_bool).unwrap_or(true)
+                && (active_chat || !self.typing())
+            {
                 VoiceMode::Command
             } else {
                 mode
             };
+            let skip: Vec<String> = s
+                .get("ponyEyesSkip")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
             let screen = (mode == VoiceMode::Command && s.get("ponyEyes").and_then(Value::as_bool) == Some(true))
                 .then(|| platform::ax::front_app(std::process::id() as i32))
                 .flatten()
+                .filter(|(_, _, bundle)| !services::eyes::skipped(bundle, &skip))
                 .map(|(pid, name, _)| (name, platform::ax::window(pid).map(|w| w.text("AXTitle")).unwrap_or_default()));
             if let Ok(mut g) = self.screen.lock() {
                 *g = screen;
@@ -824,16 +897,93 @@ impl VoiceRuntime {
                 || sympony_home().join("skills").is_dir();
             if has_pony {
                 let screen = self.screen.lock().ok().and_then(|mut g| g.take()).map(|(app, title)| json!({"app": app, "title": title}));
-                self.log(&format!("voice: {} chars to Pony", text.chars().count()));
-                let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen }));
-                let _ = self.app.emit(
-                    "voice:result",
-                    json!({
-                        "text": text,
-                        "inserted": "command",
-                        "corrections": corrections,
-                    }),
-                );
+                let hands_on = s.get("ponyEyes") == Some(&Value::Bool(true)) && s.get("ponyHands") == Some(&Value::Bool(true));
+                let active_chat = crate::agents::has_active_chat(&self.app);
+
+                if active_chat && services::hands::is_voice_stop_command(&text) {
+                    crate::agents::stop_active_chats(&self.app);
+                    self.log("voice: stop command ended active Pony run");
+                    let _ = self.app.emit("voice:command", json!({ "text": text, "steer": true, "stop": true }));
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "stop",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "done",
+                            "ms": self.now_ms(),
+                            "text": text,
+                        }),
+                    );
+                } else if active_chat {
+                    let steered_session = crate::brain::steer_active(&self.app, &text);
+                    let speech_ov = if hands_on { services::hands::parse_auto_ui_override(&text) } else { None };
+                    if let (Some(sid), Some(ov)) = (&steered_session, speech_ov) {
+                        crate::hands::set_session_auto_ui(&self.app, sid, ov);
+                    }
+                    let base_auto = self.voice_auto_ui(&s);
+                    let auto_ui = if hands_on { speech_ov.unwrap_or(base_auto) } else { false };
+                    self.log(&format!(
+                        "voice: {} chars live-steered Pony (session={:?}, autoUi={auto_ui})",
+                        text.chars().count(),
+                        steered_session
+                    ));
+                    let _ = self.app.emit(
+                        "voice:command",
+                        json!({
+                            "text": text,
+                            "screen": screen,
+                            "autoUi": auto_ui,
+                            "steer": true,
+                            "steeredSession": steered_session,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "steer",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "done",
+                            "ms": self.now_ms(),
+                            "text": text,
+                        }),
+                    );
+                } else {
+                    let base_auto = self.voice_auto_ui(&s);
+                    let auto_ui = if hands_on {
+                        services::hands::parse_auto_ui_override(&text).unwrap_or(base_auto)
+                    } else {
+                        false
+                    };
+                    self.log(&format!("voice: {} chars to Pony (autoUi={auto_ui})", text.chars().count()));
+                    let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen, "autoUi": auto_ui, "steer": false }));
+                    let _ = self.app.emit(
+                        "voice:result",
+                        json!({
+                            "text": text,
+                            "inserted": "command",
+                            "corrections": corrections,
+                        }),
+                    );
+                    let _ = self.app.emit(
+                        "voice:state",
+                        json!({
+                            "state": "idle",
+                            "ms": self.now_ms(),
+                        }),
+                    );
+                }
             } else {
                 let _ = self.app.emit(
                     "voice:state",
@@ -904,23 +1054,36 @@ impl VoiceRuntime {
         }
     }
 
+    fn voice_auto_ui(&self, s: &Value) -> bool {
+        let hands_on = s.get("ponyEyes") == Some(&Value::Bool(true)) && s.get("ponyHands") == Some(&Value::Bool(true));
+        let chat_auto = s.get("ponyAutoUi") == Some(&Value::Bool(true));
+        let pref = s.get("voiceAutoUi").and_then(Value::as_str).unwrap_or("follow");
+        services::hands::voice_auto_ui_effective(hands_on, chat_auto, pref)
+    }
+
     fn emit_state(&self, st: &VState, was_cancel: bool) {
         let payload = match st {
             VState::Idle => json!({
                 "state": if was_cancel { "cancelled" } else { "idle" },
                 "ms": self.now_ms(),
             }),
-            VState::Listening { since_ms } => json!({
-                "state": "listening",
-                "ms": since_ms,
-                "agent": self.mode.lock().map(|m| *m == VoiceMode::Command).unwrap_or(false),
-                "lang": self
-                    .settings()
-                    .get("voiceLanguage")
-                    .and_then(Value::as_str)
-                    .unwrap_or("id")
-                    .to_uppercase(),
-            }),
+            VState::Listening { since_ms } => {
+                let s = self.settings();
+                let agent = self.mode.lock().map(|m| *m == VoiceMode::Command).unwrap_or(false);
+                let steer = agent && crate::agents::has_active_chat(&self.app);
+                json!({
+                    "state": "listening",
+                    "ms": since_ms,
+                    "agent": agent,
+                    "autoUi": agent && self.voice_auto_ui(&s),
+                    "steer": steer,
+                    "lang": s
+                        .get("voiceLanguage")
+                        .and_then(Value::as_str)
+                        .unwrap_or("id")
+                        .to_uppercase(),
+                })
+            }
             VState::Transcribing => json!({
                 "state": "transcribing",
                 "ms": self.now_ms(),
@@ -1037,6 +1200,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     Ok(VState::Error(_)) => "error",
                     Err(_) => "idle",
                 };
+                let queued_ids: Vec<String> = rt
+                    .download_queue
+                    .lock()
+                    .map(|q| q.iter().cloned().collect())
+                    .unwrap_or_default();
                 let dl = rt
                     .active_download
                     .lock()
@@ -1047,7 +1215,10 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                             "id": d.id,
                             "done": d.done,
                             "total": d.total,
+                            "phase": d.phase,
                             "status": d.status,
+                            "queued": queued_ids,
+                            "seq": d.seq,
                         })
                     });
                 Ok(json!({
@@ -1061,7 +1232,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     "vocabMissing": rt.vocab_missing(),
                     "permissions": {
                         "microphone": mic_status(),
-                        "accessibility": if platform::macos::banners::trusted(false) { "granted" } else { "denied" },
+                        "accessibility": if platform::os::banners::trusted(false) { "granted" } else { "denied" },
                     },
                     "activeDownload": dl,
                 }))
@@ -1092,78 +1263,266 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                 let Some(spec) = models::find(&id) else {
                     return Err(anyhow::anyhow!("unknown model id: {id}"));
                 };
-                rt.download_cancel.store(false, Ordering::Relaxed);
-                if let Ok(mut d) = rt.active_download.lock() {
-                    *d = Some(ActiveDownload {
-                        id: id.clone(),
-                        done: 0,
-                        total: spec.size,
-                        status: "downloading".into(),
-                    });
+                if models::is_downloaded(&id) {
+                    let seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                    let queued: Vec<String> = rt
+                        .download_queue
+                        .lock()
+                        .map(|q| q.iter().cloned().collect())
+                        .unwrap_or_default();
+                    let _ = rt.app.emit(
+                        "voice:download",
+                        json!({
+                            "id": id,
+                            "done": spec.size,
+                            "total": spec.size,
+                            "phase": "done",
+                            "status": "done",
+                            "queued": queued,
+                            "seq": seq,
+                        }),
+                    );
+                    rt.sync_triggers();
+                    return Ok(json!({ "ok": true, "id": id, "alreadyDownloaded": true }));
                 }
+
+                // Dedup against the active download and pending queue so rapid/setup clicks never spawn
+                // two competing HTTP writers against the same `.part` file.
+                {
+                    let mut q = rt
+                        .download_queue
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("download queue lock poisoned"))?;
+                    let active_same = rt
+                        .active_download
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.as_ref().map(|d| d.id == id && d.status == "downloading"))
+                        .unwrap_or(false);
+                    if active_same {
+                        return Ok(json!({ "ok": true, "id": id, "deduped": true }));
+                    }
+                    if q.iter().any(|x| x == &id) {
+                        return Ok(json!({ "ok": true, "id": id, "queued": true }));
+                    }
+                    q.push_back(id.clone());
+                }
+
+                // If the single download worker is already running, notify UI of the updated queue.
+                if rt.download_worker_running.swap(true, Ordering::AcqRel) {
+                    let queued: Vec<String> = rt
+                        .download_queue
+                        .lock()
+                        .map(|q| q.iter().cloned().collect())
+                        .unwrap_or_default();
+                    if let Ok(mut guard) = rt.active_download.lock() {
+                        if let Some(ref mut cur) = *guard {
+                            cur.seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                            let _ = rt.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": cur.id,
+                                    "done": cur.done,
+                                    "total": cur.total,
+                                    "phase": cur.phase,
+                                    "status": cur.status,
+                                    "queued": queued,
+                                    "seq": cur.seq,
+                                }),
+                            );
+                        }
+                    }
+                    return Ok(json!({ "ok": true, "id": id, "queued": true }));
+                }
+
+                rt.download_cancel.store(false, Ordering::Relaxed);
                 let rt_bg = Arc::clone(&rt);
-                let id_bg = id.clone();
                 thread::spawn(move || {
-                    let last_emit = Mutex::new(Instant::now() - Duration::from_secs(1));
-                    let res = models::download(
-                        &id_bg,
-                        |done, total| {
+                    loop {
+                        while !rt_bg.download_cancel.load(Ordering::Relaxed) {
+                            let next_opt = rt_bg
+                                .download_queue
+                                .lock()
+                                .ok()
+                                .and_then(|mut q| q.pop_front());
+                            let Some(id_bg) = next_opt else {
+                                break;
+                            };
+                            let Some(spec_bg) = models::find(&id_bg) else {
+                                continue;
+                            };
+
+                            let queued_snapshot = || -> Vec<String> {
+                                rt_bg
+                                    .download_queue
+                                    .lock()
+                                    .map(|q| q.iter().cloned().collect())
+                                    .unwrap_or_default()
+                            };
+
+                            let init_seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
                             if let Ok(mut d) = rt_bg.active_download.lock() {
                                 *d = Some(ActiveDownload {
                                     id: id_bg.clone(),
-                                    done,
-                                    total,
+                                    done: 0,
+                                    total: spec_bg.size,
+                                    phase: "downloading".into(),
                                     status: "downloading".into(),
+                                    seq: init_seq,
                                 });
                             }
-                            if let Ok(mut t) = last_emit.lock() {
-                                if t.elapsed() >= Duration::from_millis(120) || done >= total {
-                                    *t = Instant::now();
+                            let _ = rt_bg.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": id_bg,
+                                    "done": 0,
+                                    "total": spec_bg.size,
+                                    "phase": "downloading",
+                                    "status": "downloading",
+                                    "queued": queued_snapshot(),
+                                    "seq": init_seq,
+                                }),
+                            );
+
+                            let last_emit = Mutex::new(Instant::now() - Duration::from_secs(1));
+                            let max_done = AtomicU64::new(0);
+                            let entered_verify = AtomicBool::new(false);
+                            let res = models::download(
+                                &id_bg,
+                                |raw_done, raw_total| {
+                                    let total = if raw_total > 0 { raw_total } else { spec_bg.size };
+                                    let clamped = raw_done.min(total);
+                                    let prev = max_done.fetch_max(clamped, Ordering::Relaxed);
+                                    let done = prev.max(clamped);
+                                    let verifying = total > 0 && done >= total;
+                                    let phase_str = if verifying { "verifying" } else { "downloading" };
+                                    let phase_just_changed =
+                                        verifying && !entered_verify.swap(true, Ordering::Relaxed);
+
+                                    let should_emit = if let Ok(mut t) = last_emit.lock() {
+                                        if phase_just_changed || t.elapsed() >= Duration::from_millis(100) {
+                                            *t = Instant::now();
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = Some(ActiveDownload {
+                                            id: id_bg.clone(),
+                                            done,
+                                            total,
+                                            phase: phase_str.into(),
+                                            status: "downloading".into(),
+                                            seq,
+                                        });
+                                    }
+                                    if should_emit {
+                                        let _ = rt_bg.app.emit(
+                                            "voice:download",
+                                            json!({
+                                                "id": id_bg,
+                                                "done": done,
+                                                "total": total,
+                                                "phase": phase_str,
+                                                "status": "downloading",
+                                                "queued": queued_snapshot(),
+                                                "seq": seq,
+                                            }),
+                                        );
+                                    }
+                                },
+                                &rt_bg.download_cancel,
+                            );
+
+                            match res {
+                                Ok(_) => {
+                                    let rem = queued_snapshot();
+                                    if rem.is_empty() {
+                                        if let Ok(mut d) = rt_bg.active_download.lock() {
+                                            *d = None;
+                                        }
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
                                     let _ = rt_bg.app.emit(
                                         "voice:download",
                                         json!({
                                             "id": id_bg,
-                                            "done": done,
-                                            "total": total,
-                                            "status": "downloading",
+                                            "done": spec_bg.size,
+                                            "total": spec_bg.size,
+                                            "phase": "done",
+                                            "status": "done",
+                                            "queued": rem,
+                                            "seq": seq,
                                         }),
                                     );
+                                    rt_bg.sync_triggers();
+                                }
+                                Err(VoiceError::Cancelled) => {
+                                    if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                        q.clear();
+                                    }
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = None;
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    let _ = rt_bg.app.emit(
+                                        "voice:download",
+                                        json!({
+                                            "id": id_bg,
+                                            "status": "cancelled",
+                                            "queued": [],
+                                            "seq": seq,
+                                        }),
+                                    );
+                                    break;
+                                }
+                                Err(e) => {
+                                    if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                        q.clear();
+                                    }
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = None;
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    let _ = rt_bg.app.emit(
+                                        "voice:download",
+                                        json!({
+                                            "id": id_bg,
+                                            "status": "error",
+                                            "error": e.to_string(),
+                                            "queued": [],
+                                            "seq": seq,
+                                        }),
+                                    );
+                                    break;
                                 }
                             }
-                        },
-                        &rt_bg.download_cancel,
-                    );
-                    if let Ok(mut d) = rt_bg.active_download.lock() {
-                        *d = None;
-                    }
-                    match res {
-                        Ok(_) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({
-                                    "id": id_bg,
-                                    "done": spec.size,
-                                    "total": spec.size,
-                                    "status": "done",
-                                }),
-                            );
-                            rt_bg.sync_triggers();
                         }
-                        Err(VoiceError::Cancelled) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({ "id": id_bg, "status": "cancelled" }),
-                            );
+
+                        if rt_bg.download_cancel.load(Ordering::Relaxed) {
+                            if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                q.clear();
+                            }
                         }
-                        Err(e) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({
-                                    "id": id_bg,
-                                    "status": "error",
-                                    "error": e.to_string(),
-                                }),
-                            );
+                        if let Ok(mut d) = rt_bg.active_download.lock() {
+                            *d = None;
+                        }
+                        rt_bg.download_worker_running.store(false, Ordering::Release);
+                        let has_more = rt_bg
+                            .download_queue
+                            .lock()
+                            .map(|q| !q.is_empty())
+                            .unwrap_or(false);
+                        if !has_more
+                            || rt_bg.download_cancel.load(Ordering::Relaxed)
+                            || rt_bg.download_worker_running.swap(true, Ordering::AcqRel)
+                        {
+                            break;
                         }
                     }
                 });
@@ -1178,7 +1537,26 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         reg.add(
             "voice.cancelDownload",
             Box::new(move |_, _| {
+                if let Ok(mut q) = rt.download_queue.lock() {
+                    q.clear();
+                }
                 rt.download_cancel.store(true, Ordering::Relaxed);
+                if !rt.download_worker_running.load(Ordering::Acquire) {
+                    if let Ok(mut d) = rt.active_download.lock() {
+                        if let Some(prev) = d.take() {
+                            let seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                            let _ = rt.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": prev.id,
+                                    "status": "cancelled",
+                                    "queued": [],
+                                    "seq": seq,
+                                }),
+                            );
+                        }
+                    }
+                }
                 Ok(json!({ "ok": true }))
             }),
         );

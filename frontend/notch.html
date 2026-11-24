@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="notch.css" />
   <link rel="stylesheet" href="carousel.css" />
   <link rel="stylesheet" href="modules.css" />
+  <link rel="stylesheet" href="stylelib.css" />
 </head>
 <body>
   <div id="notch" class="closed">
@@ -36,12 +37,14 @@
         <div></div>
         <div class="tr" id="topRight">
           <span class="bars off" id="topBars" style="display:none"><span></span><span></span><span></span><span></span><span></span></span>
+          <button class="ib" id="btnHide" title="Hide" data-i18n-attrs="title" hidden></button>
           <button class="ib" id="btnCollapse" title="Close" data-i18n-attrs="title"></button>
           <button class="ib" id="btnSettings" title="Settings" data-i18n-attrs="title"></button>
         </div>
         <div class="tc" id="topTitle"></div>
         <div id="headerFloat"></div>
       </div>
+      <div id="openVoice" aria-live="polite"></div>
 
       <div id="stage">
         <div id="view"><div id="track"></div></div>
@@ -168,7 +171,7 @@
     <div id="ctxMenu"></div>
   </div>
   <div id="bubble" aria-hidden="true"></div>
-  <div id="ponyPeek" aria-hidden="true"><canvas id="ponyPeekCanvas" width="76" height="58"></canvas></div>
+  <div id="ponyPeek" aria-hidden="true"><canvas id="ponyPeekCanvas" width="84" height="62"></canvas></div>
   <div id="pill" aria-hidden="true"><div id="dock"></div></div>
   <div id="dockTip" hidden></div>
 
@@ -181,6 +184,7 @@
   <script src="palettes.js"></script>
   <script src="waves.js"></script>
   <script src="notchkit.js"></script>
+  <script src="stylelib.js"></script>
   <script src="pony.js"></script>
   <script src="notch.js"></script>
   <script src="carousel.js"></script>
@@ -204,6 +208,7 @@
   <script src="modules/translate.js"></script>
   <script src="modules/chat.js"></script>
   <script src="modules/github.js"></script>
+  <script src="modules/feed.js"></script>
   <script src="modules/radio.js"></script>
   <script src="modules/bookmarks.js"></script>
   <script src="modules/aiusage.js"></script>

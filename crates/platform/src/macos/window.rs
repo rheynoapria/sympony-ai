@@ -75,6 +75,38 @@ pub unsafe fn set_click_through(ns_window: *mut std::ffi::c_void, through: bool)
     win.setIgnoresMouseEvents(through);
 }
 
+/// The floating Pony chat window: transparent rounded panel, native macOS shadow, focusable,
+/// optionally pinned above normal apps (level 3) across Spaces and fullscreen apps. Main thread.
+///
+/// # Safety
+/// `ns_window` must be a live NSWindow. Null is ignored.
+pub unsafe fn style_floating_chat_window(ns_window: *mut std::ffi::c_void, always_on_top: bool) {
+    let Some(win) = (unsafe { (ns_window as *const NSWindow).as_ref() }) else { return };
+    win.setOpaque(false);
+    win.setBackgroundColor(Some(&objc2_app_kit::NSColor::clearColor()));
+    win.setHasShadow(true);
+    unsafe { set_floating_chat_pin(ns_window, always_on_top) };
+}
+
+/// Switches the floating Pony chat window between pinned floating (level 3, all Spaces)
+/// and standard window level (level 0, active Space). Main thread.
+///
+/// # Safety
+/// `ns_window` must be a live NSWindow. Null is ignored.
+pub unsafe fn set_floating_chat_pin(ns_window: *mut std::ffi::c_void, always_on_top: bool) {
+    let Some(win) = (unsafe { (ns_window as *const NSWindow).as_ref() }) else { return };
+    if always_on_top {
+        win.setLevel(3);
+        win.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        );
+    } else {
+        win.setLevel(0);
+        win.setCollectionBehavior(NSWindowCollectionBehavior::MoveToActiveSpace);
+    }
+}
+
 /// Puts one of Sympony's own windows in front of every app now and gives it the keyboard: a window shown while
 /// another app is active stays behind it otherwise (macOS no longer lets a background app's plain activate through).
 /// Main thread.
@@ -90,3 +122,24 @@ pub unsafe fn bring_front(ns_window: *mut std::ffi::c_void) {
         objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
     }
 }
+
+/// What the app in front does on Sympony's display, for the notch to make way ("full", "max" or "normal"): a Mac's
+/// notch never hides or tucks for another app, so always "normal".
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn foreground_state(_ns_window: *mut std::ffi::c_void) -> &'static str {
+    "normal"
+}
+
+/// Out of sight for a fullscreen app, which a Mac's notch never is: nothing to do.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn set_cloaked(_ns_window: *mut std::ffi::c_void, _cloaked: bool) {}
+
+/// Keep windows below Sympony is Windows' (a Mac's menu bar already keeps windows below the notch): nothing to do.
+///
+/// # Safety
+/// Nothing is dereferenced.
+pub unsafe fn reserve_top(_ns_window: *mut std::ffi::c_void, _height: f64) {}

@@ -5,10 +5,10 @@ import { GENERAL_ROWS, IDLE_SLOTS } from "./general.rows.ts";
 import { MEDIA_ROWS } from "./media.rows.ts";
 import { searchAll } from "./registry.ts";
 
-test("General drops the Look picker and adds Notch form after Height", () => {
+test("General exposes Notch style, Notch color, and Notch form after Height", () => {
   const ks = GENERAL_ROWS.filter((r) => "k" in r).map((r) => (r as { k: string }).k);
-  assert.ok(!ks.includes("notchLook"));
-  assert.ok(!GENERAL_ROWS.some((r) => r.t === "custom" && r.id === "notchColor"));
+  assert.ok(ks.includes("notchLook"));
+  assert.ok(GENERAL_ROWS.some((r) => r.t === "custom" && r.id === "notchColor"));
   assert.equal(ks[ks.indexOf("notchHeight") + 1], "shellForm");
 });
 
@@ -25,6 +25,11 @@ test("Battery stays a closed-slot choice on every OS", () => {
 });
 
 test("search finds the new rows", () => {
+  assert.ok(
+    searchAll("notch style", "macos").some(
+      (h) => h.section === "general" && h.label === "Notch style"
+    )
+  );
   assert.ok(
     searchAll("notch form", "macos").some(
       (h) => h.section === "general" && h.label === "Notch form"

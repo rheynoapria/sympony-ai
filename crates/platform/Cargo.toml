@@ -4,20 +4,39 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notifications) for Sympony"
+description = "OS platform bindings (macOS Accessibility, AppKit, Audio, Notifications; Windows in progress) for Sympony"
 
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
-libc = "0.2"
 cpal = "0.15"
-objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_WiFi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_Storage_Xps", "Win32_System_Threading", "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Power", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_RemoteDesktop", "Win32_System_Shutdown", "Win32_System_SystemInformation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
+# (what windows-sys leaves out: the COM interfaces of the Explorer file dialog, UI Automation, Core Audio and WMI;
+# WinRT's media controls, the radio's player, the calendars, radio switches, notification mode, toasts, location and time zone)
+windows = { version = "0.62", features = ["ApplicationModel_Appointments", "Data_Xml_Dom", "Devices_Bluetooth", "Devices_Enumeration", "Devices_Geolocation", "Devices_Radios", "Foundation", "Foundation_Collections", "Globalization", "Graphics_Imaging", "Win32_Graphics_Gdi", "Media_Control", "Media_Core", "Media_Ocr", "Media_Playback", "Storage_Streams", "Win32_Devices_FunctionDiscovery", "Win32_Foundation", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_Media_KernelStreaming", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Wmi", "Win32_Storage_EnhancedStorage", "Win32_UI_Accessibility", "Win32_UI_Notifications", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Security_Authorization_AppCapabilityAccess", "UI", "UI_Notifications"] }
+
+# (WinRT's collections, which `windows` uses but doesn't re-export: a list of properties to ask for)
+windows-collections = "0.3"
+# (the place's name and time zone for a position, as `services` fetches the rest)
+ureq = "3"
+# (icons and clipboard pictures to and from PNG; Tauri brings the same one)
+png = "0.18"
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+# (examples/media_source.rs: a silent player in the system media controls, to try Music with)
+windows = { version = "0.62", features = ["Foundation_Collections", "Media_Core", "Media_Playback"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 rusqlite = "0.37"
+objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKCalendar", "EKObject", "EKTypes", "EKParticipant", "block2", "objc2-app-kit"] }
 security-framework = "3"
 objc2 = "0.6"
 objc2-core-location = { version = "0.3", features = ["CLLocationManager", "CLLocation", "CLGeocoder", "CLPlacemark", "block2"] }

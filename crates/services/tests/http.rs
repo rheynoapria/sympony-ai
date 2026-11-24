@@ -1,6 +1,28 @@
 use services::http;
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
+
+/// One whole request (headers, then Content-Length bytes of body). A test server that closes with part of a request
+/// unread resets the connection, and Windows hands the client that reset before the answer it was sent.
+fn read_request(s: &mut TcpStream) -> String {
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let (mut buf, mut chunk) = (Vec::new(), [0u8; 4096]);
+    loop {
+        let n = s.read(&mut chunk).unwrap_or(0);
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
+            let len = head.lines().find_map(|l| l.strip_prefix("content-length:")).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
+            if buf.len() >= end + 4 + len {
+                break;
+            }
+        }
+    }
+    String::from_utf8_lossy(&buf).into_owned()
+}
 
 /// One request, one fixed answer.
 fn serve(status: &str, body: &str) -> String {
@@ -9,8 +31,7 @@ fn serve(status: &str, body: &str) -> String {
     let resp = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
     std::thread::spawn(move || {
         let (mut s, _) = l.accept().unwrap();
-        let mut buf = [0u8; 4096];
-        let _ = s.read(&mut buf);
+        read_request(&mut s);
         s.write_all(resp.as_bytes()).unwrap();
     });
     url
@@ -155,17 +176,13 @@ fn auth_follows_same_origin_307_mcp_redirect_and_blocks_downgrade() {
     let handle = std::thread::spawn(move || {
         // Request 1: POST /mcp -> 307 /mcp/
         let (mut s1, _) = listener.accept().unwrap();
-        let mut buf1 = [0u8; 4096];
-        let n1 = s1.read(&mut buf1).unwrap_or(0);
-        let req1 = String::from_utf8_lossy(&buf1[..n1]);
+        let req1 = read_request(&mut s1);
         assert!(req1.starts_with("POST /mcp HTTP/"), "{req1}");
         s1.write_all(b"HTTP/1.1 307 Temporary Redirect\r\nLocation: /mcp/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
 
         // Request 2: POST /mcp/ must preserve Authorization header and JSON body
         let (mut s2, _) = listener.accept().unwrap();
-        let mut buf2 = [0u8; 4096];
-        let n2 = s2.read(&mut buf2).unwrap_or(0);
-        let req2 = String::from_utf8_lossy(&buf2[..n2]);
+        let req2 = read_request(&mut s2);
         assert!(req2.starts_with("POST /mcp/ HTTP/"), "{req2}");
         assert!(req2.contains("Authorization: Bearer mcp-secret") || req2.contains("authorization: Bearer mcp-secret"), "{req2}");
         let body = r#"{"ok":true}"#;
@@ -261,9 +278,22 @@ fn get_json_with_follows_same_origin_redirect_and_post_mcp_does_not_repost_302()
     let addr2 = l2.local_addr().unwrap();
     let h2 = std::thread::spawn(move || {
         let (mut s, _) = l2.accept().unwrap();
+        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(2)));
         let mut b = [0u8; 4096];
-        let _ = s.read(&mut b);
+        let mut got = 0;
+        // Read headers + body before closing so Windows does not send TCP RST (10053) on unread bytes.
+        while got < b.len() {
+            let n = s.read(&mut b[got..]).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            got += n;
+            if String::from_utf8_lossy(&b[..got]).contains("\"jsonrpc\"") {
+                break;
+            }
+        }
         s.write_all(b"HTTP/1.1 302 Found\r\nLocation: /mcp/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        let _ = s.shutdown(std::net::Shutdown::Write);
     });
     let (st2, _, _) = http::post_mcp(&format!("http://{addr2}/mcp"), &[], &serde_json::json!({"jsonrpc": "2.0"}), 5).unwrap();
     h2.join().unwrap();

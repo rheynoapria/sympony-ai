@@ -1,5 +1,5 @@
 //! macOS permissions service (`perm.status`, `perm.request`) for first-run onboarding (spec §5.4).
-use platform::macos::{automation, banners, calendar, location, notifications, voice};
+use platform::os::{automation, banners, calendar, location, notifications, voice};
 use serde_json::{json, Value};
 use services::onboarding::{action, Action, Perm};
 use tauri::AppHandle;
@@ -7,9 +7,23 @@ use tauri::AppHandle;
 const MUSIC_BUNDLE: &str = "com.apple.Music";
 const SPOTIFY_BUNDLE: &str = "com.spotify.client";
 
+#[cfg(target_os = "macos")]
 fn open_pane(pane: &str) {
     let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
     let _ = std::process::Command::new("/usr/bin/open").arg(url).status();
+}
+
+/// Windows' own page for the permission (Settings → Privacy & security → …); the ones Windows has no switch for open
+/// nothing.
+#[cfg(target_os = "windows")]
+fn open_pane(pane: &str) {
+    let page = match pane {
+        "Privacy_LocationServices" => "ms-settings:privacy-location",
+        "Privacy_Calendars" => "ms-settings:privacy-calendar",
+        "Privacy_Microphone" => "ms-settings:privacy-microphone",
+        _ => return,
+    };
+    platform::os::shell::open(page);
 }
 
 fn full_disk_status() -> &'static str {
@@ -21,6 +35,14 @@ fn full_disk_status() -> &'static str {
 
 fn accessibility_status() -> &'static str {
     if banners::trusted(false) {
+        "granted"
+    } else {
+        "denied"
+    }
+}
+
+fn screen_recording_status() -> &'static str {
+    if platform::ax::screen_access(false) {
         "granted"
     } else {
         "denied"
@@ -52,6 +74,7 @@ pub fn status_value() -> Value {
         },
         "fullDisk": full_disk_status(),
         "accessibility": accessibility_status(),
+        "screenRecording": screen_recording_status(),
         "microphone": voice::mic_status(),
     })
 }
@@ -63,6 +86,7 @@ fn parse_perm(kind: &str) -> Option<Perm> {
         "automation" => Some(Perm::Automation),
         "fulldisk" => Some(Perm::FullDisk),
         "accessibility" => Some(Perm::Accessibility),
+        "screenrecording" | "screen_recording" => Some(Perm::ScreenRecording),
         "microphone" => Some(Perm::Microphone),
         _ => None,
     }
@@ -75,6 +99,7 @@ fn pane_for(perm: Perm) -> &'static str {
         Perm::Automation => "Privacy_Automation",
         Perm::FullDisk => "Privacy_AllFiles",
         Perm::Accessibility => "Privacy_Accessibility",
+        Perm::ScreenRecording => "Privacy_ScreenCapture",
         Perm::Microphone => "Privacy_Microphone",
     }
 }
@@ -90,6 +115,8 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
         if force_pane {
             if perm == Perm::Accessibility {
                 let _ = banners::trusted(true);
+            } else if perm == Perm::ScreenRecording {
+                let _ = platform::ax::screen_access(true);
             }
             open_pane(pane_for(perm));
             return Ok(json!({ "action": "pane" }));
@@ -111,6 +138,7 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
             }
             Perm::FullDisk => (full_disk_status(), vec![]),
             Perm::Accessibility => (accessibility_status(), vec![]),
+            Perm::ScreenRecording => (screen_recording_status(), vec![]),
             Perm::Microphone => (voice::mic_status(), vec![]),
         };
 
@@ -130,13 +158,15 @@ pub fn register(reg: &mut services::Registry, _app: &AppHandle) {
                         });
                     }
                     Perm::Microphone => voice::mic_request(),
-                    Perm::FullDisk | Perm::Accessibility => {}
+                    Perm::FullDisk | Perm::Accessibility | Perm::ScreenRecording => {}
                 }
                 "dialog"
             }
             Action::OpenPane(pane) => {
                 if perm == Perm::Accessibility {
                     let _ = banners::trusted(true);
+                } else if perm == Perm::ScreenRecording {
+                    let _ = platform::ax::screen_access(true);
                 }
                 open_pane(pane);
                 "pane"

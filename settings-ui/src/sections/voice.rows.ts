@@ -8,6 +8,7 @@ export const VOICE_KEYS = [
   "voiceKey",
   "voiceCommandKey",
   "voiceAgentAuto",
+  "voiceAutoUi",
   "voiceLanguage",
   "voiceJargon",
   "voiceUnits",
@@ -25,7 +26,7 @@ export const VOICE_ROWS: readonly Row[] = [
     t: "toggle",
     k: "voiceEnabled",
     label: "Voice dictation",
-    sub: "Speak Indonesian anywhere on your Mac, completely on-device",
+    sub: "Speak Indonesian anywhere on your PC, completely on-device",
     words: "voice suara dikte dictation stt",
   },
   {
@@ -83,6 +84,18 @@ export const VOICE_ROWS: readonly Row[] = [
     label: "Dictation key",
     sub: "Hold for 250 ms to dictate; double-tap for hands-free; press Esc to cancel.",
     words: "option key shortcut trigger hands-free pemicu",
+  },
+  {
+    t: "select",
+    k: "voiceAutoUi",
+    label: "Voice Auto UI",
+    sub: "Control whether voice commands to Pony run in Auto UI mode or follow the chat toggle.",
+    options: [
+      ["follow", "Follow chat"],
+      ["on", "Always on"],
+      ["off", "Always off"],
+    ],
+    words: "auto ui voice command pony automation otomatis suara",
   },
   { t: "h2", text: "Language" },
   {

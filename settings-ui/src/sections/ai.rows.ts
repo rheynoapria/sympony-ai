@@ -103,7 +103,7 @@ export const INTEGRATIONS_ROWS: readonly Row[] = [
     t: "toggle",
     k: "paseoEnabled",
     label: "Show Paseo’s permission requests",
-    sub: "The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this Mac every second, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.",
+    sub: "The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this PC every second, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.",
   },
   { t: "custom", id: "paseoState" },
 ];

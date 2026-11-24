@@ -117,3 +117,48 @@ fn a_big_log_is_read_from_its_end() {
     assert_eq!(read_tail(&p, 256 * 1024).unwrap(), early);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn claude_oauth_decodes_hex_encoded_keychain_output() {
+    let raw = r#"{"claudeAiOauth": {"accessToken": "tok-hex", "expiresAt": 1795060364975, "subscriptionType": "team", "rateLimitTier": "default_claude_max_5x"}}"#;
+    let hex: String = raw.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    let o = claude_oauth(&hex).unwrap();
+    assert_eq!((o.token.as_str(), o.expires_at, o.plan.as_str()), ("tok-hex", 1795060364975, "Team"));
+}
+
+#[test]
+fn claude_keychain_items_includes_hashed_config_dir_and_default() {
+    assert_eq!(claude_keychain_items(None), vec!["Claude Code-credentials"]);
+    let items = claude_keychain_items(Some("/Users/rheynoapria/.claude"));
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0], "Claude Code-credentials-299c9412");
+    assert_eq!(items[1], "Claude Code-credentials");
+}
+
+#[test]
+fn pick_freshest_oauth_prefers_unexpired_over_expired() {
+    let expired = Oauth { token: "old".into(), expires_at: T0 - 1_000, plan: "Team".into() };
+    let fresh = Oauth { token: "new".into(), expires_at: T0 + 3_600_000, plan: "Team".into() };
+    let newer = Oauth { token: "newer".into(), expires_at: T0 + 7_200_000, plan: "Max 5x".into() };
+    assert_eq!(pick_freshest_oauth(Some(expired.clone()), Some(fresh.clone()), T0), Some(fresh.clone()));
+    assert_eq!(pick_freshest_oauth(Some(fresh.clone()), Some(expired.clone()), T0), Some(fresh.clone()));
+    assert_eq!(pick_freshest_oauth(Some(fresh), Some(newer.clone()), T0), Some(newer));
+}
+
+#[test]
+fn claude_cli_rows_parses_usage_command_output() {
+    let out = "\x1b[1mYou are currently using your subscription to power your Claude Code usage\x1b[0m\n\n\
+Current session: 63% used · resets Nov 24 at 7:30pm (Asia/Jakarta)\n\
+Current week (all models): 86% used · resets Nov 25 at 7:59am (Asia/Jakarta)\n\
+Current week (Fable): 0% used · resets Nov 25 at 8am (Asia/Jakarta)\n\n\
+Last 24h · 654 requests · 1 session\n";
+    assert_eq!(
+        claude_cli_rows(out),
+        vec![
+            json!({"kind": "session", "hours": 5, "pct": 63.0}),
+            json!({"kind": "week", "pct": 86.0}),
+            json!({"kind": "week", "pct": 0.0, "model": "Fable"}),
+        ]
+    );
+    assert!(claude_cli_rows("not logged in").is_empty());
+}

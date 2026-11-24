@@ -76,7 +76,7 @@ pub fn start(app: &AppHandle) {
             }
             // come down when idle (an auto-hidden notch)
             let on = s["standbyShow"] == true && s["autoHide"] == true;
-            let idle = platform::macos::system::idle_secs();
+            let idle = platform::os::system::idle_secs();
             let want = on && idle >= s["standbySecs"].as_f64().unwrap_or(5.0).clamp(1.0, 3600.0);
             let next = if want { true } else if idle < 1.5 || !on { false } else { standby };
             if next != standby {

@@ -13,14 +13,24 @@ vulkan = ["transcribe-cpp/vulkan"]
 
 [dependencies]
 dirs.workspace = true
-libc = "0.2"
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
-sherpa-onnx = "2.0"
 transcribe-cpp = "0.4"
 unicode-normalization = "0.1"
 ureq = "3.5"
+
+[target.'cfg(not(windows))'.dependencies]
+sherpa-onnx = "2.0"
+
+# Windows: sherpa-onnx's static libraries are built against the static CRT (/MT) while Rust and transcribe.cpp use
+# the DLL one (/MD), which MSVC won't link together; its DLLs (copied next to the binaries) keep the CRTs apart.
+[target.'cfg(windows)'.dependencies]
+sherpa-onnx = { version = "2.0", default-features = false, features = ["shared"] }
+
+# (voice-eval's peak-memory reading)
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile.workspace = true

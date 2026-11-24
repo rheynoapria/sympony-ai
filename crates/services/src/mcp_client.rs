@@ -50,6 +50,20 @@ fn write_line(stdin: &Mutex<ChildStdin>, v: &Value) -> Result<(), String> {
     writeln!(s, "{v}").and_then(|_| s.flush()).map_err(|_| "The server closed".to_string())
 }
 
+/// What a stdio server keeps of Sympony's own environment (the rest is cleared): where things are and how text reads,
+/// never keys or tokens. Windows programs also need their system's places to start at all (Node and Python fail
+/// without SYSTEMROOT; npx keeps its cache under APPDATA / LOCALAPPDATA).
+fn inherited_env() -> Vec<&'static str> {
+    let mut keys = vec!["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "PATH"];
+    if cfg!(windows) {
+        keys.extend([
+            "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA",
+            "PROGRAMFILES", "PROGRAMFILES(X86)", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+        ]);
+    }
+    keys
+}
+
 impl Client {
     /// Starts or reaches the server, says hello and reads its tools, within `limit`.
     pub fn connect(spec: &Spec, limit: Duration) -> Result<Client, String> {
@@ -59,7 +73,7 @@ impl Client {
                 cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
                 // Clear parent process env so third-party stdio MCP servers never inherit unrelated API keys or tokens.
                 cmd.env_clear();
-                for k in ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "PATH"] {
+                for k in inherited_env() {
                     if let Ok(v) = std::env::var(k) {
                         cmd.env(k, v);
                     }
@@ -331,6 +345,25 @@ pub fn importable(desktop: &Value, code: &Value) -> Vec<Value> {
 mod tests {
     use super::*;
 
+    /// The fake servers' interpreter: Windows names it `python`.
+    fn python() -> String {
+        if cfg!(windows) { "python" } else { "python3" }.into()
+    }
+
+    #[test]
+    fn stdio_servers_inherit_places_not_secrets() {
+        let keys = inherited_env();
+        for k in &keys {
+            let up = k.to_ascii_uppercase();
+            assert!(!["KEY", "TOKEN", "SECRET", "PASS", "AUTH", "CRED"].iter().any(|s| up.contains(s)), "{k} looks like a secret");
+        }
+        // (without these, Windows programs such as node/npx and python don't start)
+        #[cfg(windows)]
+        for k in ["SYSTEMROOT", "TEMP", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "PATHEXT"] {
+            assert!(keys.contains(&k), "{k} missing on Windows");
+        }
+    }
+
     /// A tiny MCP server on stdio (python3), enough for the client's round trips.
     const FAKE: &str = r#"
 import sys, json, time
@@ -347,7 +380,7 @@ for line in sys.stdin:
 "#;
 
     fn fake() -> Client {
-        let spec = Spec::Stdio { command: "python3".into(), args: vec!["-I".into(), "-c".into(), FAKE.into()], env: vec![], path: String::new() };
+        let spec = Spec::Stdio { command: python(), args: vec!["-I".into(), "-c".into(), FAKE.into()], env: vec![], path: String::new() };
         Client::connect(&spec, Duration::from_secs(10)).expect("fake server")
     }
 
@@ -455,7 +488,7 @@ for line in sys.stdin:
     print(json.dumps({"jsonrpc": "2.0", "id": m["id"], "result": r}), flush=True)
 "#;
         let spec = Spec::Stdio {
-            command: "python3".into(),
+            command: python(),
             args: vec!["-I".into(), "-c".into(), script.into()],
             env: vec![("EXPLICIT_MCP_VAR".into(), "allowed-value".into())],
             path: String::new(),

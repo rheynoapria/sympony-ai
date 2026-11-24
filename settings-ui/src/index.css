@@ -246,6 +246,53 @@
   animation: sy-row-flash 1.6s ease-out;
 }
 
+/* Eye-catching dismissible "New" / "Baru" pill for newly shipped modules & settings */
+@keyframes sy-new-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.sy-new-badge {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 16%, #eef2ff) 0%,
+    color-mix(in srgb, #7c3aed 15%, #f5f3ff) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+  color: #26428b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 1px 4px -1px color-mix(in srgb, var(--primary) 26%, transparent);
+  animation: sy-new-pop 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dark .sy-new-badge {
+  background: linear-gradient(
+    135deg,
+    rgba(67, 97, 255, 0.26) 0%,
+    rgba(139, 92, 246, 0.24) 100%
+  );
+  border: 1px solid rgba(129, 140, 248, 0.44);
+  color: #dbe4ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 2px 10px -2px rgba(99, 102, 241, 0.42);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sy-new-badge {
+    animation: none !important;
+  }
+}
+
 /* Knowns UI subtle scrollbar */
 .kn-scroll, .kn-scroll-auto {
   --kn-thumb: color-mix(in oklch, var(--foreground) 18%, transparent);

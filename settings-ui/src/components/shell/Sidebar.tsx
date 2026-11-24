@@ -13,6 +13,11 @@ import {
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/knowns/utils";
 import {
+  groupHasUnseenNew,
+  sectionHasUnseenNew,
+  useWhatsNew,
+} from "@/lib/whatsNew";
+import {
   GROUP_META,
   searchAll,
   sectionsFor,
@@ -22,6 +27,7 @@ import {
   type SectionMeta,
 } from "@/sections/registry";
 import { SectionIcon } from "./icons";
+import { NewBadge } from "./NewBadge";
 
 const NAV_GROUPS: readonly SectionGroup[] = [
   "sympony",
@@ -43,6 +49,7 @@ export interface SidebarProps {
   onSelect: (id: string, opts?: { row?: string; part?: string }) => void;
   theme: Theme;
   onThemeChange: (next: Theme) => void;
+  updateBadge?: "stable" | "beta" | null;
 }
 
 export function Sidebar({
@@ -52,8 +59,11 @@ export function Sidebar({
   onSelect,
   theme,
   onThemeChange,
+  updateBadge,
 }: SidebarProps) {
+  const whatsNewTick = useWhatsNew();
   const isMac = os === "macos";
+  const isBetaBuild = version.includes("-");
   const [cmdOpen, setCmdOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
@@ -109,16 +119,24 @@ export function Sidebar({
   // Root section items shown when search input is empty
   const rootItems: CommandItem[] = useMemo(
     () =>
-      visible.map((sec) => ({
-        id: `sec:${sec.id}`,
-        label: t(sec.title),
-        description: t(sec.subtitle),
-        group: t(GROUP_META[sec.group].label),
-        icon: <SectionIcon name={sec.icon} className="size-4" />,
-        keywords: [sec.id, sec.title, ...(sec.words ?? [])],
-        onSelect: () => onSelect(sec.id),
-      })),
-    [visible, onSelect]
+      visible.map((sec) => {
+        const isNew = sectionHasUnseenNew(sec.id, os);
+        return {
+          id: `sec:${sec.id}`,
+          label: t(sec.title),
+          description: t(sec.subtitle),
+          group: t(GROUP_META[sec.group].label),
+          icon: <SectionIcon name={sec.icon} className="size-4" />,
+          keywords: [
+            sec.id,
+            sec.title,
+            ...(sec.words ?? []),
+            ...(isNew ? ["new", "baru"] : []),
+          ],
+          onSelect: () => onSelect(sec.id),
+        };
+      }),
+    [visible, os, onSelect, whatsNewTick]
   );
 
   // Async/live search loader using searchAll (supports migrated rows, also, SEARCH_WORDS, and Indonesian SYNONYMS)
@@ -160,6 +178,7 @@ export function Sidebar({
 
   const renderItem = (sec: SectionMeta) => {
     const on = sec.id === activeId;
+    const isNew = !on && sectionHasUnseenNew(sec.id, os);
     return (
       <button
         key={sec.id}
@@ -184,6 +203,18 @@ export function Sidebar({
           <SectionIcon name={sec.icon} className="size-4" />
         </span>
         <span className="truncate">{t(sec.title)}</span>
+        {isNew && <NewBadge size="xs" className="ms-auto" />}
+        {sec.id === "about" && updateBadge && (
+          <span
+            aria-label={updateBadge === "beta" ? t("Beta") : t("New Release")}
+            className={cn(
+              "ms-auto size-2 shrink-0 rounded-full",
+              updateBadge === "beta"
+                ? "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.7)]"
+                : "bg-sky-500 shadow-[0_0_6px_rgba(14,165,233,0.7)]"
+            )}
+          />
+        )}
       </button>
     );
   };
@@ -218,9 +249,14 @@ export function Sidebar({
             </div>
             <div
               data-tauri-drag-region
-              className="mt-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
+              className="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium tabular-nums text-muted-foreground"
             >
-              {version ? `v${version}` : "…"}
+              <span>{version ? `v${version}` : "…"}</span>
+              {isBetaBuild && (
+                <span className="rounded bg-amber-500/18 px-1 py-px text-[9.5px] font-semibold tracking-wide text-amber-700 uppercase dark:bg-amber-400/20 dark:text-amber-300">
+                  {t("Beta")}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -252,6 +288,7 @@ export function Sidebar({
             const items = byGroup[g];
             if (!items.length) return null;
             const open = expanded[g];
+            const collapsedHasNew = !open && groupHasUnseenNew(g, os);
             return (
               <div key={g} className={cn(idx > 0 && "mt-3.5")}>
                 <button
@@ -261,13 +298,16 @@ export function Sidebar({
                   className="flex w-full cursor-pointer items-center justify-between gap-1 rounded-[7px] px-2.5 py-1 text-[10.5px] font-medium tracking-[0.04em] text-muted-foreground/80 uppercase transition-colors hover:text-foreground"
                 >
                   <span className="truncate">{t(GROUP_META[g].label)}</span>
-                  <ChevronDown
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3 shrink-0 opacity-70 transition-transform",
-                      !open && "-rotate-90 rtl:rotate-90"
-                    )}
-                  />
+                  <span className="ms-auto inline-flex shrink-0 items-center gap-1.5 normal-case">
+                    {collapsedHasNew && <NewBadge size="xs" />}
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn(
+                        "size-3 shrink-0 opacity-70 transition-transform",
+                        !open && "-rotate-90 rtl:rotate-90"
+                      )}
+                    />
+                  </span>
                 </button>
                 {open && (
                   <div className="mt-0.5 flex flex-col gap-0.5">

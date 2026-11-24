@@ -53,7 +53,7 @@ pub fn start(app: &AppHandle) {
     // the Mac's calendars: asked once (macOS keeps the answer), on a thread of its own so the prompt holds up nothing
     let a = app.clone();
     std::thread::spawn(move || {
-        if a.state::<App>().settings.get()["calendarEnabled"] != false && platform::macos::calendar::access() {
+        if a.state::<App>().settings.get()["calendarEnabled"] != false && platform::os::calendar::access() {
             kick(&a, false);
         }
     });
@@ -88,24 +88,32 @@ fn run(app: AppHandle, rx: Receiver<bool>) {
         }
         let now = chrono::Utc::now().timestamp_millis();
         let (from, to, tz) = (now - 35 * DAY, now + 120 * DAY, local_tz());
+        if on && !first {
+            crate::gcal::sync_if_due(&app, from, to, fetch_now);
+        }
         let mut events: Vec<Value> = vec![];
         let mut mac_n = 0;
+        let mut gcal_n = 0;
         if on {
+            let gcal = crate::gcal::cached_events(&app);
+            gcal_n = gcal.len();
             for f in feeds.as_array().into_iter().flatten() {
                 let Some(t) = f["url"].as_str().and_then(|u| texts.get(u)) else { continue };
                 let feed = Feed { url: f["url"].as_str().unwrap_or("").into(), name: f["name"].as_str().unwrap_or("Calendar").into(), color: f["color"].as_str().unwrap_or("").into() };
                 events.extend(parse_ics(t, &feed, from, to, tz));
             }
             events.extend(expand_local(&s["localEvents"], from, to, tz));
-            let mac = platform::macos::calendar::events(from, to);
+            let mac = platform::os::calendar::events(from, to);
             mac_n = mac.len();
             events.extend(mac);
+            events = services::gcal::filter_duplicates_against_gcal(events, &gcal);
+            events.extend(gcal);
             events.sort_by_key(|e| e["start"].as_i64());
         }
         let v = json!({"events": events, "errors": errors});
         let changed = *app.state::<Calendar>().last.lock().unwrap() != v;
         if changed {
-            app.state::<App>().log.line(&format!("calendar: {} events ({mac_n} from the Mac's calendars, access {:?})", events_n(&v), platform::macos::calendar::status_name()));
+            app.state::<App>().log.line(&format!("calendar: {} events ({gcal_n} from Google Calendar, {mac_n} from the OS calendars, access {:?})", events_n(&v), platform::os::calendar::status_name()));
         }
         if changed || resend {
             *app.state::<Calendar>().last.lock().unwrap() = v.clone();

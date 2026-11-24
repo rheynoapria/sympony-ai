@@ -8,10 +8,13 @@ pub mod aiusage;
 pub mod bluetooth;
 pub mod bookmarks;
 pub mod clipboard;
+pub mod colorpick;
 pub mod codemode;
 pub mod exec;
 pub mod eyes;
+pub mod feed;
 pub mod calendar;
+pub mod gcal;
 pub mod github;
 pub mod health;
 pub mod hands;
@@ -104,7 +107,9 @@ pub fn implemented(reg: &Registry) -> Vec<String> {
     v
 }
 
-/// `open_external` opens web, mail and System Settings links only; anything else (files, scripts) is refused.
+/// `open_external` opens web, mail and settings links only (System Settings on a Mac; a page of Windows' Settings,
+/// and its Wi-Fi list, which the Windows frontend links to); anything else (files, scripts, other schemes) is refused.
 pub fn external_url_ok(url: &str) -> bool {
-    ["https://", "http://", "mailto:", "x-apple.systempreferences:"].iter().any(|p| url.starts_with(p) && url.len() > p.len())
+    ["https://", "http://", "mailto:", "x-apple.systempreferences:", "ms-settings:"].iter().any(|p| url.starts_with(p) && url.len() > p.len())
+        || url == "ms-availablenetworks:"
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/knowns/button";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import type { CustomPartProps } from "@/rows/types";
 
@@ -13,10 +14,15 @@ interface ServerModel {
 const field =
   "h-8 rounded-[var(--control-radius)] border border-input bg-background px-2.5 text-[13px] text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/25";
 
+const isLocalUrl = (u: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(\/|$)/i.test(u.trim());
+
 /** Pony's brain on a server of the user's own: its address, their key, a model it offers. */
 export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" | "set">) {
   const url = String(settings.brainUrl || "");
   const hasKey = Boolean(settings.has_brainKey);
+  const local = isLocalUrl(url);
+  const canQuery = Boolean(url && (hasKey || local));
   const [err, setErr] = useState("");
   const [models, setModels] = useState<ServerModel[] | null>(null);
   const [key, setKey] = useState("");
@@ -24,12 +30,12 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
   useEffect(() => {
     setModels(null);
     setErr("");
-    if (!hasKey || !url) return;
+    if (!canQuery) return;
     void (notch.svc("brain", "models") as Promise<{ ok: boolean; models?: ServerModel[]; error?: string }>).then((r) => {
       if (r.ok) setModels(r.models || []);
       else setErr(r.error || "");
     });
-  }, [hasKey, url]);
+  }, [canQuery, url, hasKey]);
 
   return (
     <div className="divide-y divide-border/80">
@@ -39,7 +45,7 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
             key={url}
             type="url"
             defaultValue={url}
-            placeholder="https://…"
+            placeholder="https://… · http://localhost:11434/v1"
             spellCheck={false}
             aria-label={t("Server address")}
             onBlur={(e) => {
@@ -55,7 +61,16 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
       </div>
 
       <div className="py-3" data-k="brainKey">
-        <SettingsRow label={t("API key")} description={hasKey ? t("Saved on this Mac, encrypted") : t("The key your server gave you")}>
+        <SettingsRow
+          label={t("API key")}
+          description={
+            hasKey
+              ? onMac() ? t("Saved on this Mac, encrypted") : t("Saved on this PC, encrypted")
+              : local
+                ? t("Optional for local servers (Ollama, LM Studio)")
+                : t("The key your server gave you")
+          }
+        >
           {hasKey ? (
             <Button size="sm" variant="secondary" onClick={() => void notch.setSecret("brainKey", "")}>
               {t("Remove")}
@@ -66,7 +81,7 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
                 type="password"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder="sk-…"
+                placeholder={local ? t("optional") : "sk-…"}
                 aria-label={t("API key")}
                 className={`${field} w-44`}
               />
@@ -83,7 +98,7 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
         </SettingsRow>
       </div>
 
-      {hasKey && (
+      {canQuery && (
         <div className="pt-3" data-k="brainModel">
           <SettingsRow label={t("Model")} description={t("One of the models your server offers")}>
             <select

@@ -59,7 +59,7 @@ fn tidy(app: &AppHandle) {
 }
 
 /// A hook from an agent: `{agent, event, payload, ppid}` → `{stdout}` (what the hook prints; none: nothing).
-pub fn on_hook(app: &AppHandle, req: &Value, stream: Option<&std::os::unix::net::UnixStream>) -> Value {
+pub fn on_hook(app: &AppHandle, req: &Value, stream: Option<&crate::mcp::UnixStream>) -> Value {
     let s = app.state::<App>().settings.get();
     let (agent, event, payload) = (req["agent"].as_str().unwrap_or(""), req["event"].as_str().unwrap_or(""), &req["payload"]);
     if s["claudeHooks"] != true || (event == "Stop" && s["claudeDone"] == false) {
@@ -108,8 +108,8 @@ fn bring_forward(ppid: i32) {
         if pid <= 1 {
             return;
         }
-        if platform::macos::apps::is_app(pid) {
-            platform::macos::apps::activate_pid(pid);
+        if platform::os::apps::is_app(pid) {
+            platform::os::apps::activate_pid(pid);
             return;
         }
         let out = std::process::Command::new("/bin/ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output();
@@ -247,12 +247,12 @@ pub fn start(app: &AppHandle) {
 }
 
 /// For the socket (mcp.rs): a hook waits here.
-pub fn route(app: &AppHandle, req: &Value, stream: &std::os::unix::net::UnixStream) -> Option<Value> {
+pub fn route(app: &AppHandle, req: &Value, stream: &crate::mcp::UnixStream) -> Option<Value> {
     (req["type"] == "hook").then(|| on_hook(app, req, Some(stream)))
 }
 
 /// Whether the hook's end closed (the bridge sends nothing after its request: a read finds the end, or nothing yet).
-fn gone(s: &std::os::unix::net::UnixStream) -> bool {
+fn gone(s: &crate::mcp::UnixStream) -> bool {
     use std::io::Read;
     if s.set_nonblocking(true).is_err() {
         return false;
@@ -315,11 +315,7 @@ pub(crate) fn paseo_ready() -> bool {
 fn paseo_daemon() -> (bool, Option<std::time::SystemTime>) {
     let home = paseo_home();
     let pid = std::fs::read_to_string(home.join("paseo.pid")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["pid"].as_i64());
-    let alive = pid.and_then(|p| i32::try_from(p).ok()).filter(|&p| p > 0).is_some_and(|p| {
-        // SAFETY: signal 0 only checks process existence without sending a signal.
-        let r = unsafe { libc::kill(p, 0) };
-        r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-    });
+    let alive = pid.and_then(|p| i32::try_from(p).ok()).filter(|&p| p > 0).is_some_and(platform::process::alive);
     (alive, std::fs::metadata(home.join("daemon.log")).and_then(|m| m.modified()).ok())
 }
 

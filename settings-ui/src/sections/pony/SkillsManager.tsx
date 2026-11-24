@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/knowns/button";
 import { Switch } from "@/components/ui/knowns/switch";
 import { Tooltip } from "@/components/ui/knowns/tooltip";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import type { CustomPartProps } from "@/rows/types";
 import { Markdown } from "./Markdown";
@@ -624,7 +625,7 @@ function SkillPane({
         actions={
           <>
             <ActionIcon label={t("Export")} icon={<Download />} onClick={() => void call("exportSkill", skill)} />
-            <ActionIcon label={t("Show in Finder")} icon={<FolderOpen />} onClick={() => void call("revealSkill", skill)} />
+            <ActionIcon label={onMac() ? t("Show in Finder") : t("Show in File Explorer")} icon={<FolderOpen />} onClick={() => void call("revealSkill", skill)} />
             <ConfirmDelete
               label={t("Delete skill")}
               onConfirm={async () => {
@@ -710,7 +711,7 @@ function DirPane({
         meta={role[path] ?? (items.length === 1 ? t("{n} item", { n: items.length }) : t("{n} items", { n: items.length }))}
         actions={
           <>
-            <ActionIcon label={t("Show in Finder")} icon={<FolderOpen />} onClick={() => void call("revealFile", skill, path)} />
+            <ActionIcon label={onMac() ? t("Show in Finder") : t("Show in File Explorer")} icon={<FolderOpen />} onClick={() => void call("revealFile", skill, path)} />
             <ConfirmDelete
               label={t("Delete folder")}
               onConfirm={async () => {
@@ -797,7 +798,7 @@ function FilePane({
         }
         actions={
           <>
-            <ActionIcon label={t("Show in Finder")} icon={<FolderOpen />} onClick={() => void call("revealFile", skill, path)} />
+            <ActionIcon label={onMac() ? t("Show in Finder") : t("Show in File Explorer")} icon={<FolderOpen />} onClick={() => void call("revealFile", skill, path)} />
             <ConfirmDelete
               label={t("Delete file")}
               onConfirm={async () => {
@@ -811,7 +812,7 @@ function FilePane({
       />
       {err ? (
         <p className="text-[12.5px] text-muted-foreground">
-          {err === "not a text file" ? t("This file isn’t text, so it can’t be edited here. Use Show in Finder.") : err}
+          {err === "not a text file" ? (onMac() ? t("This file isn’t text, so it can’t be edited here. Use Show in Finder.") : t("This file isn’t text, so it can’t be edited here. Use Show in File Explorer.")) : err}
         </p>
       ) : text === null ? null : (
         <div className="flex min-h-0 flex-1 flex-col gap-2">

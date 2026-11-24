@@ -1,0 +1,135 @@
+//! Sympony over other apps' windows (on Windows; a Mac's notch never makes way, its `foreground_state` is always
+//! "normal", so nothing here moves there):
+//! - the app in front fullscreen on Sympony's display sends it up out of sight (Settings → General → Hide when an app
+//!   is fullscreen): the frontend slides it away (`notch:leaving`), then the window is cloaked (`notch:visible`): out
+//!   of sight and of the mouse's way, while Tauri keeps it as shown (`platform::os::window::set_cloaked` says why);
+//! - a HUD meanwhile brings it in for its moment (Settings → HUD → Show over fullscreen apps, `notch_hud`): the
+//!   closed notch shows that HUD alone (`notch:hudOnly`), nothing opens it and clicks go through to the app;
+//! - the app in front being fullscreen is told to the frontend (`shell:fg`), which then draws nothing;
+//! - Settings → General → Keep windows below Sympony reserves a strip as tall as the notch across the top of its
+//!   display, so maximised windows start below it (`platform::os::window::reserve_top`); given back on quit.
+use crate::commands::App;
+use crate::notch::LABEL;
+use serde_json::json;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager};
+
+/// Where Sympony is: in its place, out of sight for a fullscreen app, or in over it for a HUD.
+const SHOWN: u8 = 0;
+const OUT: u8 = 1;
+const HUD: u8 = 2;
+static PLACE: AtomicU8 = AtomicU8::new(SHOWN);
+
+/// When the HUD's moment ends.
+static HUD_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+/// Wakes the watch at once (a HUD asked to come in).
+static WAKE: OnceLock<Mutex<Sender<()>>> = OnceLock::new();
+
+/// How long the frontend's slide away takes (notch.js `leaveTo`), before the window is hidden.
+const SLIDE_AWAY: Duration = Duration::from_millis(260);
+
+/// Gives the strip's space back (Sympony quitting).
+pub fn release() {
+    // SAFETY: no window is touched when giving it back
+    unsafe { platform::os::window::reserve_top(std::ptr::null_mut(), 0.0) };
+}
+
+/// Out of sight, or in only for a HUD: no hover, nothing opens it.
+pub fn away() -> bool {
+    PLACE.load(Ordering::Relaxed) != SHOWN
+}
+
+/// A HUD wants to show for `ms` while Sympony is out of sight.
+pub fn hud(app: &AppHandle, ms: f64) {
+    let s = app.state::<App>().settings.get();
+    if !away() || s["hudOverFullscreen"] == false {
+        return;
+    }
+    let until = Instant::now() + Duration::from_millis(ms.clamp(300.0, 10_000.0) as u64);
+    *HUD_UNTIL.lock().unwrap() = Some(until);
+    if let Some(w) = WAKE.get() {
+        let _ = w.lock().unwrap().send(());
+    }
+}
+
+pub fn start(app: &AppHandle) {
+    // (a Mac's notch never makes way: nothing to watch there)
+    if cfg!(target_os = "macos") {
+        return;
+    }
+    let (tx, rx) = channel();
+    let _ = WAKE.set(Mutex::new(tx));
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last = "";
+        loop {
+            let _ = rx.recv_timeout(Duration::from_millis(250));
+            let Some(w) = app.get_webview_window(LABEL) else { continue };
+            let Some(handle) = crate::native::window(&w) else { continue };
+            // SAFETY: the notch window's own handle, alive while `w` is
+            let front = unsafe { platform::os::window::foreground_state(handle) };
+            // ("max" would tuck the notch away over every maximised window: it's sent as "normal", so the notch stays
+            // as it is; Keep windows below Sympony is the way to keep it off their tabs and title bars)
+            let front = if front == "max" { "normal" } else { front };
+            if front != last {
+                last = front;
+                let _ = app.emit_to(LABEL, "shell:fg", json!({ "state": front }));
+            }
+            let s = app.state::<App>().settings.get();
+            // (the strip: only under a notch on the top edge, and not while it auto-hides)
+            let reserve = s["reserveTop"] == true && s["autoHide"] != true && s["shellForm"].as_str().unwrap_or("notch") == "notch";
+            let height = s["notchHeight"].as_f64().unwrap_or(32.0) + s["notchTopGap"].as_f64().unwrap_or(0.0);
+            // SAFETY: as above
+            unsafe { platform::os::window::reserve_top(handle, if reserve { height } else { 0.0 }) };
+            let hide = front == "full" && s["hideInFullscreen"] != false && s["shellForm"] != "drawer";
+            let hud = HUD_UNTIL.lock().unwrap().is_some_and(|t| Instant::now() < t);
+            match (PLACE.load(Ordering::Relaxed), hide, hud) {
+                (SHOWN, true, _) => go_away(&app, handle, false),
+                (OUT, false, _) => come_in(&app, handle, false),
+                (OUT, true, true) => come_in(&app, handle, true),
+                (HUD, true, false) => go_away(&app, handle, true),
+                (HUD, false, _) => {
+                    PLACE.store(SHOWN, Ordering::Relaxed);
+                    let _ = app.emit_to(LABEL, "notch:hudOnly", false);
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
+/// Slides it away, then cloaks the window (unless it was asked back meanwhile).
+fn go_away(app: &AppHandle, handle: *mut std::ffi::c_void, from_hud: bool) {
+    PLACE.store(OUT, Ordering::Relaxed);
+    crate::hover::leave(app);
+    let _ = app.emit_to(LABEL, "notch:leaving", true);
+    std::thread::sleep(SLIDE_AWAY);
+    if PLACE.load(Ordering::Relaxed) == OUT {
+        // SAFETY: the notch window's handle, read by the watch just now
+        unsafe { platform::os::window::set_cloaked(handle, true) };
+        let _ = app.emit_to(LABEL, "notch:visible", false);
+    }
+    if from_hud {
+        let _ = app.emit_to(LABEL, "notch:hudOnly", false);
+    }
+}
+
+/// Shows the window without taking the keyboard, above the app, and slides it in: back in its place, or in for a HUD.
+fn come_in(app: &AppHandle, handle: *mut std::ffi::c_void, for_hud: bool) {
+    PLACE.store(if for_hud { HUD } else { SHOWN }, Ordering::Relaxed);
+    let handle = handle as usize;
+    let _ = app.run_on_main_thread(move || {
+        // SAFETY: the notch window's handle, read just now; level 25: above everything (it was never hidden: only
+        // cloaked, so nothing to show)
+        unsafe {
+            platform::os::window::set_cloaked(handle as *mut std::ffi::c_void, false);
+            platform::os::window::set_window_level(handle as *mut std::ffi::c_void, 25, None);
+        }
+    });
+    let _ = app.emit_to(LABEL, "notch:hudOnly", for_hud);
+    let _ = app.emit_to(LABEL, "notch:visible", true);
+    let _ = app.emit_to(LABEL, "notch:leaving", false);
+}

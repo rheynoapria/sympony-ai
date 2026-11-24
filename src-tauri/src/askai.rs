@@ -221,14 +221,14 @@ fn type_and_follow(app: &AppHandle, id: &str, site: &'static Site, pid: i32, win
             moved = Instant::now();
             if asked {
                 asked = false;
-                let _ = app.emit_to(crate::notch::LABEL, "pony:aiPeeked", json!({"id": id}));
+                let _ = app.emit_to(crate::floating_chat::chat_target(app), "pony:aiPeeked", json!({"id": id}));
             }
         }
         // (a window hidden behind others isn't drawn by its browser, so the answer stands still: the chat offers to
         // show it for a moment rather than pulling it forward while the user works)
         if !asked && moved.elapsed() > PEEK_AFTER && !ax::is_front(pid) {
             asked = true;
-            let _ = app.emit_to(crate::notch::LABEL, "pony:aiPeek", json!({"id": id, "name": site.name}));
+            let _ = app.emit_to(crate::floating_chat::chat_target(app), "pony:aiPeek", json!({"id": id, "name": site.name}));
         }
         if f.look(writing, &text, sent.elapsed().as_secs_f32()) {
             return Ok(text);
@@ -287,7 +287,7 @@ fn finish(app: &AppHandle, id: &str, r: Result<String, String>) {
         Err(e) => (true, e),
     };
     app.state::<App>().log.line(&format!("ask ai: {name} {}", if failed { "failed" } else { "answered" }));
-    let _ = app.emit_to(crate::notch::LABEL, "pony:agentDone", json!({"id": id, "project": name, "ai": true, "failed": failed, "text": text.chars().take(6000).collect::<String>()}));
+    let _ = app.emit_to(crate::floating_chat::chat_target(app), "pony:agentDone", json!({"id": id, "project": name, "ai": true, "failed": failed, "text": text.chars().take(6000).collect::<String>()}));
 }
 
 /// The bridge's tools on an ask_ai job.

@@ -46,6 +46,24 @@
     return Math.max(0, Math.min(1, (now - f) / (isha - f)));
   }
 
+  // Piecewise-linear progress mapped to the 5 evenly spaced timeline dots (0%, 25%, 50%, 75%, 100%)
+  // so the filled rail & "now" tick always align accurately with the active prayer dot.
+  function timelineProgress(day, keys, now) {
+    if (!keys.length) return 0;
+    if (keys.length === 1) return now >= day[keys[0]] ? 1 : 0;
+    const times = keys.map((k) => day[k]);
+    if (now <= times[0]) return 0;
+    if (now >= times[times.length - 1]) return 1;
+    const n = times.length - 1;
+    for (let i = 0; i < n; i++) {
+      if (now >= times[i] && now <= times[i + 1]) {
+        const span = Math.max(1, times[i + 1] - times[i]);
+        return (i + (now - times[i]) / span) / n;
+      }
+    }
+    return 0;
+  }
+
   function prayerPos(day, k) {
     const f = day.fajr; const isha = day.isha;
     const fallback = { fajr: 0.04, dhuhr: 0.47, asr: 0.66, maghrib: 0.86, isha: 0.96 };
@@ -58,6 +76,11 @@
     const nextFajr = tomorrow && tomorrow.fajr ? tomorrow.fajr : (day.fajr ? day.fajr + 86400000 : null);
     if (!nextFajr || nextFajr <= day.maghrib) return null;
     return day.maghrib + Math.round((nextFajr - day.maghrib) / 2);
+  }
+
+  function compassDir(deg) {
+    const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
   }
 
   function render() {
@@ -75,13 +98,101 @@
     const now = Date.now();
     const next = N.nextPrayer();
     const names = p.names || {};
-    const { day, tomorrow } = activeDay(p, now);
+    const { day, tomorrow, showTomorrow } = activeDay(p, now);
     const keys = KEYS.filter((k) => day[k]);
     const listMap = s.prayerList || {};
     const qDeg = qiblaDeg();
     const hijri = hijriDate();
     const mid = midnightOf(day, tomorrow);
+    const style = window.StyleLib ? StyleLib.styleIdFor(s, 'prayer') : 'bento';
+    const cd = next ? clockParts(next.at - now) : { hm: '--:--', sec: '--' };
+    const placeLine = [p.place, p.source].filter(Boolean).join(' · ') || _t('Prayer');
+    const placeShort = (p.place || _t('Prayer')).split(',')[0].trim();
+    const beforeOpts = [[0, _t('Off')], [5, _t('{n} min before', { n: 5 })], [10, _t('{n} min before', { n: 10 })], [15, _t('{n} min before', { n: 15 })], [30, _t('{n} min before', { n: 30 })]];
+    const beforeOptsShort = [[0, _t('Off')], [5, _t('{n}m', { n: 5 })], [10, _t('{n}m', { n: 10 })], [15, _t('{n}m', { n: 15 })], [30, _t('{n}m', { n: 30 })]];
 
+    const bindCommon = (optsList) => {
+      const placeBtn = $('#prtPlace', page);
+      if (placeBtn) placeBtn.onclick = () => api.openSettings('prayer');
+      const beforeBtn = $('#prtBefore', page);
+      if (beforeBtn && N.pick) {
+        N.pick(beforeBtn, { icon: fa('hourglass-half'), options: optsList, value: +(s.prayerBefore || 0), onChange: (v) => api.setSettings({ prayerBefore: v }) });
+      }
+      $$('[data-pbell]', page).forEach((b) => {
+        b.onclick = () => {
+          const k = b.dataset.pbell;
+          const cur = { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true, ...(st.settings.prayerList || {}) };
+          cur[k] = cur[k] === false;
+          api.setSettings({ prayerList: cur });
+        };
+      });
+    };
+
+    if (style === 'timeline') {
+      const nowT = timelineProgress(day, keys, now);
+      const pct = Math.max(0, Math.min(100, nowT * 100));
+      const edgeCls = pct < 10 ? ' edge-l' : pct > 90 ? ' edge-r' : '';
+      const metaParts = [
+        day.imsak ? `${_t('Imsak')} ${N.hm(day.imsak)}` : null,
+        day.sunrise ? `${N.prayerName(names.sunrise || 'Sunrise')} ${N.hm(day.sunrise)}` : null,
+        qDeg != null ? `${_t('Qibla')} ${qDeg}° ${compassDir(qDeg)}` : null,
+      ].filter(Boolean).join(' · ');
+      const whenLbl = showTomorrow ? _t('tomorrow') : _t('today');
+      page.innerHTML = `<div class="prt-tl-wrap sl-pane">`
+        + `<div class="prt-tl-left">`
+        + `<div class="prt-tl-name">${esc(next ? N.prayerName(next.name) : _t('Prayer Times'))}</div>`
+        + `<div class="prt-tl-cd" id="prtLeft" data-mode="plain">${esc(cd.hm)}:${esc(cd.sec)}</div>`
+        + `<div class="prt-tl-at">${esc(next ? N.hm(next.at) : '--:--')} <span>${esc(whenLbl)}</span></div>`
+        + `<button type="button" class="prt-tl-loc" id="prtPlace" title="${esc(_t('Change place'))}">`
+        + `${fa('location-dot')}<span class="t1">${esc(placeShort)}</span><span class="edit-ico">${fa('pen')}</span></button>`
+        + `</div>`
+        + `<div class="prt-tl-right">`
+        + `<div class="prt-tl-meta"><span class="prt-tl-meta-txt">${esc(metaParts || hijri)}</span>`
+        + `<button type="button" id="prtBefore" class="sl-pill" title="${esc(_t('When the closed Sympony starts counting down to a prayer'))}"></button></div>`
+        + `<div class="prt-tl-track">`
+        + `<div class="prt-tl-rail"><div class="prt-tl-fill" style="width:${pct.toFixed(1)}%"></div>`
+        + `<div class="prt-tl-now${edgeCls}" style="left:${pct.toFixed(1)}%"><b>${esc(N.hm(now))}</b></div></div>`
+        + `<div class="prt-tl-dots">`
+        + keys.map((k) => {
+          const isNext = !!(next && next.at === day[k]);
+          const isDone = day[k] <= now && !isNext;
+          const bellOn = listMap[k] !== false;
+          const cls = (isNext ? 'next' : isDone ? 'done' : 'future') + (bellOn ? '' : ' muted');
+          const lbl = N.prayerName(names[k] || k);
+          return `<button type="button" class="prt-tl-pt ${cls}" data-pbell="${k}" title="${esc(lbl)} · ${esc(bellOn ? _t('Reminder on') : _t('Reminder off'))}">`
+            + `<span class="prt-tl-dot"></span><span class="p-lbl">${esc(lbl)}</span><span class="p-tm">${esc(N.hm(day[k]))}</span></button>`;
+        }).join('')
+        + `</div></div></div></div>`;
+      bindCommon(beforeOpts);
+      return;
+    }
+
+    if (style === 'focus') {
+      const topMeta = [qDeg != null ? `${_t('Qibla')} ${qDeg}° ${compassDir(qDeg)}` : null, hijri || null].filter(Boolean).join(' · ');
+      page.innerHTML = `<div class="prt-fc-wrap sl-pane">`
+        + `<div class="prt-fc-top">`
+        + `<button type="button" class="hd" id="prtPlace" style="cursor:pointer">${N.ic('moon', 'width:12px;height:12px;color:#4ade80')}<span>${esc(placeShort)}</span></button>`
+        + `<div class="row" style="gap:8px;flex:none"><span class="sub" style="font-size:10.5px">${esc(topMeta)}</span>`
+        + `<button type="button" id="prtBefore" class="sl-pill" style="height:20px;font-size:10px" title="${esc(_t('When the closed Sympony starts counting down to a prayer'))}"></button></div></div>`
+        + `<div class="prt-fc-hero">`
+        + `<span style="font-size:16px;font-weight:700;color:var(--text)">${esc(next ? N.prayerName(next.name) : _t('Prayer Times'))}</span>`
+        + `<div class="prt-fc-big" id="prtLeft" data-mode="plain">${esc(cd.hm)}:${esc(cd.sec)}</div>`
+        + `<span class="sub n" style="font-size:13px;font-weight:600">${esc(next ? N.hm(next.at) : '')}</span></div>`
+        + `<div class="prt-fc-strip">`
+        + keys.map((k) => {
+          const isNext = !!(next && next.at === day[k]);
+          const isDone = day[k] <= now && !isNext;
+          const bellOn = listMap[k] !== false;
+          const lbl = N.prayerName(names[k] || k);
+          return `<button type="button" class="prt-fc-chip${isNext ? ' next' : isDone ? ' done' : ''}" data-pbell="${k}" style="opacity:${!bellOn && !isNext ? 0.4 : ''}" title="${esc(bellOn ? _t('Reminder on') : _t('Reminder off'))}">`
+            + `<span class="t1" style="font-weight:600">${esc(lbl)}</span><b class="n">${esc(N.hm(day[k]))}</b></button>`;
+        }).join('')
+        + `</div></div>`;
+      bindCommon(beforeOptsShort);
+      return;
+    }
+
+    // Default Style 1: Bento Sun-Arc
     // Sun-path SVG (matching modules.html)
     const W = 290; const H = 78;
     const nowT = sunProgress(day, now);
@@ -95,9 +206,6 @@
       return pts.join(' ');
     };
     const [sx, sy] = at(nowT);
-    const cd = next ? clockParts(next.at - now) : { hm: '--:--', sec: '--' };
-    const placeLine = [p.place, p.source].filter(Boolean).join(' · ') || _t('Prayer');
-    const beforeOpts = [[0, _t('Off')], [5, _t('{n}m', { n: 5 })], [10, _t('{n}m', { n: 10 })], [15, _t('{n}m', { n: 15 })], [30, _t('{n}m', { n: 30 })]];
 
     const extras = [
       day.imsak ? [_t('Imsak'), N.hm(day.imsak)] : null,
@@ -105,9 +213,6 @@
       mid ? [_t('Midnight|short'), N.hm(mid)] : null,
     ].filter(Boolean);
 
-    // Compute collision-free arc label positions: baseline by default; if a label would sit within
-    // width + 6px of its left baseline neighbour (or squeeze the right-aligned last label), place it
-    // ABOVE its dot (y - 10) instead; the last prayer's label is right-aligned to stay inside W.
     const estW = (txt) => Math.ceil(String(txt || '').length * 5.6 + 2);
     const ptsMeta = keys.map((k, idx) => {
       const t = prayerPos(day, k);
@@ -141,13 +246,10 @@
       const cur = ptsMeta[i];
       const nextPt = ptsMeta[i + 1];
       const hitsLeft = cur.left < lastBaseRight + 6;
-      // If this penultimate label would collide with the right-aligned last label on the baseline,
-      // lift this one above its dot so the last prayer stays cleanly on the baseline (never on a dot).
       const squeezesLast = !cur.isLast && nextPt && nextPt.isLast && (cur.right + 6 > nextPt.left);
       if (hitsLeft || squeezesLast) {
         cur.above = true;
         cur.ly = Math.max(10, cur.y - 10);
-        // Right-align labels near the right edge so they stay inside W and clear of the dot below
         if (cur.x + cur.w / 2 > W - 2) {
           cur.anchor = 'end';
           cur.lx = Math.min(W - 2, cur.x + 6);
@@ -158,11 +260,11 @@
     }
 
     page.innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,1.18fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
-      + `<div class="c" style="padding:12px 14px">`
-      + `<div class="row" style="justify-content:space-between;gap:6px">`
+      + `<div class="c" style="padding:10px 14px;min-height:0">`
+      + `<div class="row" style="justify-content:space-between;gap:6px;flex:none">`
       + `<button type="button" class="hd" id="prtPlace" title="${esc(_t('Change place'))}" style="color:var(--dim);cursor:pointer">${N.ic('moon', 'width:12px;height:12px;color:#4ade80')}<span>${esc(placeLine)}</span></button>`
       + `<div class="row" style="gap:6px;flex:none"><span class="sub" style="font-size:10px">${esc(hijri)}</span><button type="button" id="prtBefore" class="pill" style="background:var(--pill);color:var(--dim);cursor:pointer;height:18px" title="${esc(_t('When the closed Sympony starts counting down to a prayer'))}"></button></div></div>`
-      + `<svg viewBox="0 0 ${W} ${H + 14}" style="width:100%;height:${H + 14}px;margin-top:2px;overflow:visible">`
+      + `<svg viewBox="0 0 ${W} ${H + 14}" class="prt-bento-svg" preserveAspectRatio="xMidYMid meet">`
       + `<line x1="4" y1="${H - 6}" x2="${W - 4}" y2="${H - 6}" stroke="#24242c" stroke-width="1.5"/>`
       + `<polyline points="${arc(0, 1)}" fill="none" stroke="#24242c" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>`
       + `<polyline points="${arc(0, nowT)}" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>`
@@ -175,46 +277,33 @@
       }).join('')
       + `<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="9" fill="#fbbf24"/><circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="14" fill="none" stroke="#fbbf2455" stroke-width="2"/>`
       + `</svg>`
-      + `<div class="row" style="margin-top:auto;align-items:flex-end;gap:12px">`
+      + `<div class="row" style="margin-top:auto;align-items:flex-end;gap:12px;flex:none">`
       + `<div style="flex:1;min-width:0"><div class="sub t1" style="font-size:11px">${next ? `${esc(_t('Until'))} <b style="color:#fff">${esc(N.prayerName(next.name))}</b> · ${esc(N.hm(next.at))}` : esc(_t('Prayer Times'))}</div>`
-      + `<div class="big" id="prtLeft" style="font-size:30px;color:#4ade80;margin-top:2px">${esc(cd.hm)}<span style="font-size:18px;color:#4ade8099">:${esc(cd.sec)}</span></div></div>`
-      + (qDeg != null ? `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:none"><svg viewBox="0 0 48 48" style="width:40px;height:40px"><circle cx="24" cy="24" r="22" fill="none" stroke="#24242c" stroke-width="2"/>`
+      + `<div class="big prt-bento-cd" id="prtLeft">${esc(cd.hm)}<span style="font-size:0.6em;color:#4ade8099">:${esc(cd.sec)}</span></div></div>`
+      + (qDeg != null ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;flex:none"><svg viewBox="0 0 48 48" class="prt-bento-qibla"><circle cx="24" cy="24" r="22" fill="none" stroke="#24242c" stroke-width="2"/>`
         + [0, 90, 180, 270].map((d) => `<line x1="24" y1="3" x2="24" y2="7" stroke="#55555e" stroke-width="2" transform="rotate(${d} 24 24)"/>`).join('')
         + `<g transform="rotate(${qDeg} 24 24)"><path d="M24 6 L28 24 L24 21 L20 24 Z" fill="#4ade80"/><circle cx="24" cy="24" r="3" fill="#fff"/></g></svg>`
-        + `<span style="font-size:9px;color:var(--mute);font-weight:700">${esc(_t('QIBLA'))} ${qDeg}°</span></div>` : '')
+        + `<span style="font-size:8.5px;color:var(--mute);font-weight:700">${esc(_t('QIBLA'))} ${qDeg}°</span></div>` : '')
       + `</div></div>`
-      + `<div style="display:flex;flex-direction:column;gap:6px;min-height:0">`
-      + `<div class="c" style="padding:6px;gap:1px;flex:1;justify-content:space-between">`
+      + `<div style="display:flex;flex-direction:column;gap:5px;min-height:0">`
+      + `<div class="c sc-y" style="padding:4px 6px;gap:1px;flex:1;min-height:0;justify-content:space-between">`
       + keys.map((k) => {
         const isNext = !!(next && next.at === day[k]);
         const isDone = day[k] <= now && !isNext;
         const bellOn = listMap[k] !== false;
         const lbl = N.prayerName(names[k] || k);
-        return `<div class="row" style="gap:10px;padding:3px 8px;border-radius:10px;${isNext ? 'background:rgba(74,222,128,0.13)' : ''};opacity:${isDone ? 0.52 : 1}">`
-          + `<span style="width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:${isNext ? '#4ade80' : '#1d1d24'};color:${isNext ? '#000' : isDone ? '#4ade80' : 'var(--dim)'}">${N.ic(KEY_ICONS[k] || 'moon', 'width:12px;height:12px')}</span>`
-          + `<span style="flex:1;font-size:13px;font-weight:${isNext ? 700 : 500};color:${isNext ? '#4ade80' : '#fff'}">${esc(lbl)}</span>`
+        return `<div class="row prt-bento-row" style="${isNext ? 'background:rgba(74,222,128,0.13)' : ''};opacity:${isDone ? 0.52 : 1}">`
+          + `<span class="prt-bento-ico" style="background:${isNext ? '#4ade80' : '#1d1d24'};color:${isNext ? '#000' : isDone ? '#4ade80' : 'var(--dim)'}">${N.ic(KEY_ICONS[k] || 'moon', 'width:11px;height:11px')}</span>`
+          + `<span class="prt-bento-lbl t1" style="font-weight:${isNext ? 700 : 500};color:${isNext ? '#4ade80' : '#fff'}">${esc(lbl)}</span>`
           + `${isDone ? '<span style="font-size:10px;color:#4ade80;font-weight:700">✓</span>' : ''}`
-          + `<b class="n" style="font-size:14px;color:${isNext ? '#4ade80' : '#fff'}">${esc(N.hm(day[k]))}</b>`
-          + `<button type="button" data-pbell="${k}" title="${esc(bellOn ? _t('Reminder on') : _t('Reminder off'))}" style="color:${!bellOn ? 'var(--mute)' : isNext ? '#4ade80' : 'var(--dim)'};opacity:${bellOn ? 1 : 0.4};cursor:pointer">${N.ic('bell', 'width:12px;height:12px')}</button></div>`;
+          + `<b class="n prt-bento-tm" style="color:${isNext ? '#4ade80' : '#fff'}">${esc(N.hm(day[k]))}</b>`
+          + `<button type="button" data-pbell="${k}" title="${esc(bellOn ? _t('Reminder on') : _t('Reminder off'))}" style="color:${!bellOn ? 'var(--mute)' : isNext ? '#4ade80' : 'var(--dim)'};opacity:${bellOn ? 1 : 0.4};cursor:pointer">${N.ic('bell', 'width:11px;height:11px')}</button></div>`;
       }).join('')
       + `</div>`
-      + (extras.length ? `<div class="row" style="gap:5px;min-width:0">${extras.map(([lbl, tm]) => `<div class="row" style="flex:1;min-width:0;justify-content:space-between;gap:4px;padding:5px 7px;border-radius:10px;background:var(--tile);white-space:nowrap"><span class="t1" style="font-size:9.5px;color:var(--mute);font-weight:600">${esc(lbl)}</span><b class="n" style="font-size:11px;flex:none">${esc(tm)}</b></div>`).join('')}</div>` : '')
+      + (extras.length ? `<div class="row" style="gap:5px;min-width:0;flex:none">${extras.map(([lbl, tm]) => `<div class="row prt-bento-extra"><span class="t1" style="font-size:9.5px;color:var(--mute);font-weight:600">${esc(lbl)}</span><b class="n" style="font-size:10.5px;flex:none">${esc(tm)}</b></div>`).join('')}</div>` : '')
       + `</div></div>`;
 
-    const placeBtn = $('#prtPlace', page);
-    if (placeBtn) placeBtn.onclick = () => api.openSettings('prayer');
-    const beforeBtn = $('#prtBefore', page);
-    if (beforeBtn && N.pick) {
-      N.pick(beforeBtn, { icon: fa('hourglass-half'), options: beforeOpts, value: +(s.prayerBefore || 0), onChange: (v) => api.setSettings({ prayerBefore: v }) });
-    }
-    $$('[data-pbell]', page).forEach((b) => {
-      b.onclick = () => {
-        const k = b.dataset.pbell;
-        const cur = { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true, ...(st.settings.prayerList || {}) };
-        cur[k] = cur[k] === false;
-        api.setSettings({ prayerList: cur });
-      };
-    });
+    bindCommon(beforeOptsShort);
   }
 
   let lastKey = '';
@@ -225,7 +314,9 @@
     const el = page && $('#prtLeft', page);
     if (el && next) {
       const cd = clockParts(next.at - Date.now());
-      el.innerHTML = `${esc(cd.hm)}<span style="font-size:18px;color:#4ade8099">:${esc(cd.sec)}</span>`;
+      el.innerHTML = el.dataset.mode === 'plain'
+        ? `${esc(cd.hm)}:${esc(cd.sec)}`
+        : `${esc(cd.hm)}<span style="font-size:0.6em;color:#4ade8099">:${esc(cd.sec)}</span>`;
     }
   }
 

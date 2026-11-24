@@ -88,6 +88,18 @@ pub fn settings_for_import_checked(from: &Value, here: &Value, has_brain_key: bo
         }
         m.insert("ponyHands".into(), Value::Bool(false));
     }
+    if m.contains_key("ponyAutoUi") {
+        if m.get("ponyAutoUi") == Some(&Value::Bool(true)) {
+            note("hands");
+        }
+        m.insert("ponyAutoUi".into(), Value::Bool(false));
+    }
+    if m.contains_key("voiceAutoUi") {
+        if m.get("voiceAutoUi").and_then(Value::as_str) == Some("on") {
+            note("hands");
+        }
+        m.insert("voiceAutoUi".into(), Value::from("follow"));
+    }
     if m.contains_key("ponyAskAi") {
         if m.get("ponyAskAi") == Some(&Value::Bool(true)) {
             note("askAi");

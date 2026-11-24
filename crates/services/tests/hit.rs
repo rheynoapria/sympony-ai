@@ -75,3 +75,31 @@ fn peek_band_enters_and_leaves() {
     h.apply(msg(2, 372.0, 0.0, 76.0, 39.0));
     assert_eq!(h.update_peek((410.0, 60.0)), Some(false));
 }
+
+#[test]
+fn peek_hit_makes_window_clickable_without_triggering_notch_hover() {
+    let mut h = Hover::default();
+    h.apply(
+        HitMsg::parse(&json!({
+            "x": 372, "y": 0, "w": 76, "h": 32, "seq": 1,
+            "peek": { "x": 332, "y": 32, "w": 156, "h": 68 },
+            "peekHit": { "x": 368, "y": 32, "w": 84, "h": 42 }
+        }))
+        .unwrap(),
+    );
+    // Hovering Pony's peeking head below the closed notch: window accepts clicks/pointermove,
+    // but `notch:hover` stays false so `openOnHover` does not immediately open the notch.
+    assert_eq!(h.update_peek((410.0, 50.0)), Some(true));
+    assert_eq!(h.update_clickable((410.0, 50.0)), Some(true));
+    assert_eq!(h.update((410.0, 50.0)), None);
+    assert!(!h.inside());
+
+    // Moving up onto the closed notch itself triggers `notch:hover` normally while staying clickable.
+    assert_eq!(h.update((410.0, 16.0)), Some(true));
+    assert_eq!(h.update_clickable((410.0, 16.0)), None);
+
+    // Leaving both restores click-through and ends hover.
+    assert_eq!(h.update((10.0, 200.0)), Some(false));
+    assert_eq!(h.update_clickable((10.0, 200.0)), Some(false));
+    assert_eq!(h.update_peek((10.0, 200.0)), Some(false));
+}

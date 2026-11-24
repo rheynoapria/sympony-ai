@@ -17,11 +17,17 @@ pub fn kind(major: u32, minor: u32) -> (&'static str, bool) {
     }
 }
 
-/// What a failed connect means (IOReturn from IOBluetooth), in words.
+/// What a failed connect means (IOReturn from IOBluetooth on macOS; on Windows an HRESULT, or -2 for a device that
+/// isn't a headset or speaker), in words.
 pub fn connect_error(code: i32) -> String {
     match code as u32 {
         0xe00002d6 | 0xe00002bc => "The device isn’t nearby, or it’s off".into(),
         0xe00002c1 => "Bluetooth isn’t allowed for Sympony (System Settings → Privacy & Security → Bluetooth)".into(),
+        // (-2) Windows connects keyboards, mice… by itself when they're on and nearby
+        0xffff_fffe => "Windows connects this device by itself when it’s on and nearby".into(),
+        // (HRESULT_FROM_WIN32: ERROR_DEVICE_NOT_CONNECTED, ERROR_GEN_FAILURE, ERROR_NOT_FOUND)
+        0x8007_048f | 0x8007_001f | 0x8007_0490 => "The device isn’t nearby, or it’s off".into(),
+        c if c & 0x8000_0000 != 0 && c >> 16 != 0xe000 => format!("Windows couldn’t do it (error {code:#x})"),
         _ => format!("macOS couldn’t do it (error {code:#x})"),
     }
 }

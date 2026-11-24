@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SCREENTIME_ROWS } from "../sections/features.rows.ts";
+import { EFFECTS_ROWS } from "../sections/core.rows.ts";
 import { GENERAL_ROWS } from "../sections/general.rows.ts";
 import { STATS_ROWS } from "../sections/system.rows.ts";
 import { applyOs, LINUX_OFF, MAC_OFF, offCards, optionsFor } from "./os.ts";
@@ -65,4 +66,28 @@ test("applyOs swaps System Monitor subtitle on macOS", () => {
     (r) => "k" in r && r.k === "statsEnabled"
   ) as FieldRow;
   assert.equal(se.sub, "CPU, memory, network and disk");
+});
+
+test("applyOs keeps toggleShortcut visible on macOS with macOS examples", () => {
+  const rows = applyOs("general", GENERAL_ROWS, "macos");
+  const ts = rows.find((r) => "k" in r && r.k === "toggleShortcut") as
+    | FieldRow
+    | undefined;
+  assert.ok(ts, "toggleShortcut should be visible in General on macOS");
+  assert.match(ts!.sub || "", /Option\+N/);
+  const ms = rows.find((r) => "k" in r && r.k === "moduleShortcuts") as
+    | FieldRow
+    | undefined;
+  assert.ok(ms, "moduleShortcuts should be visible in General on macOS");
+  assert.ok(!(ms!.sub || "").includes("Alt+Shift"));
+});
+
+test("applyOs adapts Animations copy for macOS", () => {
+  const rows = applyOs("effects", EFFECTS_ROWS, "macos");
+  const lead = rows.find((r) => r.t === "lead");
+  assert.ok(lead && lead.t === "lead" && !lead.html.includes("Windows"));
+  const bounce = rows.find((r) => "k" in r && r.k === "fxHudBounce") as
+    | FieldRow
+    | undefined;
+  assert.ok(bounce && !(bounce.sub || "").includes("Take over volume keys"));
 });

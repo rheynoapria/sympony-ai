@@ -42,7 +42,7 @@ pub fn picture(app: &AppHandle, path: &str, photo: bool) -> Option<String> {
         return Some(p.clone());
     }
     let pic = if photo { thumbnail(path, &app.state::<App>().data_dir.join("thumbs")) } else { None };
-    let pic = pic.or_else(|| platform::macos::files::icon_png(path, 64.0).map(|b| data_url("image/png", &b)))?;
+    let pic = pic.or_else(|| platform::os::files::icon_png(path, 64.0).map(|b| data_url("image/png", &b)))?;
     let mut pics = f.pics.lock().unwrap();
     // ponytail: dropped whole past 300 (photos edited over months); an LRU if lists get that long
     if pics.len() > 300 {
@@ -141,27 +141,17 @@ fn ids_arg(a: &[Value]) -> Vec<Value> {
     }
 }
 
-/// `osascript` choosing files / a folder / an app: their POSIX paths (none: cancelled).
+/// The OS's file dialog choosing files / a folder / an app: their paths (none: cancelled). See
+/// `platform::os::files::choose` for `what`.
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
-    let script = match what {
-        "files" => format!("set l to choose file with prompt {prompt:?} with multiple selections allowed\nset o to \"\"\nrepeat with f in l\nset o to o & POSIX path of f & linefeed\nend repeat\nreturn o"),
-        "folder" => format!("POSIX path of (choose folder with prompt {prompt:?})"),
-        "app" => format!("POSIX path of (choose application with prompt {prompt:?} as alias)"),
-        "backup" => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to downloads folder))"),
-        _ => format!("POSIX path of (choose file with prompt {prompt:?} default location (path to applications folder))"),
-    };
-    let Ok(out) = Command::new("/usr/bin/osascript").args(["-e", &script]).output() else { return vec![] };
-    if !out.status.success() {
-        return vec![];
-    }
-    String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+    platform::os::files::choose(what, prompt)
 }
 
 fn open(target: &str) {
     if !target.is_empty() {
         let target = target.to_string();
         std::thread::spawn(move || {
-            let _ = Command::new("/usr/bin/open").arg("--").arg(&target).status();
+            platform::os::shell::open(&target);
         });
     }
 }
@@ -170,7 +160,7 @@ fn reveal(path: &str) {
     if !path.is_empty() {
         let path = path.to_string();
         std::thread::spawn(move || {
-            let _ = Command::new("/usr/bin/open").args(["-R", "--"]).arg(&path).status();
+            platform::os::shell::reveal(&path);
         });
     }
 }
@@ -193,9 +183,9 @@ pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<Stri
         return;
     }
     let _ = app.run_on_main_thread(move || {
-        if let Ok(v) = w.ns_view() {
+        if let Some(v) = crate::native::view(&w) {
             // SAFETY: the window's own NSView, on the main thread
-            unsafe { platform::macos::files::share(v, &paths) };
+            unsafe { platform::os::files::share(v, &paths) };
         }
     });
 }
@@ -209,7 +199,7 @@ pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
     }
     let h = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Ok(v) = win.ns_view() else { return };
+        let Some(v) = crate::native::view(&win) else { return };
         let done = Box::new(move |dropped: bool| {
             if dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true {
                 h.state::<Files>().shelf.lock().unwrap().retain(|x| !ids.contains(&x["id"]));
@@ -219,7 +209,7 @@ pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
             }
         });
         // SAFETY: the window's own NSView, on the main thread, while the page's drag goes on
-        unsafe { platform::macos::files::drag_out(v, &paths, done) };
+        unsafe { platform::os::files::drag_out(v, &paths, done) };
     });
 }
 
@@ -345,14 +335,14 @@ fn run_action(action: &str, files: &[String]) -> Value {
         }
         "openwith" => {
             let Some(app) = choose("app", &format!("Open {what} with")).into_iter().next() else { return json!({"ok": true, "quiet": true, "message": ""}) };
-            match run_ok(Command::new("/usr/bin/open").arg("-a").arg(&app).args(&files)) {
+            match platform::os::shell::open_with(&app, &files) {
                 Ok(()) => json!({"ok": true, "quiet": true, "message": ""}),
                 Err(e) => done(false, format!("Couldn’t open: {e}")),
             }
         }
         "trash" => {
             for f in &files {
-                if let Err(e) = platform::macos::files::trash(f) {
+                if let Err(e) = platform::os::files::trash(f) {
                     return done(false, format!("Couldn’t move {} to the Trash: {e}", name_of(f)));
                 }
             }
@@ -383,6 +373,10 @@ fn home() -> String {
 fn launcher_items(app: &AppHandle) -> Vec<Value> {
     let a = app.state::<App>();
     let items = a.settings.get()["launcherItems"].as_array().cloned().unwrap_or_default();
+    // (Windows paths are what a Windows launcher keeps: mapping them to Mac apps, and saving that, is for a Mac only)
+    if !cfg!(target_os = "macos") {
+        return items;
+    }
     let (mac, changed) = services::launcher::for_mac(&items, &home());
     if changed {
         save_launcher(app, &mac);
@@ -451,7 +445,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                         open(u);
                     }
                 }
-                _ => { platform::macos::files::write_text(e["text"].as_str().unwrap_or("")); }
+                _ => { platform::os::files::write_text(e["text"].as_str().unwrap_or("")); }
             }
         }
         Value::Null
@@ -465,7 +459,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     add!("shelf.copy", |h, a| {
         let e = shelf_item(&h, a.first().and_then(Value::as_str).unwrap_or(""));
         let t = e.as_ref().and_then(|e| e["path"].as_str().or(e["text"].as_str())).unwrap_or("");
-        json!(!t.is_empty() && platform::macos::files::write_text(t))
+        json!(!t.is_empty() && platform::os::files::write_text(t))
     });
     add!("shelf.share", |h, a| {
         share(&h, None, shelf_paths(&h, &ids_arg(&a)));
@@ -513,6 +507,6 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         Value::Null
     });
     reg.add("apps.open", Box::new(|_, _| {
-        Ok(Value::Array(platform::macos::apps::open_apps().into_iter().map(|(id, name)| json!({"exe": id.to_ascii_lowercase(), "name": name})).collect()))
+        Ok(Value::Array(platform::os::apps::open_apps().into_iter().map(|(id, name)| json!({"exe": id.to_ascii_lowercase(), "name": name})).collect()))
     }));
 }

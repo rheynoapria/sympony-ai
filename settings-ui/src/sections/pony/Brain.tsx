@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
 import { Skeleton } from "@/components/ui/knowns/skeleton";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { cn } from "@/lib/knowns/utils";
 import type { CustomPartProps } from "@/rows/types";
@@ -53,7 +54,7 @@ const lang = () => (typeof window !== "undefined" && (window as { SYMPONY_LANG?:
 export function BrainChoice({ value, onChange }: { value: BrainMode; onChange: (m: BrainMode) => void }) {
   const options: { id: BrainMode; icon: typeof Sparkles; title: string; text: string }[] = [
     { id: "sympony", icon: Sparkles, title: t("Sympony AI"), text: t("Ready after one sign-in, nothing to install") },
-    { id: "agent", icon: Cpu, title: t("An agent on this Mac"), text: t("Claude Code, Codex… with your own plan") },
+    { id: "agent", icon: Cpu, title: onMac() ? t("An agent on this Mac") : t("An agent on this PC"), text: t("Claude Code, Codex… with your own plan") },
     { id: "api", icon: Server, title: t("Your own server"), text: t("Any OpenAI-compatible server and key") },
   ];
   return (
@@ -227,7 +228,7 @@ export function SymponyAi({ settings, set }: Props) {
   const planName = plan ? t(plan.charAt(0).toUpperCase() + plan.slice(1)) : "";
   const perks = [
     { icon: MessageCircleHeart, text: t("Chats, remembers you and uses your skills") },
-    { icon: Wand2, text: t("Sets reminders, todos and music on this Mac") },
+    { icon: Wand2, text: onMac() ? t("Sets reminders, todos and music on this Mac") : t("Sets reminders, todos and music on this PC") },
     { icon: KeyRound, text: t("No apps to install, no API keys") },
   ];
 
@@ -254,7 +255,7 @@ export function SymponyAi({ settings, set }: Props) {
                     <span className="shrink-0 rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">{planName}</span>
                   )}
                 </div>
-                <div className="mt-0.5 text-[12.5px] text-muted-foreground">{t("Pony thinks with Sympony AI on this Mac")}</div>
+                <div className="mt-0.5 text-[12.5px] text-muted-foreground">{onMac() ? t("Pony thinks with Sympony AI on this Mac") : t("Pony thinks with Sympony AI on this PC")}</div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {me?.dashboard_url && (
@@ -274,7 +275,7 @@ export function SymponyAi({ settings, set }: Props) {
               </div>
               <p className="mt-1 max-w-[52ch] text-[12.5px] leading-relaxed text-muted-foreground">
                 {open === false
-                  ? t("Until then, Pony can think with an agent on this Mac or your own server.")
+                  ? onMac() ? t("Until then, Pony can think with an agent on this Mac or your own server.") : t("Until then, Pony can think with an agent on this PC or your own server.")
                   : t("Pony’s own brain, made for Sympony. Your browser opens once to sign in.")}
               </p>
               <ul className="mt-3 flex flex-col gap-1.5">
@@ -417,7 +418,7 @@ export function PonyHands({ settings, set }: Props) {
       icon="TerminalSquare"
       tone="emerald"
       title={t("Commands & files")}
-      summary={t("Runs commands and edits files on this Mac, like a coding agent")}
+      summary={onMac() ? t("Runs commands and edits files on this Mac, like a coding agent") : t("Runs commands and edits files on this PC, like a coding agent")}
       tryIt={[t("tidy up my Downloads folder"), t("what's using my disk?")]}
       safe={t("Never sudo, erasing disks, keys or passwords")}
       control={<Switch checked={on} aria-label={t("Commands & files")} onCheckedChange={(checked) => void set({ ponyExec: checked })} />}

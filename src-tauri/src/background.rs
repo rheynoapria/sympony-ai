@@ -66,6 +66,9 @@ static LAST_LOCATION_NOTE: std::sync::Mutex<String> = std::sync::Mutex::new(Stri
 /// After a settings change: what has to follow it.
 pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
     let has = |keys: &[&str]| keys.iter().any(|k| patch.get(k).is_some());
+    if patch.get("display").is_some() {
+        crate::notch::sync_now(app);
+    }
     if has(&["weatherLocation", "weatherUnit"]) {
         weather_soon(app);
     }
@@ -75,8 +78,12 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
     if has(&["githubEnabled", "githubIncludeMine", "has_githubToken"]) {
         crate::github::kick(app);
     }
+    crate::feed::on_settings_changed(app, patch);
     if has(&["icsFeeds", "localEvents", "calendarEnabled"]) {
         crate::calendar::kick(app, patch.get("icsFeeds").is_some());
+    }
+    if has(&["todoSync", "todoSyncGoogleClientId", "has_todoSyncGoogleClientSecret"]) {
+        crate::todosync::notify_auth_changed(app);
     }
     // (General → Language: Sympony starts again in it)
     if patch.get("language").is_some() {
@@ -86,6 +93,7 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
         location_soon(app);
     }
     crate::voice::settings_changed(app, patch);
+    crate::updater::settings_changed(app, patch);
 }
 
 /// At start, then whenever services::schedule::due says (every 30 wall-clock minutes, and right after waking).

@@ -326,7 +326,7 @@ pub fn bearer(method: &str, url: &str, token: &str, body: Option<&Value>) -> any
 /// `bearer` with its own time limit (a model's answer takes longer than 15 s).
 /// Pooled; follows up to 5 same-origin non-downgrade redirects (refuses cross-host & https→http redirects).
 pub fn bearer_for(method: &str, url: &str, token: &str, body: Option<&Value>, secs: u64) -> anyhow::Result<(u16, Value)> {
-    let auth = format!("Bearer {token}");
+    let auth = (!token.trim().is_empty()).then(|| format!("Bearer {token}"));
     let a = auth_agent();
     let lim = Some(Duration::from_secs(secs));
     let mut cur_url = url.to_string();
@@ -334,10 +334,34 @@ pub fn bearer_for(method: &str, url: &str, token: &str, body: Option<&Value>, se
     let mut cur_body = body.cloned();
     for hop in 0..=MAX_AUTH_REDIRECTS {
         let mut resp = match (cur_method.as_str(), &cur_body) {
-            ("POST", b) => a.post(&cur_url).config().timeout_global(lim).build().header("Authorization", &auth).send_json(b.clone().unwrap_or(Value::Null))?,
-            ("PATCH", b) => a.patch(&cur_url).config().timeout_global(lim).build().header("Authorization", &auth).send_json(b.clone().unwrap_or(Value::Null))?,
-            ("DELETE", _) => a.delete(&cur_url).config().timeout_global(lim).build().header("Authorization", &auth).call()?,
-            _ => a.get(&cur_url).config().timeout_global(lim).build().header("Authorization", &auth).call()?,
+            ("POST", b) => {
+                let mut r = a.post(&cur_url).config().timeout_global(lim).build();
+                if let Some(ref h) = auth {
+                    r = r.header("Authorization", h);
+                }
+                r.send_json(b.clone().unwrap_or(Value::Null))?
+            }
+            ("PATCH", b) => {
+                let mut r = a.patch(&cur_url).config().timeout_global(lim).build();
+                if let Some(ref h) = auth {
+                    r = r.header("Authorization", h);
+                }
+                r.send_json(b.clone().unwrap_or(Value::Null))?
+            }
+            ("DELETE", _) => {
+                let mut r = a.delete(&cur_url).config().timeout_global(lim).build();
+                if let Some(ref h) = auth {
+                    r = r.header("Authorization", h);
+                }
+                r.call()?
+            }
+            _ => {
+                let mut r = a.get(&cur_url).config().timeout_global(lim).build();
+                if let Some(ref h) = auth {
+                    r = r.header("Authorization", h);
+                }
+                r.call()?
+            }
         };
         if hop < MAX_AUTH_REDIRECTS {
             if let Some(loc) = redirect_location(&resp) {
@@ -362,20 +386,22 @@ pub fn bearer_for(method: &str, url: &str, token: &str, body: Option<&Value>, se
 /// `on_data` answers false to stop reading (the user pressed Stop): what came so far stands.
 pub fn bearer_stream(url: &str, token: &str, body: &Value, secs: u64, on_data: &mut dyn FnMut(&str) -> bool) -> anyhow::Result<(u16, String)> {
     use std::io::BufRead;
-    let auth = format!("Bearer {token}");
+    let auth = (!token.trim().is_empty()).then(|| format!("Bearer {token}"));
     let lim = Some(Duration::from_secs(secs));
     let mut cur_url = url.to_string();
     let mut resp = loop {
         let mut hops = 0usize;
         break loop {
-            let r = auth_agent()
+            let mut req = auth_agent()
                 .post(&cur_url)
                 .config()
                 .timeout_global(lim)
                 .build()
-                .header("Authorization", &auth)
-                .header("Accept", "text/event-stream")
-                .send_json(body.clone())?;
+                .header("Accept", "text/event-stream");
+            if let Some(ref h) = auth {
+                req = req.header("Authorization", h);
+            }
+            let r = req.send_json(body.clone())?;
             if hops < MAX_AUTH_REDIRECTS && matches!(r.status().as_u16(), 307 | 308) {
                 if let Some(loc) = redirect_location(&r) {
                     if let Some(next) = safe_redirect_target(&cur_url, &loc) {
@@ -453,14 +479,15 @@ pub fn get_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> 
     Ok((status, ct, bytes))
 }
 
-/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons): follows up to 5 redirects
-/// (http → https, apex → www, short links) while checking `is_public_url` + pinning DNS resolution to public IPs
-/// via `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
-pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> {
+/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons/articles) with a custom per-hop
+/// `timeout`: follows up to 5 redirects while checking `is_public_url` + pinning DNS resolution to public IPs via
+/// `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
+pub fn get_public_bytes_timeout(url: &str, max: u64, timeout: Duration) -> anyhow::Result<(u16, String, Vec<u8>)> {
     let mut cur_url = url.to_string();
+    let lim = Some(timeout);
     for hop in 0..=MAX_PUBLIC_REDIRECTS {
         anyhow::ensure!(is_public_url(&cur_url), "refused non-public URL");
-        let mut resp = public_agent().get(&cur_url).call()?;
+        let mut resp = public_agent().get(&cur_url).config().timeout_global(lim).build().call()?;
         if hop < MAX_PUBLIC_REDIRECTS {
             if let Some(loc) = redirect_location(&resp) {
                 let next = resolve_redirect_url(&cur_url, &loc).ok_or_else(|| anyhow::anyhow!("refused redirect URL"))?;
@@ -475,6 +502,13 @@ pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec
         return Ok((status, ct, bytes));
     }
     anyhow::bail!("too many redirects")
+}
+
+/// Fetches bytes from an untrusted user-supplied public URL (bookmark previews/icons): follows up to 5 redirects
+/// (http → https, apex → www, short links) while checking `is_public_url` + pinning DNS resolution to public IPs
+/// via `PublicOnlyResolver` on every hop so redirects and DNS rebinding cannot reach loopback, LAN, or metadata.
+pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec<u8>)> {
+    get_public_bytes_timeout(url, max, Duration::from_secs(15))
 }
 
 /// A stream's ICY metadata block (a short read: up to its first block). Err: the stream has no ICY titles.

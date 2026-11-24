@@ -36,10 +36,20 @@ bun run --cwd settings-ui build
 bun test ./frontend/tests
 ```
 
+## Public Roadmap & AI Agent Workflow
+
+All planned features, active work, and release milestones are tracked transparently on the **[Sympony Roadmap](https://github.com/users/rheynoapria/projects/1)** (linked in the repository's **Projects** tab).
+
+- **Using an AI coding agent (Claude Code, Codex, Paseo, Antigravity, Cursor, etc.)?** Read [AGENTS.md](AGENTS.md) first — it defines our GitHub Project board workflow (`Status`, `Area`, `Platform`, `Priority`), `gh project` CLI commands, and macOS ↔ Windows parity rules.
+- **Collaborators managing the board via CLI:** run `gh auth refresh -s project,read:project` once so you (and your coding agent) can list, add, and update items on Project `#1`.
+
 ## Guidelines
 
+- **Branch targeting**: Open feature and bugfix pull requests against **`beta`** (active integration branch). Reserve **`main`** for Stable releases graduated from `beta` and urgent production hotfixes. See [docs/RELEASING.md](docs/RELEASING.md) for our full branching and SemVer standard.
+- **Commit style**: Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat(scope):`, `fix(scope):`, `perf(scope):`, `docs:`, `ci:`, `chore:`) so automated release notes stay clean and categorized.
 - **Code of Conduct**: All contributors and participants are expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 - **Changelog**: Note user-facing changes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
+- **Version lockstep**: Never hand-edit version numbers in only one file — use `./tools/bump-version.sh` (checked automatically in CI with `./tools/bump-version.sh --check`).
 - **Small, focused PRs**: Keep each PR scoped to one bug fix, hardening item, or feature with unit tests covering the behaviour or regression.
 - **Security-sensitive areas**: Changes touching `crates/services/src/exec.rs`, `backup.rs`, `http.rs`, `mcp_client.rs`, `hooks.rs`, `phone.rs`, `src-tauri/src/brain.rs`, `hands.rs`, `eyes.rs`, or `tauri.conf.json` require explicit regression tests.
 - **UI & Motion**: Follow `DESIGN.md` — animate only `transform` and `opacity` (never layout properties), respect `prefers-reduced-motion`, and escape all dynamic text/attributes rendered into HTML.

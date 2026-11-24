@@ -47,6 +47,15 @@ test("searchSections ranks prefix matches before substrings and matches words", 
 test("searchAll searches sections and migrated rows with Indonesian synonyms", () => {
   assert.ok(searchAll("jam", "macos").some((h) => h.label === "24-hour time"));
   assert.ok(searchAll("lirik", "macos").some((h) => h.section === "media"));
+  assert.ok(searchAll("kontrol", "macos").some((h) => h.section === "control"));
+});
+
+test("Control lives in the System & Window group on every OS", () => {
+  for (const os of ["macos", "windows", "linux"] as const) {
+    const sec = sectionsFor(os).find((s) => s.id === "control");
+    assert.ok(sec, `expected control section on ${os}`);
+    assert.equal(sec!.group, "system");
+  }
 });
 
 test("registerSectionRows accepts per-OS functions resolved by sectionRows", () => {

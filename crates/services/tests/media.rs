@@ -51,6 +51,42 @@ fn spotify_wins_when_playing() {
 }
 
 #[test]
+fn windows_says_which_controls_work() {
+    // the system media controls' answer (platform::os::media::poll): a browser tab with no previous song or timeline
+    let poll = json!({ "spotify": null, "music": {
+        "state": "playing", "id": "Live|Channel|", "title": "Live", "artist": "Channel", "album": "", "app": "Chrome",
+        "duration": 0.0, "position": 0.0, "rate": 1.0, "arts": 1, "shuffle": null, "repeat": "list",
+        "canShuffle": false, "canRepeat": true, "canPrev": false, "canNext": true, "canSeek": false } });
+    let m = from_poll(&poll, NOW);
+    assert_eq!((m["app"].clone(), m["source"].clone()), (json!("Chrome"), json!("music")));
+    assert_eq!((m["canPrev"].clone(), m["canNext"].clone(), m["canSeek"].clone()), (json!(false), json!(true), json!(false)));
+    assert_eq!((m["repeat"].clone(), m["canRepeat"].clone()), (json!("list"), json!(true)));
+    // a timeline but the app won't seek
+    let mut seekless = poll.clone();
+    seekless["music"]["duration"] = json!(200.0);
+    assert_eq!(from_poll(&seekless, NOW)["canSeek"], false);
+    // the macOS helper says nothing about them: all there
+    let m = from_poll(&fx("helper-poll-browser.json"), NOW);
+    assert_eq!((m["canPrev"].clone(), m["canNext"].clone(), m["canSeek"].clone()), (json!(true), json!(true), json!(true)));
+}
+
+#[test]
+fn a_new_position_from_the_app_is_sent_at_once() {
+    // Windows tells when the app last gave its position: a new one (a small seek, a stall) is sent although the
+    // position moved less than the 2 s a seek needs otherwise
+    let poll = |pos: f64, stamp: i64| json!({ "music": { "state": "playing", "title": "Song", "artist": "A", "app": "Chrome",
+        "duration": 200.0, "position": pos, "stamp": stamp } });
+    let a = from_poll(&poll(50.0, 1_763_449_990_000), NOW);
+    assert_eq!(a["positionStamp"], 1_763_449_990_000_i64);
+    let same = from_poll(&poll(51.0, 1_763_449_990_000), NOW + 1000);
+    assert!(!changed(&a, &same));
+    let told = from_poll(&poll(50.6, 1_763_449_999_000), NOW + 1000);
+    assert!(changed(&a, &told));
+    // the macOS helper gives none: as before
+    assert_eq!(from_poll(&fx("helper-poll-browser.json"), NOW)["positionStamp"], Value::Null);
+}
+
+#[test]
 fn seek_command_shape() {
     assert_eq!(
         command("spotify", 42, "seek", &json!(12.5)),

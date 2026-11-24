@@ -47,6 +47,11 @@ fn servers(app: &AppHandle) -> Vec<Value> {
     app.state::<App>().settings.get()["ponyMcp"].as_array().cloned().unwrap_or_default()
 }
 
+/// Fast non-blocking check: whether any outside MCP server is enabled in settings (doesn't spawn/connect servers).
+pub fn has_enabled(app: &AppHandle) -> bool {
+    servers(app).iter().any(|s| s["on"] != false)
+}
+
 fn secrets(app: &AppHandle) -> Value {
     app.state::<App>().settings.secret_value(SECRETS).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}))
 }

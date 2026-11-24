@@ -24,6 +24,7 @@ import {
   WEATHER_ROWS,
 } from "./features.rows.ts";
 import { GENERAL_ROWS } from "./general.rows.ts";
+import { FEED_KEYS } from "./feed.rows.ts";
 import { VOICE_KEYS } from "./voice.rows.ts";
 import { MEDIA_ROWS, NOTIFICATIONS_ROWS } from "./media.rows.ts";
 import { MODULES_KEYS } from "./modules.meta.ts";
@@ -58,6 +59,7 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   general: rowKeys(GENERAL_ROWS, [
     "language",
     "notchPosition",
+    "notchColor",
     "idleLeft",
     "idleClock",
     "clockSize",
@@ -85,6 +87,7 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   weather: rowKeys(WEATHER_ROWS, WEATHER_KEYS),
   prayer: rowKeys(PRAYER_ROWS, PRAYER_KEYS),
   dropactions: rowKeys(dropActionsRows, DROPACTIONS_KEYS),
+  control: ["moduleStyles", "modules", "keepAwake"],
   hud: rowKeys(hudRows),
   battery: rowKeys(BATTERY_ROWS),
   mirror: rowKeys(MIRROR_ROWS),
@@ -96,4 +99,5 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   cursor: rowKeys(CURSOR_ROWS),
   wallpaper: rowKeys(WALLPAPER_ROWS),
   github: rowKeys(GITHUB_ROWS),
+  feed: [...FEED_KEYS],
 };

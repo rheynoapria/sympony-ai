@@ -39,11 +39,11 @@ describe('springCurve', () => {
 });
 
 describe('CARD_SIZES and packCards', () => {
-  test('declares exact grid footprints for all 24 modules plus hitl', () => {
+  test('declares exact grid footprints for all 25 modules plus hitl', () => {
     expect(K.CARD_SIZES.home).toEqual([4, 2]);
     expect(K.CARD_SIZES.prayer).toEqual([1, 2]);
     expect(K.CARD_SIZES.calendar).toEqual([2, 2]);
-    for (const id of ['chat', 'todo', 'control', 'shelf', 'stats', 'translate', 'notifs', 'launcher', 'hitl']) {
+    for (const id of ['chat', 'todo', 'control', 'shelf', 'stats', 'translate', 'notifs', 'launcher', 'feed', 'hitl']) {
       expect(K.CARD_SIZES[id]).toEqual([2, 1]);
     }
     for (const id of ['notes', 'pomodoro', 'weather', 'health', 'dayprogress', 'aiusage', 'screentime', 'bluetooth', 'github', 'radio', 'bookmarks', 'worldclock', 'teleprompter']) {
@@ -135,11 +135,13 @@ describe('WAVES, waveTune, and agentBundle', () => {
 });
 
 describe('ponyMood', () => {
-  test('enforces precedence attention > think > done > music > sleep > idle and handles reduced input', () => {
+  test('enforces precedence attention > listening > think > done > music > sleep > idle and handles reduced input', () => {
     const now = 10_000;
-    // attention > think (both asking and cardWaiting)
-    expect(K.ponyMood({ asking: true, thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000, locked: true })).toBe('attention');
-    expect(K.ponyMood({ cardWaiting: true, thinking: true, now })).toBe('attention');
+    // attention > listening > think (both asking and cardWaiting)
+    expect(K.ponyMood({ asking: true, listening: true, thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000, locked: true })).toBe('attention');
+    expect(K.ponyMood({ cardWaiting: true, listening: true, thinking: true, now })).toBe('attention');
+    // listening > think
+    expect(K.ponyMood({ listening: true, thinking: true, doneUntil: now + 5000, now, playing: true })).toBe('listening');
     // think > done
     expect(K.ponyMood({ thinking: true, doneUntil: now + 5000, now, playing: true, idleMs: 900_000 })).toBe('think');
     // done > music
@@ -188,12 +190,42 @@ describe('YouTube video mode', () => {
     expect(K.ytView({ active: false, video: 'VgSWAOb7JTQ' }, {}, new Set(), new Set())).toBe(false);
   });
   test('sync_paused_pauses_and_no_seek_under_threshold', () => {
-    expect(K.ytSync({ t: 40.5, d: 267, target: 40, npDur: 267, playing: false })).toEqual({ ad: false, seek: null, play: false });
-    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true })).toEqual({ ad: false, seek: 42.5, play: true });
+    expect(K.ytSync({ t: 40.5, d: 267, target: 40, npDur: 267, playing: false, state: 2 })).toMatchObject({ ad: false, seek: null, play: false, nudge: 1 });
+    // far off: a seek to the tab, `lead` ahead while playing
+    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true })).toMatchObject({ ad: false, seek: 42, play: true });
+    expect(K.ytSync({ t: 40, d: 267, target: 42, npDur: 267, playing: true, lead: 0.3 }).seek).toBe(42.3);
     expect(K.ytSync({ t: 40, d: 267, target: 41.4, npDur: 267, playing: true }).seek).toBe(null);
+    // settling (buffering, just seeked): left alone
+    expect(K.ytSync({ t: 40, d: 267, target: 45, npDur: 267, playing: true, settling: true })).toMatchObject({ seek: null, nudge: 1 });
+  });
+  test('ytSync counts the time since the copy last reported', () => {
+    // reported 40.0 half a second ago while playing: it's at 40.5 now, as the tab is
+    expect(K.ytSync({ t: 40, ageMs: 500, state: 1, d: 267, target: 40.5, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 1 });
+    // paused (state 2): where it reported
+    expect(K.ytSync({ t: 40, ageMs: 500, state: 2, d: 267, target: 40, npDur: 267, playing: false }).drift).toBe(0);
+  });
+  test('ytSync nudges a little off instead of jumping', () => {
+    // 0.4 s ahead: slower until back; 0.4 s behind: faster
+    expect(K.ytSync({ t: 40.4, d: 267, target: 40, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 0.75 });
+    expect(K.ytSync({ t: 40, d: 267, target: 40.4, npDur: 267, playing: true })).toMatchObject({ seek: null, nudge: 1.25 });
+    // within 0.08 s: in step; nudging goes on down to 0.03 s (0.1 s behind is caught up)
+    expect(K.ytSync({ t: 40.05, d: 267, target: 40, npDur: 267, playing: true }).nudge).toBe(1);
+    expect(K.ytSync({ t: 40, d: 267, target: 40.1, npDur: 267, playing: true }).nudge).toBe(1.25);
+    expect(K.ytSync({ t: 40.05, d: 267, target: 40, npDur: 267, playing: true, nudging: true }).nudge).toBe(0.75);
+    expect(K.ytSync({ t: 40.02, d: 267, target: 40, npDur: 267, playing: true, nudging: true }).nudge).toBe(1);
+    // paused: never nudged
+    expect(K.ytSync({ t: 40.4, d: 267, target: 40, npDur: 267, playing: false, state: 2 }).nudge).toBe(1);
+  });
+  test('ytSync leaves a live tab alone', () => {
+    expect(K.ytSync({ t: 3600, d: 0, target: 0, npDur: 0, playing: true })).toMatchObject({ seek: null, nudge: 1, play: true });
+  });
+  test('ytLead learns from where a seek landed', () => {
+    expect(K.ytLead(0.2, 0.3)).toBe(0); // landed 0.3 s ahead: aim lower (not below 0)
+    expect(K.ytLead(0.2, -0.4)).toBe(0.6); // landed behind: aim higher
+    expect(K.ytLead(1.9, -0.5)).toBe(2); // at most 2 s
   });
   test('ytSync spots an ad in the tab', () => {
-    expect(K.ytSync({ t: 40, d: 267, target: 5, npDur: 15, playing: true })).toEqual({ ad: true, seek: null, play: false });
+    expect(K.ytSync({ t: 40, d: 267, target: 5, npDur: 15, playing: true })).toMatchObject({ ad: true, seek: null, play: false });
     expect(K.ytSync({ t: 40, d: 0, target: 5, npDur: 15, playing: true }).ad).toBe(false); // embed not loaded yet
   });
 });
@@ -213,7 +245,7 @@ describe('ytCover', () => {
 describe('ytSync while the copy settles', () => {
   test('no seek while it buffers or just after a seek (that loop never let it play)', () => {
     expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: true }).seek).toBe(null);
-    expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: false }).seek).toBe(50.5);
+    expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: false, lead: 0.5 }).seek).toBe(50.5);
   });
   test('a long buffer is covered, a short one is not', () => {
     expect(K.ytCover(3, 9000, 300)).toBe(false);
@@ -233,5 +265,387 @@ describe('final review fixes', () => {
     expect(K.ytGrace(true, 1000)).toBe(true);
     expect(K.ytGrace(true, 3500)).toBe(false);
     expect(K.ytGrace(false, 0)).toBe(false);
+  });
+});
+
+describe('closed notch sizing (13-inch MacBook camera + non-camera)', () => {
+  test('only playback and timer activities keep the clock beside them', () => {
+    for (const k of ['music', 'pomodoro', 'timer', 'stopwatch']) {
+      expect(K.isClockActivity(k)).toBe(true);
+    }
+    for (const k of ['event-soon', 'todo-due', 'prayer-soon', 'sys', 'fps', 'hud-volume']) {
+      expect(K.isClockActivity(k)).toBe(false);
+    }
+  });
+
+  test('places clock on empty side instead of adding side + clock on both wings', () => {
+    // Default idle: right=battery (46px), middle=time (40px), left=empty on 220px MacBook camera
+    const r = K.camClosedLayout({ camW: 220, leftW: 0, rightW: 46, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(true);
+    expect(r.clockRight).toBe(false);
+    expect(r.width).toBe(328); // was 426px before fix!
+    expect(r.clockL).toBe(8);
+    expect(r.clockW).toBeGreaterThanOrEqual(40);
+  });
+
+  test('places clock on narrower side when both wings have content', () => {
+    // Left=prayer (85px), right=battery (46px), middle=time (40px)
+    const r = K.camClosedLayout({ camW: 220, leftW: 85, rightW: 46, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(true);
+    expect(r.clockRight).toBe(true);
+    expect(r.width).toBe(424); // was 504px before fix!
+    expect(r.clockW).toBeGreaterThanOrEqual(40);
+  });
+
+  test('keeps pomodoro/music + clock compact using actual per-side widths', () => {
+    // Pomodoro: 20px ring on left, 42px timer on right, 40px clock
+    const pomo = K.camClosedLayout({ camW: 220, leftW: 20, rightW: 42, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(pomo.showClock).toBe(true);
+    expect(pomo.clockRight).toBe(false);
+    expect(pomo.width).toBe(372); // was 482px before fix!
+    expect(pomo.clockL).toBe(34);
+    expect(pomo.clockW).toBeGreaterThanOrEqual(40);
+
+    // Music with hover controls (70px on right, 24px album art on left, 40px clock)
+    const music = K.camClosedLayout({ camW: 220, leftW: 24, rightW: 70, clockW: 40, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(music.showClock).toBe(true);
+    expect(music.clockRight).toBe(false);
+    expect(music.width).toBe(380); // was 504px before fix!
+  });
+
+  test('drops clock if adding it exceeds maxW budget on compact screens', () => {
+    const r = K.camClosedLayout({ camW: 220, leftW: 110, rightW: 100, clockW: 90, pad: 8, notchWidth: 200, maxW: 480 });
+    expect(r.showClock).toBe(false);
+    expect(r.width).toBe(456);
+  });
+
+  test('hugs camera when all closed slots are empty', () => {
+    const r = K.camClosedLayout({ camW: 220, leftW: 0, rightW: 0, clockW: 0, pad: 0, notchWidth: 80, maxW: 480 });
+    expect(r.width).toBe(220);
+    expect(r.showClock).toBe(false);
+  });
+
+  test('closedWidthNoCam does not stack empty notchWidth on top of side * 2', () => {
+    // notchWidth=200, battery=46px, time=40px (+24 gap) + 28 pad => fits inside 200px!
+    expect(K.closedWidthNoCam({ notchWidth: 200, midNeed: 64, side: 46, pad: 28, maxW: 460 })).toBe(200);
+    // Wider side (85px prayer): expands only to fit content cleanly (262px instead of 370px)
+    expect(K.closedWidthNoCam({ notchWidth: 200, midNeed: 64, side: 85, pad: 28, maxW: 460 })).toBe(262);
+  });
+});
+
+describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid sizes)', () => {
+  test('default untouched modules keep uniform display-adapted height while explicit compact/minimal user configs keep their compact height', () => {
+    // Untouched / default Bento modules stay 100% uniform height (sejajar secara default)
+    const defaultPrayer = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled', pack: 'bento' },
+      pref: {},
+      expandedWidth: 680,
+      defaultHeight: 276,
+      maxW: 780,
+      maxH: 340,
+    });
+    const defaultControl = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled', pack: 'bento' },
+      pref: { style: 'bento', size: 'auto' },
+      expandedWidth: 680,
+      defaultHeight: 276,
+      maxW: 780,
+      maxH: 340,
+    });
+    expect(defaultPrayer.height).toBe(276);
+    expect(defaultControl.height).toBe(276);
+    expect(defaultControl.width).toBe(680);
+
+    // User who explicitly chose a compact or minimal style keeps their compact/minimal height automatically
+    const timeline = K.resolveModuleFrame({
+      styleDef: { id: 'timeline', height: 160, surface: 'borderless', pack: 'compact' },
+      pref: { style: 'timeline', size: 'auto' },
+      expandedWidth: 660,
+      defaultHeight: 268,
+      maxW: 780,
+      maxH: 340,
+    });
+    const minimalCtl = K.resolveModuleFrame({
+      styleDef: { id: 'minimal', height: 140, surface: 'borderless', pack: 'minimal' },
+      pref: { style: 'minimal' },
+      expandedWidth: 660,
+      defaultHeight: 268,
+      maxW: 780,
+      maxH: 340,
+    });
+    expect(timeline).toEqual({
+      styleId: 'timeline',
+      sizeMode: 'auto',
+      width: 660,
+      height: 160,
+      stageH: 106,
+      surface: 'borderless',
+    });
+    expect(minimalCtl.width).toBe(660);
+    expect(minimalCtl.height).toBe(140);
+  });
+
+  test('fit mode, size presets, and custom W×H let users customize any module size and clamp safely', () => {
+    const fitSlim = K.resolveModuleFrame({
+      styleDef: { id: 'strip', height: 124, surface: 'borderless' },
+      pref: { style: 'strip', size: 'fit' },
+      expandedWidth: 660,
+      defaultHeight: 268,
+    });
+    expect(fitSlim.height).toBe(124);
+    expect(fitSlim.stageH).toBe(74);
+
+    const compact = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled' },
+      pref: { size: 'compact', surface: 'outline' },
+      expandedWidth: 700,
+    });
+    expect(compact.height).toBe(148);
+    expect(compact.stageH).toBe(98);
+    expect(compact.surface).toBe('outline');
+
+    const custom = K.resolveModuleFrame({
+      styleDef: { id: 'timeline', height: 160, surface: 'borderless' },
+      pref: { size: 'custom', width: 999, height: 90 },
+      expandedWidth: 660,
+      maxW: 740,
+      maxH: 300,
+    });
+    expect(custom.width).toBe(740);
+    expect(custom.height).toBe(116);
+    expect(custom.stageH).toBe(66);
+  });
+
+  test('packCards respects custom per-module gridSize overrides', () => {
+    const pages = K.packCards(['weather', 'prayer'], {
+      sizes: { weather: '2x2', prayer: '2x1' },
+    });
+    expect(pages.length).toBe(1);
+    expect(pages[0].cards).toEqual([
+      { id: 'weather', x: 0, y: 0, w: 2, h: 2 },
+      { id: 'prayer', x: 2, y: 0, w: 2, h: 1 },
+    ]);
+  });
+
+  test('closedStateKey matches between 1 s poll and renderClosed so pony idle does not blink every second', () => {
+    const kIdle = K.closedStateKey({ actKey: '', ponyMood: 'idle' });
+    expect(kIdle).toBe('|pony:idle');
+    expect(K.closedStateKey({ actKey: '', ponyMood: 'idle' })).toBe(kIdle);
+    expect(K.closedStateKey({ actKey: '', ponyMood: 'sleep' })).not.toBe(kIdle);
+    expect(K.closedStateKey({ actKey: 'music', ponyMood: '' })).toBe('music');
+    expect(K.closedStateKey({ actKey: '', claude: true })).toBe('|cc');
+    expect(K.closedStateKey({ actKey: '', notif: true })).toBe('|nf');
+  });
+});
+
+describe('renderMarkdown (GFM chat & live stream rendering)', () => {
+  test('renders GFM tables with column alignment, inline formatting, escaped pipes, and citations', () => {
+    const md = [
+      'Harga emas hari ini [1]:',
+      '',
+      '| Jenis | Harga / gr | Perubahan |',
+      '| :--- | ---: | :---: |',
+      '| **Antam** | `Rp 1.920.000` | +0.5% |',
+      '| UBS \\| 24K | Rp 1.890.000 | ~~-0.1%~~ [2] |',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<div class="md-table-wrap"><table class="md-table">');
+    expect(html).toContain('<th style="text-align:left">Jenis</th>');
+    expect(html).toContain('<th style="text-align:right">Harga / gr</th>');
+    expect(html).toContain('<th style="text-align:center">Perubahan</th>');
+    expect(html).toContain('<td style="text-align:left"><strong>Antam</strong></td>');
+    expect(html).toContain('<td style="text-align:right"><code>Rp 1.920.000</code></td>');
+    expect(html).toContain('<td style="text-align:left">UBS | 24K</td>');
+    expect(html).toContain('<td style="text-align:center"><del>-0.1%</del> [2]</td>');
+  });
+
+  test('renders headings, blockquotes, horizontal rules, nested lists, and GFM task lists', () => {
+    const md = [
+      '# Ringkasan',
+      '## Detail',
+      '> Catatan **penting**',
+      '> - Item dalam kutipan',
+      '',
+      '---',
+      '',
+      '- Induk satu',
+      '  - Anak satu',
+      '  - Anak dua',
+      '- [x] Selesai',
+      '- [ ] Belum',
+      '',
+      '3. Mulai dari tiga',
+      '4. Empat',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<h1 class="md-h md-h1">Ringkasan</h1>');
+    expect(html).toContain('<h2 class="md-h md-h2">Detail</h2>');
+    expect(html).toContain('<blockquote class="md-bq"><p>Catatan <strong>penting</strong></p><ul><li>Item dalam kutipan</li></ul></blockquote>');
+    expect(html).toContain('<hr class="md-hr">');
+    expect(html).toContain('<li>Induk satu<ul><li>Anak satu</li><li>Anak dua</li></ul></li>');
+    expect(html).toContain('<li class="md-task done"><span class="md-chk on" aria-hidden="true">✓</span><span class="md-task-body">Selesai</span></li>');
+    expect(html).toContain('<li class="md-task"><span class="md-chk" aria-hidden="true"></span><span class="md-task-body">Belum</span></li>');
+    expect(html).toContain('<ol start="3"><li>Mulai dari tiga</li><li>Empat</li></ol>');
+  });
+
+  test('renders fenced code blocks with language header, tolerates streaming unclosed fences, and protects code from formatting', () => {
+    const closed = '```python\ndef gold_price():\n  return "<b>ok</b>"\n```';
+    const htmlClosed = K.renderMarkdown(closed, { copyTitle: 'Copy', copyIcon: 'CP' });
+    expect(htmlClosed).toContain('<div class="md-code"><div class="md-code-hd"><span class="md-code-lang">python</span><button type="button" class="ch-copy" title="Copy">CP</button></div><pre><code>def gold_price():\n  return &quot;&lt;b&gt;ok&lt;/b&gt;&quot;</code></pre></div>');
+
+    const streaming = '```js\nconst x = 1 * 2 * 3;';
+    const htmlStreaming = K.renderMarkdown(streaming, { copyTitle: 'Copy', copyIcon: 'CP' });
+    expect(htmlStreaming).toContain('<span class="md-code-lang">js</span>');
+    expect(htmlStreaming).toContain('<pre><code>const x = 1 * 2 * 3;</code></pre>');
+  });
+
+  test('handles inline emphasis safely without mangling snake_case, math, or URLs and blocks XSS', () => {
+    const md = [
+      'Use `my_func(*a*, **b**)` with snake_case_var and 2 * 3 * 4.',
+      'See [**Antam**](https://logammulia.com/id/harga_emas_(2026)) and https://example.com/a_b_c.',
+      'Evil: <script>alert(1)</script> [click](javascript:alert(1)) <img src=x onerror=alert(1)>',
+    ].join('\n');
+    const html = K.renderMarkdown(md);
+    expect(html).toContain('<code>my_func(*a*, **b**)</code>');
+    expect(html).toContain('snake_case_var');
+    expect(html).not.toContain('<em>case</em>');
+    expect(html).toContain('2 * 3 * 4');
+    expect(html).toContain('<a data-href="https://logammulia.com/id/harga_emas_(2026)"><strong>Antam</strong></a>');
+    expect(html).toContain('<a data-href="https://example.com/a_b_c">https://example.com/a_b_c</a>.');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('data-href="javascript:');
+    expect(html).not.toContain('<img ');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  test('displayNotchSizes adapts closed & expanded notch dimensions to notched MacBooks, compact high-DPI laptops, and large external monitors', () => {
+    // 16" MacBook Pro (1800×1169, camera 220×38) — ignores stale manual sizes when mode is auto
+    const mbp16 = K.displayNotchSizes({
+      settings: { notchSizeMode: 'auto', notchWidth: 80, notchHeight: 32, expandedWidth: 710 },
+      displayW: 1800,
+      displayH: 1169,
+      camW: 220,
+      camH: 38,
+    });
+    expect(mbp16.mode).toBe('auto');
+    expect(mbp16.notchWidth).toBe(220);
+    expect(mbp16.notchHeight).toBe(38);
+    expect(mbp16.expandedWidth).toBe(680);
+    expect(mbp16.expandedHeightTall).toBe(276);
+
+    // 14" MacBook Pro (1512×982, camera 184×32)
+    const mbp14 = K.displayNotchSizes({
+      settings: { notchSizeMode: 'auto' },
+      displayW: 1512,
+      displayH: 982,
+      camW: 184,
+      camH: 32,
+    });
+    expect(mbp14.notchWidth).toBe(184);
+    expect(mbp14.notchHeight).toBe(32);
+    expect(mbp14.expandedWidth).toBe(634);
+
+    // Compact / 150%-DPI Windows laptop (1280×720, no camera)
+    const winCompact = K.displayNotchSizes({
+      settings: {},
+      displayW: 1280,
+      displayH: 720,
+      camW: 0,
+      camH: 0,
+    });
+    expect(winCompact.notchHeight).toBe(26);
+    expect(winCompact.expandedWidth).toBe(598);
+    expect(winCompact.expandedHeightTall).toBe(232);
+
+    // 27" 1440p external monitor (2560×1440, no camera)
+    const ext2k = K.displayNotchSizes({
+      settings: {},
+      displayW: 2560,
+      displayH: 1440,
+      camW: 0,
+      camH: 0,
+    });
+    expect(ext2k.notchHeight).toBe(36);
+    expect(ext2k.expandedWidth).toBe(740);
+    expect(ext2k.expandedHeightTall).toBe(294);
+
+    // Explicit Custom mode respects user sliders
+    const custom = K.displayNotchSizes({
+      settings: { notchSizeMode: 'custom', notchWidth: 240, notchHeight: 36, expandedWidth: 700, expandedHeight: 210, expandedHeightTall: 290 },
+      displayW: 1800,
+      displayH: 1169,
+      camW: 220,
+      camH: 38,
+    });
+    expect(custom.mode).toBe('custom');
+    expect(custom.notchWidth).toBe(240);
+    expect(custom.notchHeight).toBe(36);
+    expect(custom.expandedWidth).toBe(700);
+    expect(custom.expandedHeightTall).toBe(290);
+  });
+
+  test('createWheelPager prevents macOS trackpad momentum double-jumps while allowing deliberate swipes', () => {
+    const pager = K.createWheelPager();
+    const steps = [];
+    let t = 1000;
+
+    // 1. Single strong macOS trackpad flick with a long 1100 ms inertial glide tail (60 Hz)
+    const flick = [
+      12, 26, 42, 48, 44, 38, 32, 27, 23, 19, 16, 13, 11, 9, 8, 7, 6, 5, 5, 4,
+      4, 3, 3, 3, 2, 2, 2, 2, 2, 1.5, 1.5, 1.2, 1, 1, 1, 0.8, 0.8, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+    ];
+    for (const dx of flick) {
+      const r = pager.feed({ deltaX: dx, deltaY: 1, now: t });
+      if (r.dir) steps.push({ t, dir: r.dir });
+      t += 16;
+    }
+    expect(steps.length).toBe(1);
+    expect(steps[0].dir).toBe(1);
+
+    // 2. Deliberate second swipe after a 160 ms quiet gap fires cleanly once
+    t += 160;
+    const second = [18, 34, 24, 14, 8, 4, 2];
+    for (const dx of second) {
+      const r = pager.feed({ deltaX: dx, deltaY: 0, now: t });
+      if (r.dir) steps.push({ t, dir: r.dir });
+      t += 16;
+    }
+    expect(steps.length).toBe(2);
+    expect(steps[1].dir).toBe(1);
+
+    // 3. Deliberate fast second swipe in same direction after momentum decays low (no full pause)
+    const p2 = K.createWheelPager();
+    let t2 = 2000;
+    let count2 = 0;
+    for (const dx of [24, 34, 22, 15, 10, 7, 5, 4, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 24, 32, 14, 6, 3]) {
+      const r = p2.feed({ deltaX: dx, deltaY: 0, now: t2 });
+      if (r.dir) count2 += r.dir;
+      t2 += 16;
+    }
+    expect(count2).toBe(2);
+
+    // 4. Quick opposite-direction reversal mid-glide (>180 ms after firing) steps back once
+    t += 220;
+    let rev = 0;
+    for (const dx of [-20, -32, -18, -8, -4]) {
+      const r = pager.feed({ deltaX: dx, deltaY: 0, now: t });
+      if (r.dir) rev += r.dir;
+      t += 16;
+    }
+    expect(rev).toBe(-1);
+
+    // 5. Diagonal vertical scroll wobble does not trigger horizontal slide and resets partial drift
+    t += 200;
+    expect(pager.feed({ deltaX: 14, deltaY: 16, now: t })).toEqual({ handled: false, dir: 0 });
+    expect(pager.feed({ deltaX: 25, deltaY: 0, now: t + 16 })).toEqual({ handled: true, dir: 0 });
+    expect(pager.feed({ deltaX: 10, deltaY: 20, now: t + 32 })).toEqual({ handled: false, dir: 0 });
+    // Previous 25 px drift was cleared by the vertical scroll, so another 25 px does not cross 48 px
+    expect(pager.feed({ deltaX: 25, deltaY: 0, now: t + 48 })).toEqual({ handled: true, dir: 0 });
+
+    // 6. Discrete mouse wheel notch (deltaMode = 1) fires once per click
+    t += 250;
+    expect(pager.feed({ deltaX: 2, deltaY: 0, deltaMode: 1, now: t })).toEqual({ handled: true, dir: 1 });
   });
 });

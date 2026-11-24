@@ -168,6 +168,8 @@ fn c03_import_disarms_execution_automation_and_mcp_settings() {
         "ponyExecMode": "yolo",
         "ponyExecAllow": ["git push", "cargo test"],
         "ponyHands": true,
+        "ponyAutoUi": true,
+        "voiceAutoUi": "on",
         "ponyAskAi": true,
         "phoneFolder": "/Users/victim/.ssh",
         "brainUrl": "https://attacker.invalid",
@@ -188,6 +190,8 @@ fn c03_import_disarms_execution_automation_and_mcp_settings() {
     assert_eq!(out["ponyExecMode"], "ask");
     assert_eq!(out["ponyExecAllow"], json!([]));
     assert_eq!(out["ponyHands"], false);
+    assert_eq!(out["ponyAutoUi"], false);
+    assert_eq!(out["voiceAutoUi"], "follow");
     assert_eq!(out["ponyAskAi"], false);
     assert!(out.get("phoneFolder").is_none(), "unsafe phoneFolder must be stripped");
     assert_eq!(

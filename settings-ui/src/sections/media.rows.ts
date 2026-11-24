@@ -98,7 +98,7 @@ export const MEDIA_ROWS: readonly Row[] = [
     t: "toggle",
     k: "ytVideo",
     label: "Show YouTube videos in Music",
-    sub: "While a video plays on youtube.com in Brave, Chrome, Edge, Arc, Vivaldi, Opera or Safari, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s tab addresses to find it (macOS asks once). YouTube Music stays the music view.",
+    sub: "While a video plays on youtube.com in Chrome, Edge, Brave or Vivaldi, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s address bar and tab names to find it, never the pages. YouTube Music stays the music view.",
   },
   {
     t: "toggle",
@@ -192,7 +192,7 @@ export const MEDIA_ROWS: readonly Row[] = [
     t: "select",
     k: "lyricsExtra",
     label: "Under each line",
-    sub: "Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this Mac.",
+    sub: "Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this PC.",
     options: [
       ["off", "Nothing"],
       ["romanized", "Romanization"],

@@ -418,7 +418,7 @@ const SECTIONS = [
       { t: 'toggle', k: 'autoHide', label: _t('Auto-hide'), sub: _t('Sympony waits above the top edge of the screen and comes down when you move the mouse there, so maximized windows get the whole screen. Alerts, reminders and the volume HUD still show.') },
       { t: 'toggle', k: 'standbyShow', label: _t('Come down when you’re idle'), sub: _t('With Auto-hide on: after a few seconds without the mouse or keyboard, Sympony comes down to show the time, music, lyrics, prayer times… and tucks away again as soon as you move the mouse or type. Not over fullscreen apps.') },
       { t: 'number', k: 'standbySecs', label: _t('Idle for'), sub: _t('Seconds without the mouse or keyboard before Sympony comes down (1 to 3600)'), min: 1, max: 3600, unit: _t('seconds') },
-      { t: 'toggle', k: 'hideButton', label: _t('Hide button'), sub: _t('An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click or tap the handle to bring it back. Right-clicking Sympony twice does the same.') },
+      { t: 'toggle', k: 'hideButton', label: _t('Hide button'), sub: _t('An eye button at the top of the open Sympony that tucks it away to a thin handle at the top edge, out of the way of tabs and title bars. Click the handle, right-click twice, or press the Open / close Sympony shortcut (default Option+N / Alt+N) to bring it back.') },
       { t: 'custom', render: renderAutoHideApps },
       { t: 'toggle', k: 'stepAside', label: _t('Step aside for the mouse'), sub: _t('Sympony stays down with the time, but slides up out of the way when the mouse comes to it from below, so a tab or button under it can be clicked. It comes back when the mouse moves away. Push the mouse to the very top edge, or press the shortcut, to open it. Not used while Auto-hide is on.') },
       { t: 'range', k: 'notchTopGap', label: _t('Gap from the top edge'), sub: _t('Let Sympony float below the top edge of the screen as a rounded pill. 0 keeps it attached to the edge. Hidden or auto-hidden, it still waits above the edge.'), min: 0, max: 120, step: 2, unit: 'px' },
@@ -753,7 +753,7 @@ const MAC_OFF = {
   // (Screen Time and Bluetooth: Sympony's own on a Mac since phase 4c, screentime.rs / bluetooth in watchers.rs)
   pages: ['cursor', 'dock', 'snap', 'wallpaper'],
   keys: ['hideInFullscreen', 'touchMode', 'reserveTop', 'reserveBlur', 'reserveMatch',
-    'toggleShortcut', 'moduleShortcuts', 'snoozeShortcut', 'snoozeMinutes',
+    'snoozeShortcut', 'snoozeMinutes',
     // System Monitor on a Mac (watchers.rs): CPU, memory, disk and network; no temperature sensor or FPS counter
     'fpsCounter',
     'realVisualizer', 'vlcWeb', 'vlcPort',
@@ -1619,12 +1619,12 @@ function locateRow(which, cur) {
   // "Found: …" only while that's the page's city
   let m = busy ? null : locating.msg[which];
   if (m && m.at && (!cur || `${cur.lat},${cur.lon}` !== m.at)) m = null;
-  const sub = busy ? _t('Finding your location…') : m ? m.text : _t('Uses Location Services to find where this Mac is, once, and picks the city there');
+  const sub = busy ? _t('Finding your location…') : m ? m.text : MAC ? _t('Uses Location Services to find where this Mac is, once, and picks the city there') : _t('Uses Windows’ location service to find where this PC is, once, and picks the city there (its name from OpenStreetMap)');
   return `<div class="row"><span class="lbl">${_t('Detect my location')}<small>${sub}</small></span>
         <span style="display:flex;gap:6px">${m && m.settings ? `<button class="btn" data-locset>${_t('Open location settings')}</button>` : ''}<button class="btn" data-locate="${which}" ${locating.busy ? 'disabled' : ''}>${fa(busy ? 'spinner fa-spin' : 'location-crosshairs')} ${_t('Detect')}</button></span></div>`;
 }
 function wireLocate(el) {
-  $$('[data-locset]', el).forEach((b) => { b.onclick = () => api.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices'); });
+  $$('[data-locset]', el).forEach((b) => { b.onclick = () => api.openExternal(MAC ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices' : 'ms-settings:privacy-location'); });
   $$('[data-locate]', el).forEach((b) => { b.onclick = () => detectLocation(b.dataset.locate); });
 }
 async function detectLocation(which) {
@@ -1636,12 +1636,12 @@ async function detectLocation(which) {
   locating.busy = '';
   // (still looking from before Settings was opened again)
   if (r && r.reason === 'busy') { refresh(); return; }
-  const how = _t('Turn it on in System Settings → Privacy & Security → Location Services, then come back.');
+  const how = MAC ? _t('Turn it on in System Settings → Privacy & Security → Location Services, then come back.') : _t('Turn on Location services, “Let apps access your location” and “Let desktop apps access your location” in Settings → Privacy & security → Location, then come back.');
   const p = r && r.place ? [r.place.name, r.place.admin, r.place.country].filter(Boolean).join(', ') : '';
   locating.msg[which] = r && r.ok ? { at: `${r.place.lat},${r.place.lon}`, text: r.named ? _t('Found: {place}', { place: esc(p) }) : _t('Saved your position, but couldn’t look up its name. Check the internet connection, or search for your city.') }
-    : r && r.reason === 'off' ? { text: `${_t('Location Services is off on this Mac.')} ${how}`, settings: true }
-    : r && r.reason === 'denied' ? { text: `${_t('macOS doesn’t let Sympony use your location.')} ${how}`, settings: true }
-    : { text: _t('This Mac couldn’t find its location right now. Try again in a moment, or search for your city.') };
+    : r && r.reason === 'off' ? { text: `${MAC ? _t('Location Services is off on this Mac.') : _t('Location services is off on this PC.')} ${how}`, settings: true }
+    : r && r.reason === 'denied' ? { text: `${MAC ? _t('macOS doesn’t let Sympony use your location.') : _t('Windows doesn’t let Sympony use your location.')} ${how}`, settings: true }
+    : { text: MAC ? _t('This Mac couldn’t find its location right now. Try again in a moment, or search for your city.') : _t('This PC couldn’t find its location right now. Try again in a moment, or search for your city.') };
   refresh();
 }
 
@@ -1652,7 +1652,7 @@ function renderWeather(el) {
       <label class="row"><span class="lbl">${_t('Show weather')}</span><input type="checkbox" id="wxOn" ${S.weatherEnabled ? 'checked' : ''}></label>
       <div class="row"><span class="lbl">${_t('Location')}<small>${loc ? esc([loc.name, loc.admin, loc.country].filter(Boolean).join(', ')) : _t('Detected from your time zone')}</small></span>
         <span style="display:flex;gap:6px"><input type="text" id="wxQ" class="short" placeholder="${_t('Search a city…')}"><button class="btn" id="wxGo">${fa('magnifying-glass')}</button></span></div>
-      <label class="row"><span class="lbl">${_t('Use my current location')}<small>${_t('Follows this Mac: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.')}</small></span><input type="checkbox" id="wxAuto" ${S.locationAuto !== false ? 'checked' : ''}></label>
+      <label class="row"><span class="lbl">${_t('Use my current location')}<small>${MAC ? _t('Follows this Mac: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.') : _t('Follows this PC: when it is more than 2 km from the city above, that becomes the new city. Picking a city turns this off.')}</small></span><input type="checkbox" id="wxAuto" ${S.locationAuto !== false ? 'checked' : ''}></label>
       ${locateRow('weather', loc)}
       <label class="row"><span class="lbl">${_t('Units')}</span><select id="wxUnit"><option value="c" ${S.weatherUnit !== 'f' ? 'selected' : ''}>°C, km/h</option><option value="f" ${S.weatherUnit === 'f' ? 'selected' : ''}>°F, mph</option></select></label>
     </div><div class="results" id="wxRes"></div>`;

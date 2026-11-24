@@ -6,7 +6,7 @@
   const cur = $('cur');
   const label = $('label');
   const t = (s, v) => (typeof window._t === 'function' ? window._t(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => (v && v[k]) || ''));
-  const VERB = { click: 'Clicking {x}', fill: 'Typing in {x}', choose: 'Choosing in {x}', scroll: 'Scrolling' };
+  const VERB = { click: 'Clicking {x}', double_click: 'Opening {x}', fill: 'Typing in {x}', choose: 'Choosing in {x}', slide: 'Sliding {x}', drag: 'Dragging {x}', scroll: 'Scrolling' };
   const words = (d) => (d.kind === 'point' || !VERB[d.kind] ? d.label || '' : t(VERB[d.kind], { x: d.label ? `“${d.label}”` : '' }).trim());
   let pony = null;
   let hideTimer = 0;
@@ -30,11 +30,25 @@
     show(d) {
       clearTimeout(hideTimer);
       ensurePony(d);
+      document.body.classList.remove('watching');
       $('status-t').textContent = d.status ? t('Pony is using {app}', { app: d.status }) : t('Pony is using your screen');
       document.body.classList.add('on');
       if (pony) pony.setMood('working');
     },
+    watch(d) {
+      clearTimeout(hideTimer);
+      ensurePony(d);
+      document.body.classList.add('watching', 'on');
+      label.classList.remove('on');
+      const app = d.status || '';
+      const s = typeof d.elapsed === 'number' && d.elapsed > 0 ? ` (${d.elapsed}s)` : '';
+      $('status-t').textContent = app
+        ? (d.busy ? t('Watching {app} (working)…', { app }) : t('Watching {app}…', { app })) + s
+        : t('Watching your screen…') + s;
+      if (pony) pony.setMood('working');
+    },
     move(d) {
+      document.body.classList.remove('watching');
       cur.style.transform = `translate(${Math.round(d.x)}px, ${Math.round(d.y)}px)`;
       const w = words(d);
       label.textContent = w;
@@ -51,7 +65,7 @@
     },
     hide() {
       label.classList.remove('on');
-      document.body.classList.remove('on');
+      document.body.classList.remove('on', 'watching');
       if (pony) pony.setMood('done');
     },
   };

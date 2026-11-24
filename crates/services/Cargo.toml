@@ -18,6 +18,8 @@ qrcodegen = "1.8"
 dirs.workspace = true
 base64 = "0.22"
 plist = "1"
+# (Windows toasts' XML; plist brings the same one)
+quick-xml = "0.42"
 aes-gcm = "0.10"
 ureq = { version = "3", features = ["json"] }
 sha2 = "0.10"

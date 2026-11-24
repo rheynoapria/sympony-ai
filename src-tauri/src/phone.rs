@@ -303,7 +303,7 @@ fn handle(app: &AppHandle, s: &Session, mut c: TcpStream) {
             if t.trim().is_empty() {
                 return text(&mut c, 400, "Empty");
             }
-            if platform::macos::files::write_text(&t) {
+            if platform::os::files::write_text(&t) {
                 let _ = app.emit("phone:text", json!({"link": services::shelf::is_link(&t)}));
                 text(&mut c, 200, "OK");
             } else {

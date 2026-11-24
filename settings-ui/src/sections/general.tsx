@@ -6,6 +6,7 @@ import { GENERAL_ROWS } from "./general.rows";
 import { ClosedSlotsPart } from "./parts/ClosedSlots";
 import { HourChimePart } from "./parts/HourChime";
 import { LanguagePart } from "./parts/Language";
+import { NotchColorPart } from "./parts/NotchColor";
 import { PositionPart } from "./parts/Position";
 import { WorldClocksPart } from "./parts/WorldClocks";
 
@@ -15,6 +16,7 @@ const CUSTOMS: Record<string, CustomPart> = {
   closedSlots: ClosedSlotsPart,
   worldClocks: WorldClocksPart,
   hourChime: HourChimePart,
+  notchColor: NotchColorPart,
 };
 
 function GeneralSection(props: CustomPartProps) {

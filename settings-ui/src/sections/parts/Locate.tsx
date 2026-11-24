@@ -4,7 +4,8 @@ import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-lay
 import { Button } from "@/components/ui/knowns/button";
 import { t } from "@/lib/i18n";
 import { notch } from "@/lib/notch";
-import { locateMessage, locateSub, type LocateState } from "./logic";
+import type { OS } from "../registry";
+import { locateMessage, locateSub, locationSettingsUrl, type LocateState } from "./logic";
 
 let state: LocateState = { busy: "", msg: {} };
 const listeners = new Set<() => void>();
@@ -24,7 +25,7 @@ function getSnapshot(): LocateState {
   return state;
 }
 
-async function detectLocation(which: "weather" | "prayer") {
+async function detectLocation(which: "weather" | "prayer", os: OS) {
   if (state.busy) return;
   const nextMsg = { ...state.msg };
   delete nextMsg[which];
@@ -40,7 +41,7 @@ async function detectLocation(which: "weather" | "prayer") {
   }
   state = {
     busy: "",
-    msg: { ...state.msg, [which]: locateMessage(r) },
+    msg: { ...state.msg, [which]: locateMessage(r, os) },
   };
   emit();
 }
@@ -48,9 +49,11 @@ async function detectLocation(which: "weather" | "prayer") {
 export function LocatePart({
   which,
   cur,
+  os,
 }: {
   which: "weather" | "prayer";
   cur: { lat: number; lon: number } | null;
+  os: OS;
 }) {
   const st = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const busy = st.busy === which;
@@ -58,17 +61,13 @@ export function LocatePart({
   const showSettings = Boolean(msg?.settings);
 
   return (
-    <SettingsRow label={t("Detect my location")} description={locateSub(st, which, cur)}>
+    <SettingsRow label={t("Detect my location")} description={locateSub(st, which, cur, os)}>
       <div className="flex flex-wrap items-center gap-2">
         {showSettings && (
           <Button
             size="sm"
             variant="secondary"
-            onClick={() =>
-              void notch.openExternal(
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
-              )
-            }
+            onClick={() => void notch.openExternal(locationSettingsUrl(os))}
           >
             {t("Open location settings")}
           </Button>
@@ -84,7 +83,7 @@ export function LocatePart({
               <Crosshair className="size-3.5" />
             )
           }
-          onClick={() => void detectLocation(which)}
+          onClick={() => void detectLocation(which, os)}
         >
           {t("Detect")}
         </Button>

@@ -255,6 +255,8 @@
     host.appendChild(sndPop);
     // under the button, at its end; moved up when Sympony is too short for it
     const h = host.getBoundingClientRect(); const r = b.getBoundingClientRect(); const pad = 8;
+    sndPop.style.maxHeight = Math.max(96, h.height - 2 * pad) + 'px';
+    sndPop.style.overflowY = 'auto';
     const top = Math.max(pad, Math.min(r.bottom - h.top + 4, h.height - pad - sndPop.offsetHeight));
     const rtl = getComputedStyle(page).direction === 'rtl';
     const left = rtl ? r.left - h.left : r.right - h.left - sndPop.offsetWidth;
@@ -283,6 +285,7 @@
     const s = st.settings || {};
     const p = st.pomodoro || { remaining: (s.pomoWork || 25) * 60000, total: (s.pomoWork || 25) * 60000, phase: 'work', running: false, cycle: 0, cycles: s.pomoCycles || 4, doneToday: 0, focusToday: 0 };
     const workM = s.pomoWork || 25; const shortM = s.pomoShort || 5; const longM = s.pomoLong || 15;
+    const style = window.StyleLib ? StyleLib.styleIdFor(s, 'pomodoro') : 'bento';
     const pills = [
       ['work', `${_t('Focus')} ${workM}`, view === 'pomodoro' && p.phase === 'work'],
       ['short', `${_t('Break')} ${shortM}`, view === 'pomodoro' && p.phase === 'short'],
@@ -290,7 +293,118 @@
       ['timer', _t('Timer'), view === 'timer'],
       ['stopwatch', _t('Stopwatch'), view === 'stopwatch'],
     ];
-    $$('[data-ppill]', page).forEach((b) => {
+
+    const bentoEl = $('#pomoBentoRoot', page);
+    const altEl = $('#pomoAltRoot', page);
+
+    if (style === 'digital' || style === 'strip') {
+      if (bentoEl) bentoEl.hidden = true;
+      if (altEl) altEl.hidden = false;
+      const sndKey = sndOf();
+      const sndName = sndKey === 'off' ? _t('Sound') : ((N.focusSounds || []).find(([v]) => v === sndKey) || [sndKey, sndKey])[1];
+
+      let accent = p.phase === 'work' ? '#ff5a52' : p.phase === 'short' ? '#4ade80' : '#60a5fa';
+      let modeLabel = LABEL[p.phase] || _t('Focus');
+      let bigText = '';
+      let subText = '';
+      let pct = 0;
+      let actsHtml = '';
+      let extraRight = '';
+
+      if (view === 'stopwatch') {
+        const sws = sw();
+        const ms = N.swElapsed();
+        accent = SW;
+        modeLabel = _t('Stopwatch');
+        bigText = swText(ms);
+        const laps = sws.laps || [];
+        subText = laps.length ? _t('{n} laps', { n: laps.length }) : (sws.running ? _t('Running') : _t('Ready'));
+        pct = ((ms % 60000) / 60000) * 100;
+        actsHtml = `<button type="button" class="sbtn p" data-pa="sw-toggle">${esc(sws.running ? _t('Pause') : _t('Start'))}</button>`
+          + `<button type="button" class="sbtn" data-pa="sw-lap"${sws.running ? '' : ' disabled'}>${esc(_t('Lap'))}</button>`
+          + `<button type="button" class="sbtn" data-pa="sw-reset" title="${esc(_t('Reset'))}">${fa('rotate-left')}</button>`;
+      } else if (view === 'timer') {
+        const t = st.timer || {};
+        const on = !!t.active;
+        const presets = N.timerPresets(s.timerPresets);
+        accent = TM;
+        modeLabel = _t('Timer');
+        if (on) {
+          const left = N.timerLeft(t);
+          pct = Math.max(0, Math.min(100, (1 - left / Math.max(1, t.total)) * 100));
+          bigText = N.fmt(Math.ceil(left / 1000));
+          subText = t.running ? _t('Ends at {time}', { time: N.hm(t.endsAt) }) : _t('Paused');
+          actsHtml = `<button type="button" class="sbtn p" data-pa="tm-toggle">${esc(t.running ? _t('Pause') : _t('Resume'))}</button>`
+            + `<button type="button" class="sbtn" data-tadd="1">+1m</button>`
+            + `<button type="button" class="sbtn" data-pa="tm-stop">${esc(_t('Stop'))}</button>`;
+        } else {
+          const ms = pickMs();
+          bigText = N.timerLen(ms || 25 * MIN);
+          subText = ms ? _t('Ends at {time}', { time: N.hm(Date.now() + ms) }) : '';
+          extraRight = `<div class="pomo-pills-row">${presets.slice(0, 6).map((m) => `<button type="button" class="pill" data-tmin="${m}" style="height:22px;padding:0 9px;flex:none;background:${m * MIN === ms ? TM : 'var(--pill)'};color:${m * MIN === ms ? '#000' : 'var(--dim)'};cursor:pointer">${esc(chipText(m))}</button>`).join('')}</div>`;
+          actsHtml = `<button type="button" class="sbtn p" data-pa="tm-start">${esc(_t('Start'))}</button>`
+            + `<button type="button" class="sbtn" data-tstep="-5">−5m</button>`
+            + `<button type="button" class="sbtn" data-tstep="5">+5m</button>`;
+        }
+      } else {
+        const left = p.running ? Math.max(0, (p.endsAt || 0) - Date.now()) : (p.remaining || workM * 60000);
+        const total = Math.max(1, p.total || workM * 60000);
+        pct = Math.max(0, Math.min(100, (1 - left / total) * 100));
+        const cycles = p.cycles || s.pomoCycles || 4;
+        const inCycle = (p.cycle || 0) % cycles;
+        bigText = N.fmt(Math.ceil(left / 1000));
+        subText = `${_t('session {n}/{t}', { n: inCycle + 1, t: cycles })} · ${p.running ? _t('Ends at {time}', { time: N.hm(p.endsAt) }) : _t('Paused')}`;
+        actsHtml = `<button type="button" class="sbtn p" data-pa="toggle">${esc(p.running ? _t('Pause') : _t('Start'))}</button>`
+          + `<button type="button" class="sbtn" data-pa="skip">${esc(_t('Skip'))}</button>`
+          + `<button type="button" class="sbtn" data-pa="reset" title="${esc(_t('Reset'))}">${fa('rotate-left')}</button>`
+          + `<button type="button" class="sbtn" id="pomoSound" data-pa="sound">${fa('headphones')} ${esc(sndName)}</button>`;
+      }
+
+      if (style === 'strip') {
+        const sws = view === 'stopwatch' ? sw() : null;
+        const stripActs = view === 'stopwatch'
+          ? `<button type="button" class="sbtn p" data-pa="sw-toggle" style="height:28px;padding:0 12px">${esc(sws.running ? _t('Pause') : _t('Start'))}</button>`
+            + `<button type="button" class="sbtn" data-pa="sw-lap" style="height:28px;padding:0 10px"${sws.running ? '' : ' disabled'}>${esc(_t('Lap'))}</button>`
+            + `<button type="button" class="sbtn" data-pa="sw-reset" style="height:28px;padding:0 9px" title="${esc(_t('Reset'))}">${fa('rotate-left')}</button>`
+          : view === 'timer'
+            ? (st.timer && st.timer.active
+              ? `<button type="button" class="sbtn p" data-pa="tm-toggle" style="height:28px;padding:0 12px">${esc(st.timer.running ? _t('Pause') : _t('Resume'))}</button>`
+                + `<button type="button" class="sbtn" data-tadd="1" style="height:28px;padding:0 9px">+1m</button>`
+                + `<button type="button" class="sbtn" data-pa="tm-stop" style="height:28px;padding:0 10px">${esc(_t('Stop'))}</button>`
+              : `<button type="button" class="sbtn p" data-pa="tm-start" style="height:28px;padding:0 12px">${esc(_t('Start'))}</button>`
+                + `<button type="button" class="sbtn" data-tstep="-5" style="height:28px;padding:0 8px">−5m</button>`
+                + `<button type="button" class="sbtn" data-tstep="5" style="height:28px;padding:0 8px">+5m</button>`)
+            : `<button type="button" class="sbtn p" data-pa="toggle" style="height:28px;padding:0 12px">${esc(p.running ? _t('Pause') : _t('Start'))}</button>`
+              + `<button type="button" class="sbtn" data-pa="skip" style="height:28px;padding:0 10px">${esc(_t('Skip'))}</button>`
+              + `<button type="button" class="sbtn" data-pa="reset" style="height:28px;padding:0 9px" title="${esc(_t('Reset'))}">${fa('rotate-left')}</button>`
+              + `<button type="button" class="sbtn" id="pomoSound" data-pa="sound" style="height:28px;padding:0 9px" title="${esc(sndName)}">${fa('headphones')}</button>`;
+        altEl.innerHTML = `<div class="pomo-strip-wrap sl-pane">`
+          + `<div class="pomo-strip-left">`
+          + `<span style="font-size:10.5px;font-weight:700;color:${accent};text-transform:uppercase;letter-spacing:0.05em">${esc(modeLabel)}</span>`
+          + `<div class="pomo-strip-time">${esc(bigText)}</div>`
+          + `<span class="sub t1" style="font-size:10.5px">${esc(subText)}</span></div>`
+          + `<div class="pomo-strip-bar">`
+          + `<div class="pomo-pills-row">${pills.map(([k, lbl, on]) => `<button type="button" class="pill" data-ppill="${k}" style="height:20px;padding:0 8px;font-size:10px;flex:none;background:${on ? accent : 'var(--pill)'};color:${on ? '#000' : 'var(--dim)'};cursor:pointer">${esc(lbl.split(' ')[0])}</button>`).join('')}</div>`
+          + `<div class="bar" style="height:6px;border-radius:999px"><i style="transform:scaleX(${(pct / 100).toFixed(4)});background:${accent}"></i></div>`
+          + `</div>`
+          + `<div class="row" style="gap:5px;flex:none">${stripActs}</div></div>`;
+      } else {
+        altEl.innerHTML = `<div class="pomo-dig-wrap sl-pane">`
+          + `<div style="display:flex;flex-direction:column;justify-content:center;min-width:0">`
+          + `<span style="font-size:12px;font-weight:700;color:${accent}">${esc(modeLabel)}</span>`
+          + `<div class="pomo-dig-time" style="margin-top:2px">${esc(bigText)}</div>`
+          + `<div class="sub t1" style="font-size:11.5px;margin-top:4px">${esc(subText)}</div></div>`
+          + `<div style="display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0">`
+          + `<div class="pomo-pills-row">${pills.map(([k, lbl, on]) => `<button type="button" class="pill" data-ppill="${k}" style="height:23px;padding:0 9px;font-size:11px;flex:none;background:${on ? accent : 'var(--pill)'};color:${on ? '#000' : 'var(--dim)'};cursor:pointer">${esc(lbl)}</button>`).join('')}</div>`
+          + `${extraRight || `<div class="bar" style="height:6px;border-radius:999px"><i style="transform:scaleX(${(pct / 100).toFixed(4)});background:${accent}"></i></div>`}`
+          + `<div class="row" style="gap:6px">${actsHtml}</div></div></div>`;
+      }
+      return;
+    }
+
+    if (bentoEl) bentoEl.hidden = false;
+    if (altEl) altEl.hidden = true;
+    $$('[data-ppill]', bentoEl || page).forEach((b) => {
       const hit = pills.find(([k]) => k === b.dataset.ppill);
       const on = !!(hit && hit[2]);
       b.style.background = on ? '#ff5a52' : 'var(--pill)';
@@ -307,12 +421,12 @@
       const sws = sw();
       const ms = N.swElapsed();
       const pct = ((ms % 60000) / 60000) * 100;
-      leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, SW, 150, 7, `<div><div class="big" style="font-size:32px">${esc(swText(ms))}</div><div class="sub">${esc(sws.running ? _t('Stopwatch') : ms ? _t('Paused') : _t('Stopwatch'))}</div></div>`)}</div>`;
+      leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, SW, 150, 7, `<div style="width:100%"><div class="big">${esc(swText(ms))}</div><div class="sub">${esc(sws.running ? _t('Stopwatch') : ms ? _t('Paused') : _t('Stopwatch'))}</div></div>`)}</div>`;
       const laps = sws.laps || [];
       midBox.innerHTML = `<div class="sub">${esc(_t('Laps'))}</div>`
         + (laps.length
-          ? `<div class="sc-y" style="display:flex;flex-direction:column;gap:3px;margin-top:4px;flex:1">${laps.map((t, i) => ({ n: i + 1, split: t - (laps[i - 1] || 0), total: t })).reverse().slice(0, 5).map((l) => `<div class="row" style="justify-content:space-between;font-size:11.5px"><span class="mute">${esc(_t('Lap {n}', { n: l.n }))}</span><b class="n">${esc(swText(l.split))}</b><span class="sub n">${esc(swText(l.total))}</span></div>`).join('')}</div>`
-          : `<div class="sub" style="margin-top:6px">${esc(sws.running ? _t('Lap marks a split') : _t('Counts up from zero.'))}</div>`);
+          ? `<div class="sc-y" style="display:flex;flex-direction:column;gap:3px;flex:1;min-height:0">${laps.map((t, i) => ({ n: i + 1, split: t - (laps[i - 1] || 0), total: t })).reverse().slice(0, 5).map((l) => `<div class="row" style="justify-content:space-between;font-size:11.5px"><span class="mute">${esc(_t('Lap {n}', { n: l.n }))}</span><b class="n">${esc(swText(l.split))}</b><span class="sub n">${esc(swText(l.total))}</span></div>`).join('')}</div>`
+          : `<div class="sub">${esc(sws.running ? _t('Lap marks a split') : _t('Counts up from zero.'))}</div>`);
       actBox.innerHTML = `<button type="button" class="sbtn p" data-pa="sw-toggle" style="flex:1">${esc(sws.running ? _t('Pause') : _t('Start'))}</button>`
         + `<button type="button" class="sbtn" data-pa="sw-lap" style="flex:1"${sws.running ? '' : ' disabled'}>${esc(_t('Lap'))}</button>`
         + `<button type="button" class="sbtn" data-pa="sw-reset" style="flex:1">${esc(_t('Reset'))}</button>`;
@@ -326,19 +440,19 @@
       if (on) {
         const left = N.timerLeft(t);
         const pct = Math.max(0, Math.min(100, (1 - left / Math.max(1, t.total)) * 100));
-        leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, TM, 150, 7, `<div><div class="big" style="font-size:36px">${esc(N.fmt(Math.ceil(left / 1000)))}</div><div class="sub">${esc(t.running ? _t('Ends at {time}', { time: N.hm(t.endsAt) }) : _t('Paused'))}</div></div>`)}</div>`;
-        midBox.innerHTML = `<div class="sub">${esc(_t('Timer'))}</div><div class="t1" style="font-size:15px;font-weight:700;margin-top:2px">${esc(N.timerLen(t.total))}</div>`
-          + `<div class="row" style="gap:6px;margin-top:auto"><button type="button" class="sbtn" data-tadd="1" style="height:26px;flex:1">${esc(_t('+{n} min', { n: 1 }))}</button><button type="button" class="sbtn" data-tadd="5" style="height:26px;flex:1">${esc(_t('+{n} min', { n: 5 }))}</button></div>`;
+        leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, TM, 150, 7, `<div style="width:100%"><div class="big">${esc(N.fmt(Math.ceil(left / 1000)))}</div><div class="sub">${esc(t.running ? _t('Ends at {time}', { time: N.hm(t.endsAt) }) : _t('Paused'))}</div></div>`)}</div>`;
+        midBox.innerHTML = `<div class="sub">${esc(_t('Timer'))}</div><div class="t1 pomo-mid-task">${esc(N.timerLen(t.total))}</div>`
+          + `<div class="row" style="gap:6px"><button type="button" class="sbtn" data-tadd="1" style="height:24px;flex:1">${esc(_t('+{n} min', { n: 1 }))}</button><button type="button" class="sbtn" data-tadd="5" style="height:24px;flex:1">${esc(_t('+{n} min', { n: 5 }))}</button></div>`;
         actBox.innerHTML = `<button type="button" class="sbtn p" data-pa="tm-toggle" style="flex:1">${esc(t.running ? _t('Pause') : _t('Resume'))}</button>`
           + `<button type="button" class="sbtn" data-pa="tm-stop" style="flex:1">${esc(_t('Stop'))}</button>`;
       } else {
         const ms = pickMs();
-        leftBox.innerHTML = `<div style="margin:auto;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px">`
-          + `<div class="big" style="font-size:36px;color:${TM}">${esc(N.timerLen(ms || 25 * MIN))}</div>`
-          + `<div class="row" style="gap:6px"><button type="button" class="mini-btn" data-tstep="-5">−5</button><button type="button" class="mini-btn" data-tstep="-1">−1</button><button type="button" class="mini-btn" data-tstep="1">+1</button><button type="button" class="mini-btn" data-tstep="5">+5</button></div>`
+        leftBox.innerHTML = `<div style="margin:auto;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px">`
+          + `<div class="big" style="font-size:clamp(22px,calc(var(--stage-h,216px)*0.16),36px);color:${TM}">${esc(N.timerLen(ms || 25 * MIN))}</div>`
+          + `<div class="row" style="gap:5px"><button type="button" class="mini-btn" data-tstep="-5">−5</button><button type="button" class="mini-btn" data-tstep="-1">−1</button><button type="button" class="mini-btn" data-tstep="1">+1</button><button type="button" class="mini-btn" data-tstep="5">+5</button></div>`
           + `<div class="sub">${ms ? esc(_t('Ends at {time}', { time: N.hm(Date.now() + ms) })) : ''}</div></div>`;
-        midBox.innerHTML = `<div class="sub">${esc(_t('Presets'))}</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">`
-          + presets.map((m) => `<button type="button" class="pill" data-tmin="${m}" style="height:24px;padding:0 10px;background:${m * MIN === ms ? TM : 'var(--pill)'};color:${m * MIN === ms ? '#000' : 'var(--dim)'};cursor:pointer">${esc(chipText(m))}</button>`).join('')
+        midBox.innerHTML = `<div class="sub">${esc(_t('Presets'))}</div><div class="pomo-pills-row">`
+          + presets.map((m) => `<button type="button" class="pill" data-tmin="${m}" style="height:23px;padding:0 9px;flex:none;background:${m * MIN === ms ? TM : 'var(--pill)'};color:${m * MIN === ms ? '#000' : 'var(--dim)'};cursor:pointer">${esc(chipText(m))}</button>`).join('')
           + `</div>`;
         actBox.innerHTML = `<button type="button" class="sbtn p" data-pa="tm-start" style="flex:1">${esc(_t('Start'))}</button>`
           + `<button type="button" class="sbtn" data-pa="tm-edit" style="flex:1">${esc(_t('Edit presets'))}</button>`;
@@ -358,10 +472,10 @@
     const sndKey = sndOf();
     const sndName = sndKey === 'off' ? _t('Sound') : ((N.focusSounds || []).find(([v]) => v === sndKey) || [sndKey, sndKey])[1];
 
-    leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, col, 150, 7, `<div><div class="big" id="pomoT" style="font-size:36px">${esc(N.fmt(Math.ceil(left / 1000)))}</div><div class="sub">${esc(LABEL[p.phase] || _t('Focus'))} · ${esc(_t('session {n}/{t}', { n: sessNum, t: cycles }))}</div></div>`)}</div>`;
-    midBox.innerHTML = `<div class="row" style="justify-content:space-between"><span class="sub">${esc(_t('Current focus'))}</span><span class="sub">${esc(p.running ? _t('Ends at {time}', { time: N.hm(p.endsAt) }) : _t('Paused'))}</span></div>`
-      + `<div class="t1" style="font-size:15px;font-weight:700;margin-top:2px">${esc(activeTask)}</div>`
-      + `<div class="row" style="gap:6px;margin-top:auto">${Array.from({ length: cycles }, (_, k) => `<i style="flex:1;height:5px;border-radius:3px;background:${k < inCycle ? col : k === inCycle ? col + '66' : '#24242c'}"></i>`).join('')}</div>`;
+    leftBox.innerHTML = `<div style="margin:auto">${N.ring(pct, col, 150, 7, `<div style="width:100%"><div class="big" id="pomoT">${esc(N.fmt(Math.ceil(left / 1000)))}</div><div class="sub">${esc(LABEL[p.phase] || _t('Focus'))} · ${sessNum}/${cycles}</div></div>`)}</div>`;
+    midBox.innerHTML = `<div class="row" style="justify-content:space-between;flex:none"><span class="sub">${esc(_t('Current focus'))}</span><span class="sub">${esc(p.running ? _t('Ends at {time}', { time: N.hm(p.endsAt) }) : _t('Paused'))}</span></div>`
+      + `<div class="t1 pomo-mid-task">${esc(activeTask)}</div>`
+      + `<div class="row" style="gap:6px;flex:none">${Array.from({ length: cycles }, (_, k) => `<i style="flex:1;height:5px;border-radius:3px;background:${k < inCycle ? col : k === inCycle ? col + '66' : '#24242c'}"></i>`).join('')}</div>`;
     actBox.innerHTML = `<button type="button" class="sbtn p" data-pa="toggle" style="flex:1">${esc(p.running ? _t('Pause') : _t('Start'))}</button>`
       + `<button type="button" class="sbtn" data-pa="skip" style="flex:1">${esc(_t('Skip'))}</button>`
       + `<button type="button" class="sbtn" data-pa="reset" title="${esc(_t('Reset'))}" style="padding:0 10px">${fa('rotate-left')}</button>`
@@ -428,15 +542,16 @@
     id: 'pomodoro',
     init(p) {
       page = p;
-      page.innerHTML = `<div style="display:grid;grid-template-columns:200px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:10px;height:100%;width:100%">`
-        + `<div class="c" id="pomoLeftTile" style="padding:10px"></div>`
-        + `<div style="display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;height:100%">`
-        + `<div class="row" style="gap:5px;flex-wrap:nowrap;flex:none">`
-        + ['work', 'short', 'long', 'timer', 'stopwatch'].map((k) => `<button type="button" class="pill" data-ppill="${k}" style="height:26px;padding:0 9px;font-size:11px;cursor:pointer"></button>`).join('')
+      page.innerHTML = `<div id="pomoBentoRoot">`
+        + `<div class="c" id="pomoLeftTile"></div>`
+        + `<div style="display:flex;flex-direction:column;gap:clamp(5px,calc(var(--stage-h,216px)*0.035),8px);min-width:0;min-height:0;height:100%">`
+        + `<div class="pomo-pills-row" style="flex:none">`
+        + ['work', 'short', 'long', 'timer', 'stopwatch'].map((k) => `<button type="button" class="pill" data-ppill="${k}" style="height:24px;padding:0 9px;font-size:11px;flex:none;cursor:pointer"></button>`).join('')
         + `</div>`
-        + `<div class="c grow" id="pomoMidTile" style="padding:12px 14px"></div>`
+        + `<div class="c grow" id="pomoMidTile"></div>`
         + `<div class="row" id="pomoActsRow" style="gap:8px;flex:none"></div>`
-        + `</div></div>`;
+        + `</div></div>`
+        + `<div id="pomoAltRoot" style="height:100%;width:100%" hidden></div>`;
 
       page.addEventListener('click', (e) => {
         const pill = e.target.closest('[data-ppill]');

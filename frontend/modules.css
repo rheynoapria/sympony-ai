@@ -565,23 +565,145 @@
 .ch-msgs::-webkit-scrollbar, .ch-msg .bub pre::-webkit-scrollbar { width: 4px; height: 4px; }
 .ch-msgs::-webkit-scrollbar-thumb, .ch-msg .bub pre::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 2px; }
 .ch-msg { display: flex; gap: 4px; align-items: flex-end; flex: none; }
-.ch-msg.me { justify-content: flex-end; }
-.ch-msg .bub { max-width: 80%; padding: 7px 11px; border-radius: 15px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
-.ch-msg.me .bub { background: var(--blue); color: #fff; border-end-end-radius: 5px; }
-.ch-msg.ai .bub { background: var(--card); border-end-start-radius: 5px; }
+.ch-msg.me { justify-content: flex-end; align-items: flex-start; gap: 6px; }
+.ch-me-bub {
+  max-width: 100%;
+  padding: 7px 12px; border-radius: 14px 14px 4px 14px;
+  background: #272733; color: #f5f5f7;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  font-size: 12.5px; line-height: 1.42; overflow-wrap: anywhere;
+  user-select: text; -webkit-user-select: text;
+}
+.ch-me-bub.solo { align-self: flex-end; max-width: 78%; }
+.ch-me-bub::selection, .ch-me-bub *::selection { background: rgba(96, 165, 250, 0.55); color: #fff; }
+.ch-msg .bub {
+  max-width: 100%; flex: 1; min-width: 0;
+  padding: 9px 12px; border-radius: 14px 14px 14px 4px;
+  font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere;
+  user-select: text; -webkit-user-select: text;
+}
+.ch-msg.me .bub { background: var(--blue); color: #fff; border-end-end-radius: 5px; max-width: 80%; flex: none; }
+.ch-msg.ai .bub { background: var(--card); border-end-start-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
 .ch-msg.err .bub { color: var(--red); }
-.ch-msg .bub > * + *, .ch-live > * + * { margin-top: 6px; }
-.ch-msg .bub ul, .ch-msg .bub ol, .ch-live ul, .ch-live ol { padding-inline-start: 18px; }
-.ch-msg .bub li + li, .ch-live li + li { margin-top: 2px; }
-.ch-msg .bub .h, .ch-live .h { font-weight: 700; }
-.ch-msg .bub a { color: #64b5ff; text-decoration: underline; cursor: pointer; }
-.ch-msg .bub code, .ch-live code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11.5px; background: rgba(255,255,255,0.09); padding: 1px 4px; border-radius: 4px; }
-.ch-msg .bub pre, .ch-live pre { position: relative; background: rgba(0,0,0,0.38); border-radius: 9px; padding: 8px 10px; overflow-x: auto; }
-.ch-msg .bub pre code, .ch-live pre code { background: none; padding: 0; white-space: pre; display: block; }
-.ch-copy { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 10.5px; color: var(--dim); background: rgba(40,40,44,0.9); opacity: 0; transition: opacity 0.15s; }
-.ch-msg .bub pre:hover .ch-copy { opacity: 1; }
-.ch-act { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; font-size: 10.5px; color: var(--dim); opacity: 0; transition: opacity 0.15s; }
-.ch-msg:hover .ch-act { opacity: 1; }
+
+/* Rich GFM Markdown inside AI chat bubbles, live stream & Buddy bubble */
+:is(.ch-msg .bub, .ch-live, .cb-body) > * + * { margin-top: 7px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) p { margin: 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) strong,
+:is(.ch-msg .bub, .ch-live, .cb-body) b { font-weight: 680; color: var(--text); }
+:is(.ch-msg .bub, .ch-live, .cb-body) em,
+:is(.ch-msg .bub, .ch-live, .cb-body) i:not([class*="fa-"]) { font-style: italic; }
+:is(.ch-msg .bub, .ch-live, .cb-body) del { opacity: 0.65; text-decoration: line-through; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .h,
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h { font-weight: 700; color: var(--text); letter-spacing: -0.015em; line-height: 1.3; margin: 10px 0 3px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h:first-child { margin-top: 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h1 { font-size: 15px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h2 { font-size: 13.8px; padding-bottom: 3px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h3 { font-size: 13px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-h4 { font-size: 12.2px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.03em; }
+:is(.ch-msg .bub, .ch-live, .cb-body) ul,
+:is(.ch-msg .bub, .ch-live, .cb-body) ol { padding-inline-start: 18px; margin: 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) li + li { margin-top: 3px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) li > ul,
+:is(.ch-msg .bub, .ch-live, .cb-body) li > ol { margin-top: 3px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) ul.md-tasks { list-style: none; padding-inline-start: 2px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) li.md-task { display: flex; align-items: flex-start; gap: 7px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-chk {
+  flex: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28); display: inline-grid; place-items: center;
+  font-size: 9px; font-weight: 800; line-height: 1; color: #05160c; user-select: none;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-chk.on { background: var(--emerald); border-color: var(--emerald); }
+:is(.ch-msg .bub, .ch-live, .cb-body) li.md-task.done > .md-task-body { opacity: 0.72; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-task-body { flex: 1; min-width: 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-hr { border: 0; height: 1px; background: rgba(255, 255, 255, 0.12); margin: 9px 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-bq {
+  margin: 0; padding: 5px 10px; border-inline-start: 2.5px solid var(--lav);
+  border-radius: 0 8px 8px 0; background: rgba(255, 255, 255, 0.045); color: rgba(245, 245, 247, 0.86);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-bq > * + * { margin-top: 5px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) a { color: #7cc0ff; text-decoration: underline; text-decoration-color: rgba(124, 192, 255, 0.45); text-underline-offset: 2px; cursor: pointer; }
+:is(.ch-msg .bub, .ch-live, .cb-body) a:hover { color: #a8d6ff; text-decoration-color: currentColor; }
+:is(.ch-msg .bub, .ch-live, .cb-body) code {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px; background: rgba(255, 255, 255, 0.1); color: #e9ecf8;
+  padding: 1px 5px; border-radius: 5px;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code {
+  border-radius: 10px; overflow: hidden;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code-hd {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: 26px; padding: 0 6px 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  user-select: none; -webkit-user-select: none;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code-lang {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px; font-weight: 650; letter-spacing: 0.03em; text-transform: lowercase;
+  color: var(--dim);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code-hd .ch-copy {
+  position: static; opacity: 0.72; width: 20px; height: 20px; background: transparent;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code:hover .md-code-hd .ch-copy { opacity: 1; }
+:is(.ch-msg .bub, .ch-live, .cb-body) pre {
+  position: relative; background: rgba(0, 0, 0, 0.38); border-radius: 9px;
+  padding: 8px 10px; overflow-x: auto; margin: 0;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-code pre { background: transparent; border-radius: 0; }
+:is(.ch-msg .bub, .ch-live, .cb-body) pre code {
+  background: none; padding: 0; white-space: pre; display: block;
+  font-size: 11.5px; line-height: 1.5; color: #eceef7;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table-wrap {
+  width: 100%; max-width: 100%; overflow-x: auto;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(0, 0, 0, 0.24);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table-wrap::-webkit-scrollbar { height: 4px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table-wrap::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 2px; }
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table {
+  width: 100%; border-collapse: collapse; font-size: 11.5px; line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table th,
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table td {
+  padding: 5.5px 9px; text-align: start; vertical-align: top;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  overflow-wrap: normal; word-break: normal;
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table th + th,
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table td + td {
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.065);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table thead th {
+  font-size: 10.8px; font-weight: 700; color: var(--text); white-space: nowrap;
+  background: rgba(255, 255, 255, 0.075);
+  border-bottom-color: rgba(255, 255, 255, 0.13);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+:is(.ch-msg .bub, .ch-live, .cb-body) .md-table tbody tr:last-child td { border-bottom: 0; }
+#notch.look-light :is(.md-table-wrap, .md-code) { background: rgba(0, 0, 0, 0.045); border-color: rgba(0, 0, 0, 0.12); }
+#notch.look-light .md-table thead th { background: rgba(0, 0, 0, 0.07); border-bottom-color: rgba(0, 0, 0, 0.14); }
+#notch.look-light .md-table th, #notch.look-light .md-table td { border-color: rgba(0, 0, 0, 0.08); }
+#notch.look-light :is(.ch-msg .bub, .ch-live) code { background: rgba(0, 0, 0, 0.08); color: #16161d; }
+#notch.look-light :is(.ch-msg .bub, .ch-live) .md-code pre code { color: #16161d; }
+#notch.look-light :is(.ch-msg .bub, .ch-live) .md-bq { background: rgba(0, 0, 0, 0.045); color: rgba(17, 17, 22, 0.85); }
+#notch.look-light :is(.ch-msg .bub, .ch-live) a { color: #1d4ed8; }
+#notch.look-light .ch-me-bub { background: #1c1e28; color: #fff; }
+.ch-copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 10.5px; color: var(--dim); background: rgba(34, 36, 44, 0.88); border: 1px solid rgba(255, 255, 255, 0.1); opacity: 0; cursor: pointer; transition: opacity 0.15s, background 0.15s, color 0.15s; }
+.ch-msg .bub pre:hover .ch-copy, .ch-live pre:hover .ch-copy { opacity: 1; }
+.ch-act { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; font-size: 10.5px; color: var(--mute); cursor: pointer; margin-top: 4px; opacity: 0; transition: opacity 0.15s, background 0.15s, color 0.15s; }
+.ch-msg:hover .ch-act, .ch-act:focus-visible { opacity: 1; }
 .ch-act:hover, .ch-copy:hover { background: var(--faint); color: var(--text); }
 .bub.typing { display: flex; gap: 4px; padding: 11px 13px; }
 .bub.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); animation: chDot 1.1s infinite ease-in-out; }
@@ -1253,3 +1375,206 @@ button.tlp-cd.off i { color: inherit; }
 #closed .tele-go { width: 14px; font-size: 10px; color: var(--orange); }
 #notch.ink-dark :where(.tlp-li.on, .tlp-acts button:hover, .tlp-chip button:hover, button.tlp-cd:hover, .tlp-ren) { background: rgba(0, 0, 0, 0.1); }
 #notch.ink-dark :where(.tlp-start, .tls-ctl .tls-play) { background: #1d1d1f; color: #fff; }
+
+/* ============================================================ Glass Theme Polish for Modules, Chat & Selection */
+#notch[data-look="glass"] :is(.card, .note-edit, .cald, .calf, #page-weather, .h-card, .h-guide, .dp-line, .bt-card, .wf-row, .st-tile, .rd-now, .fc-card, .fc-add, .fc-how, .wk-row, .ctl-sliders) {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
+#notch[data-look="glass"] .wk-row.here {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .fc-card:not(.fc-done):hover {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .w-media .ph { background: rgba(255, 255, 255, 0.10); color: var(--dim); }
+#notch[data-look="glass"] .st-hours div { background: rgba(255, 255, 255, 0.14); }
+#notch[data-look="glass"] .pill-btn:not(.primary):not(.cald-join),
+#notch[data-look="glass"] .round-btn:not(.big):not(.send),
+#notch[data-look="glass"] .prt-edit,
+#notch[data-look="glass"] .prt-before,
+#notch[data-look="glass"] .pick-btn {
+  background: var(--glass-btn);
+  box-shadow: var(--glass-rim);
+  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, transform 0.18s var(--spring);
+}
+#notch[data-look="glass"] .pill-btn:not(.primary):not(.cald-join):hover,
+#notch[data-look="glass"] .round-btn:not(.big):not(.send):hover,
+#notch[data-look="glass"] .prt-edit:hover,
+#notch[data-look="glass"] .prt-before:hover,
+#notch[data-look="glass"] .pick-btn:hover,
+#notch[data-look="glass"] .pick-btn.open {
+  background: var(--glass-btn-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .prt-rail { background: rgba(255, 255, 255, 0.18); box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2); }
+#notch[data-look="glass"] .prt-dot.next { background: rgba(13, 16, 25, 0.92); box-shadow: 0 0 10px rgba(74, 222, 128, 0.35); }
+#notch[data-look="glass"] .bar-track,
+#notch[data-look="glass"] .aiu-bar,
+#notch[data-look="glass"] .tm-track { background: var(--glass-well); box-shadow: var(--glass-well-rim); }
+#notch[data-look="glass"] .seg {
+  background: var(--glass-well);
+  box-shadow: var(--glass-well-rim);
+}
+#notch[data-look="glass"] .seg button { transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+#notch[data-look="glass"] .seg button.on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.14) 100%);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 1px 5px rgba(0, 0, 10, 0.28);
+}
+#notch[data-look="glass"] .field,
+#notch[data-look="glass"] .tr-panes textarea,
+#notch[data-look="glass"] .tr-out,
+#notch[data-look="glass"] .rd-search,
+#notch[data-look="glass"] .bm-add,
+#notch[data-look="glass"] .bm-search,
+#notch[data-look="glass"] .wf-pass input {
+  background: var(--glass-well);
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#notch[data-look="glass"] .field:focus,
+#notch[data-look="glass"] .tr-panes textarea:focus,
+#notch[data-look="glass"] .rd-search:focus-within,
+#notch[data-look="glass"] .bm-add:focus-within,
+#notch[data-look="glass"] .bm-search:focus-within,
+#notch[data-look="glass"] .wf-pass input:focus {
+  background: var(--glass-well-hi);
+  border-color: rgba(138, 188, 255, 0.80);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 3px rgba(78, 136, 255, 0.16);
+}
+#notch[data-look="glass"] :is(.ch-input textarea, .rd-search input, .bm-add input, .bm-search input)::placeholder,
+#notch[data-look="glass"] .tr-out.placeholder {
+  color: rgba(212, 220, 240, 0.52);
+}
+/* Chat bubbles & Markdown surfaces in Glass */
+#notch[data-look="glass"] .ch-msg.ai .bub {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
+#notch[data-look="glass"] .ch-me-bub {
+  background: linear-gradient(180deg, rgba(84, 128, 255, 0.56) 0%, rgba(62, 94, 245, 0.44) 100%);
+  box-shadow: inset 0 1px 0 rgba(214, 232, 255, 0.42), inset 0 0 0 1px rgba(154, 184, 255, 0.46), 0 4px 14px rgba(59, 98, 255, 0.18);
+  color: #fff;
+}
+#notch[data-look="glass"] .ch-me-bub::selection,
+#notch[data-look="glass"] .ch-me-bub *::selection {
+  background: rgba(255, 255, 255, 0.34);
+  color: #fff;
+}
+#notch[data-look="glass"] .ch-rem {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+#notch[data-look="glass"] .ch-copy {
+  background: rgba(20, 24, 38, 0.72);
+  border-color: rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-table-wrap {
+  background: var(--glass-well);
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-table thead th {
+  background: rgba(255, 255, 255, 0.09);
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.032);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-table tbody tr:hover {
+  background: rgba(96, 165, 250, 0.12);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-code {
+  background: rgba(3, 5, 11, 0.48);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.24);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-code-hd {
+  background: rgba(255, 255, 255, 0.065);
+  border-bottom-color: rgba(255, 255, 255, 0.09);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) .md-bq {
+  background: rgba(143, 162, 255, 0.10);
+  border-inline-start-color: rgba(168, 188, 255, 0.88);
+}
+#notch[data-look="glass"] :is(.ch-msg .bub, .ch-live) code {
+  background: rgba(255, 255, 255, 0.12);
+}
+#notch[data-look="glass"] :is(.bub a.ch-cite, .ch-live a.ch-cite) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6ebfa;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+#notch[data-look="glass"] :is(.bub a.ch-cite:hover, .ch-live a.ch-cite:hover) {
+  background: rgba(96, 165, 250, 0.30);
+  color: #fff;
+}
+#notch[data-look="glass"] .ch-hist-row { background: var(--glass-card); box-shadow: var(--glass-rim); transition: background 0.18s ease, box-shadow 0.18s ease; }
+#notch[data-look="glass"] .ch-hist-row:hover { background: var(--glass-card-hi); box-shadow: var(--glass-rim-hi); }
+#notch[data-look="glass"] .ch-hist-row.on {
+  background: var(--glass-sel);
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .note-li:hover,
+#notch[data-look="glass"] .todo-item:hover,
+#notch[data-look="glass"] .gh-item:hover { background: rgba(255, 255, 255, 0.095); }
+#notch[data-look="glass"] .note-li.on { background: var(--glass-sel); box-shadow: var(--glass-sel-rim); }
+/* Calendar, popovers, controls, radio, bookmarks & teleprompter in Glass */
+#notch[data-look="glass"] .calm-day { transition: background 0.16s ease, box-shadow 0.16s ease; }
+#notch[data-look="glass"] .calm-day:hover:not(.sel) { background: rgba(255, 255, 255, 0.12); }
+#notch[data-look="glass"] .calm-day.sel:not(.today) {
+  background: var(--glass-sel);
+  color: #fff;
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .calm-day-pane { border-inline-start-color: rgba(255, 255, 255, 0.10); }
+#notch[data-look="glass"] :is(.due-pick, .pick-menu, .dtp, .bm-edit) {
+  background: var(--glass-pop);
+  -webkit-backdrop-filter: blur(36px) saturate(210%);
+  backdrop-filter: blur(36px) saturate(210%);
+  border: 0;
+  box-shadow: var(--glass-pop-shadow);
+}
+#notch[data-look="glass"] .pick-menu button { transition: background 0.14s ease, color 0.14s ease; }
+#notch[data-look="glass"] .pick-menu button:hover { background: rgba(255, 255, 255, 0.13); }
+#notch[data-look="glass"] .pick-menu button.on {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+  box-shadow: inset 0 1px 0 rgba(167, 243, 208, 0.28), inset 0 0 0 1px rgba(74, 222, 128, 0.35);
+}
+#notch[data-look="glass"] :is(.ctl-tile:not(.on):not(.split), .ctl-tile.split > button, .ctl-out, .ctl-back, .bt-radio:not(.on)) {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
+#notch[data-look="glass"] :is(button.ctl-tile:not(.on):hover, .ctl-tile.split:not(.on) > button:hover, .ctl-out:hover, .ctl-back:hover, .bt-radio:not(.on):hover) {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] :is(.ctl-dev, .rd-row, .bm-row) {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+#notch[data-look="glass"] :is(.ctl-dev:hover, .rd-row:hover, .bm-row:hover) {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] :is(.ctl-dev.on, .rd-row.on, .tlp-li.on, .wf-row.on) {
+  background: var(--glass-sel);
+  box-shadow: var(--glass-sel-rim);
+}
+#notch[data-look="glass"] .bm-chip:not(.on) {
+  background: var(--glass-card);
+  box-shadow: var(--glass-rim);
+}
+#notch[data-look="glass"] .bm-chip:not(.on):hover {
+  background: var(--glass-card-hi);
+  box-shadow: var(--glass-rim-hi);
+}
+#notch[data-look="glass"] .tlp-area textarea::selection { background: rgba(78, 136, 255, 0.74); color: #fff; }

@@ -1,8 +1,6 @@
-//! The commands `frontend/bridge.js` invokes, with its argument names. One not built yet answers its contract stub
-//! and logs `not implemented: <name>` once.
-use contract::Kind;
+//! The commands `frontend/bridge.js` invokes, with its argument names.
 use serde_json::Value;
-use services::{not_implemented, stub, Ctx, Registry};
+use services::{not_implemented, Ctx, Registry};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
@@ -17,13 +15,6 @@ pub struct App {
     pub warned: Mutex<HashSet<String>>,
 }
 
-impl App {
-    pub fn stub(&self, name: &str) -> Value {
-        not_implemented(&self.warned, &self.ctx, name);
-        stub(Kind::Command, name)
-    }
-}
-
 /// Async: off the main thread, so a service doing network calls never blocks the UI.
 #[tauri::command]
 pub async fn svc(handle: tauri::AppHandle, name: String, method: String, args: Vec<Value>) -> Result<Value, String> {
@@ -34,15 +25,6 @@ pub async fn svc(handle: tauri::AppHandle, name: String, method: String, args: V
     })
     .await
     .map_err(|e| e.to_string())
-}
-
-/// A command whose arguments aren't used yet: answers the stub.
-macro_rules! stubbed {
-    ($($name:ident ( $($arg:ident : $ty:ty),* );)*) => {$(
-        #[tauri::command]
-        #[allow(unused_variables)]
-        pub fn $name(app: State<App>, $($arg: $ty),*) -> Value { app.stub(stringify!($name)) }
-    )*};
 }
 
 /// The calendar is sent as the `calendar` event: once more now (`calendar_get`), or after fetching the feeds.
@@ -84,16 +66,61 @@ pub fn notch_arrows(want: bool) {
     let _ = want;
 }
 
-/// A HUD while Sympony is out of sight for a fullscreen app: a Mac's notch never hides itself, so it shows anyway.
+/// A HUD while Sympony is out of sight for a fullscreen app: `wm` brings it in for that long (a Mac's notch never
+/// hides itself, so there it shows anyway).
 #[tauri::command]
-pub fn notch_hud(ms: f64) {
-    let _ = ms;
+pub fn notch_hud(handle: tauri::AppHandle, ms: f64) {
+    crate::wm::hud(&handle, ms);
 }
 
-stubbed! {
-    update_state();
-    update_check(install: bool);
-    update_page();
+#[tauri::command]
+pub fn update_state(handle: tauri::AppHandle) -> Value {
+    crate::updater::state_json(&handle)
+}
+
+#[tauri::command]
+pub async fn update_check(handle: tauri::AppHandle, install: Option<bool>) -> Value {
+    crate::updater::check_now(handle, install.unwrap_or(false), false).await
+}
+
+#[tauri::command]
+pub fn update_page(handle: tauri::AppHandle) -> Value {
+    crate::updater::open_release_page(&handle)
+}
+
+#[tauri::command]
+pub fn floating_chat_open(handle: tauri::AppHandle) {
+    crate::floating_chat::open(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_close(handle: tauri::AppHandle) {
+    crate::floating_chat::close(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_toggle(handle: tauri::AppHandle) {
+    crate::floating_chat::toggle(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_pin(handle: tauri::AppHandle, pinned: bool) -> Value {
+    crate::floating_chat::set_pin(&handle, pinned)
+}
+
+#[tauri::command]
+pub fn floating_chat_state(handle: tauri::AppHandle) -> Value {
+    crate::floating_chat::state_json(&handle)
+}
+
+#[tauri::command]
+pub fn floating_chat_dock(handle: tauri::AppHandle) {
+    crate::floating_chat::dock_to_notch(&handle);
+}
+
+#[tauri::command]
+pub fn floating_chat_open_module(handle: tauri::AppHandle, module: String) {
+    crate::floating_chat::open_notch_module(&handle, &module);
 }
 
 #[macro_export]
@@ -107,6 +134,9 @@ macro_rules! all_commands {
             commands::notch_drag, commands::notch_hud, commands::calendar_get,
             commands::calendar_refresh, commands::open_calendar_app, commands::share_files, commands::shelf_start_drag,
             commands::update_state, commands::update_check, commands::update_page,
+            commands::floating_chat_open, commands::floating_chat_close, commands::floating_chat_toggle,
+            commands::floating_chat_pin, commands::floating_chat_state, commands::floating_chat_dock,
+            commands::floating_chat_open_module,
             onboarding::onboarding_state, onboarding::onboarding_phase, onboarding::onboarding_lower,
             onboarding::onboarding_cancel_wait, onboarding::onboarding_hint, onboarding::onboarding_finish,
             onboarding::onboarding_skip, onboarding::onboarding_open, media::app_icon
@@ -129,22 +159,15 @@ pub fn app_quit(handle: tauri::AppHandle) {
     handle.exit(0);
 }
 
-/// ponytail: `/usr/bin/open` (macOS); moves behind the platform layer with the Windows port
+/// A web, mail or settings link (`services::external_url_ok`) in the app that handles it: `open` on macOS,
+/// ShellExecute on Windows (`platform::os::shell`).
 #[tauri::command]
 pub async fn open_external(app: State<'_, App>, url: String) -> Result<bool, String> {
     if !services::external_url_ok(&url) {
         app.log.line(&format!("open_external: refused {url:?}"));
         return Ok(false);
     }
-    Ok(tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("/usr/bin/open")
-            .arg("--")
-            .arg(&url)
-            .status()
-            .is_ok_and(|s| s.success())
-    })
-    .await
-    .unwrap_or(false))
+    Ok(tauri::async_runtime::spawn_blocking(move || platform::os::shell::open(&url)).await.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -153,13 +176,23 @@ pub fn settings_get(app: State<App>) -> Value {
 }
 
 /// Applies a settings patch, notifies background services and all windows, and syncs shortcut/anchor.
-pub fn apply_settings_patch(handle: &tauri::AppHandle, patch: Value) -> Value {
+pub fn apply_settings_patch(handle: &tauri::AppHandle, mut patch: Value) -> Value {
     let app = handle.state::<App>();
+    // Dragging any manual size slider in Settings automatically switches Size mode from Auto to Custom.
+    if let Some(obj) = patch.as_object_mut() {
+        let touches_manual_size = ["notchWidth", "notchHeight", "expandedWidth", "expandedHeight", "expandedHeightTall"]
+            .iter()
+            .any(|k| obj.contains_key(*k));
+        if touches_manual_size && !obj.contains_key("notchSizeMode") {
+            obj.insert("notchSizeMode".into(), Value::from("custom"));
+        }
+    }
     let moved = patch.get("notchPosition").is_some();
     let out = app.settings.set(patch.clone());
     crate::background::settings_changed(handle, &patch);
     (app.ctx.emit)("settings", out.clone());
     crate::shell::sync_shortcut(handle);
+    crate::colorpick::sync_shortcut(handle);
     if moved {
         crate::shell::send_anchor(handle);
     }
@@ -177,6 +210,7 @@ pub fn settings_reset(handle: tauri::AppHandle, app: State<App>) -> Value {
     let out = app.settings.reset();
     (app.ctx.emit)("settings", out.clone());
     crate::shell::sync_shortcut(&handle);
+    crate::colorpick::sync_shortcut(&handle);
     crate::shell::send_anchor(&handle);
     out
 }
@@ -233,6 +267,7 @@ pub fn helper_state(
     let mut s = serde_json::Map::new();
     // (not the frontend's helper data, but its events may come before the page listens: the boot reads them here)
     s.insert("camera".into(), notch.camera.lock().unwrap().clone().unwrap_or(Value::Null));
+    s.insert("display".into(), notch.display.lock().unwrap().clone().unwrap_or(Value::Null));
     if let Some(x) = crate::shell::anchor_from_settings(&handle) {
         s.insert("anchor".into(), serde_json::json!(x));
     }
@@ -249,6 +284,7 @@ pub fn helper_state(
 pub async fn helper_cmd(handle: tauri::AppHandle, cmd: Value) {
     match cmd["cmd"].as_str().unwrap_or("") {
         "media" => crate::media::command(&handle, cmd["action"].as_str().unwrap_or(""), &cmd["value"]),
+        "media.seek" => crate::media::command(&handle, "seek", &cmd["position"]),
         _ if crate::watchers::command(&cmd) => {}
         other => {
             let app = handle.state::<App>();

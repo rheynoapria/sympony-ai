@@ -99,6 +99,26 @@
  "expandedHeight": 196,
  "expandedHeightTall": 268,
  "expandedWidth": 660,
+ "feedAutoSummary": false,
+ "feedAutoSummaryBatch": 5,
+ "feedCustomUrls": [],
+ "feedEnabled": true,
+ "feedGoogleTopics": [
+  "AI & LLM",
+  "Rust & Tauri"
+ ],
+ "feedPonySummary": true,
+ "feedRefreshMinutes": 30,
+ "feedSummaryLang": "auto",
+ "feedSummaryModel": "",
+ "feedSources": [
+  "hn",
+  "github_trending",
+  "gnews_id",
+  "cnn_id",
+  "tempo_id",
+  "antara_id"
+ ],
  "focusSound": "off",
  "focusSoundBreaks": false,
  "focusSoundVolume": 70,
@@ -287,6 +307,10 @@
    "on": false
   },
   {
+   "id": "feed",
+   "on": true
+  },
+  {
    "id": "radio",
    "on": false
   },
@@ -321,6 +345,7 @@
  "notchLook": "black",
  "notchOpacity": 100,
  "notchPosition": 0.5,
+ "notchSizeMode": "auto",
  "notchTopGap": 0,
  "notchTopGapApps": [],
  "notchView": "modules",
@@ -419,7 +444,9 @@
  "touchMode": false,
  "translateFrom": "auto",
  "translateTo": "English",
- "updateCheck": false,
+ "dismissedUpdateVersion": "",
+ "updateBeta": null,
+ "updateCheck": true,
  "usageCount": false,
  "visualizerStyle": "bars",
  "vlcPort": 8080,
@@ -456,6 +483,7 @@
  "ponyEyes": false,
  "ponyEyesSkip": [],
  "ponyHands": false,
+ "ponyAutoUi": false,
  "ponyAskAi": false,
  "ponyAskBrowser": "",
  "ponyAskProfile": "",
@@ -474,12 +502,19 @@
  "shellForm": "notch",
  "islandAnchor": "bottom",
  "drawerEdge": "right",
+ "cardStyle": {
+  "surface": "oled",
+  "radius": "rounded",
+  "density": "balanced"
+ },
+ "moduleStyles": {},
  "voiceEnabled": false,
  "voiceTier": "auto",
  "voiceLive": true,
  "voiceCloudRegion": "intl",
  "voiceKey": "right_option",
  "voiceCommandKey": "",
+ "voiceAutoUi": "follow",
  "voiceAgentAuto": true,
  "voiceLanguage": "id",
  "voiceJargon": false,
