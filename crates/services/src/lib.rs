@@ -12,6 +12,7 @@ pub mod colorpick;
 pub mod codemode;
 pub mod exec;
 pub mod eyes;
+pub mod feed;
 pub mod calendar;
 pub mod github;
 pub mod health;

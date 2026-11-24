@@ -24,6 +24,7 @@ import {
   WEATHER_ROWS,
 } from "./features.rows.ts";
 import { GENERAL_ROWS } from "./general.rows.ts";
+import { FEED_KEYS } from "./feed.rows.ts";
 import { VOICE_KEYS } from "./voice.rows.ts";
 import { MEDIA_ROWS, NOTIFICATIONS_ROWS } from "./media.rows.ts";
 import { MODULES_KEYS } from "./modules.meta.ts";
@@ -98,4 +99,5 @@ export const SECTION_KEYS: Record<string, readonly string[]> = {
   cursor: rowKeys(CURSOR_ROWS),
   wallpaper: rowKeys(WALLPAPER_ROWS),
   github: rowKeys(GITHUB_ROWS),
+  feed: [...FEED_KEYS],
 };

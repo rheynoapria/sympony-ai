@@ -16,6 +16,7 @@ mod bridge;
 mod eyes;
 mod askai;
 mod hands;
+mod feed;
 mod files;
 mod floating_chat;
 mod github;
@@ -125,6 +126,7 @@ pub fn run() {
             everyday::register(&mut reg, app.handle(), &data_dir);
             adhan::register(&mut reg, app.handle());
             github::register(&mut reg, app.handle());
+            feed::register(&mut reg, app.handle());
             todosync::register(&mut reg, app.handle(), &data_dir);
             agents::register(&mut reg, app.handle());
             brain::register(&mut reg, app.handle());

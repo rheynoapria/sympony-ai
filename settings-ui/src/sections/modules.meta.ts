@@ -70,6 +70,11 @@ export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
     title: "GitHub",
     sub: "Pull requests to review",
   },
+  feed: {
+    icon: "BookOpenText",
+    title: "Feed & RSS",
+    sub: "Hacker News, GitHub Trending, Google News, Indonesian news and custom RSS",
+  },
   radio: {
     icon: "Radio",
     title: "Radio",

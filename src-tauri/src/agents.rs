@@ -340,7 +340,7 @@ fn run_claude_stream(
 }
 
 /// One answer from the agent `key` names (chatAgent / translateAgent). Err: what to show.
-fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, web: bool) -> Result<String, String> {
+pub(crate) fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, web: bool) -> Result<String, String> {
     ask_in(app, key, prompt_text, &[], system, web, None, None, false).map(|(t, _, _)| t)
 }
 

@@ -68,6 +68,11 @@ const ICONS: Record<string, () => ReactNode> = {
   Adhan: () => tint("MoonStar", "#10b981"),
   "What’s new": () => tint("Gift", "#ec4899"),
   Guide: () => tint("BookOpenText", "#3b82f6"),
+  // feed & rss
+  "Built-in sources": () => tint("BookOpenText", "#f59e0b"),
+  "Google News topics": () => tint("Search", "#4285f4"),
+  "Custom RSS & Atom feeds": () => tint("Globe", "#0ea5e9"),
+  "Sync & Pony summary": () => tint("Sparkles", "#8b5cf6"),
 };
 
 /** The icon for a card titled `title` (its English text, before translation); a neutral one when none fits. */

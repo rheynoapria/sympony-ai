@@ -1,0 +1,705 @@
+//! Feed & RSS backend: parallel SSRF-safe fetching for Hacker News, GitHub Trending, Google News
+//! Indonesia (+ custom keyword topics), Indonesian news portals, global tech/news presets, and
+//! custom RSS/Atom URLs; authentic publisher favicon fetching & local disk cache; and cached
+//! 3-bullet Pony summarization (`feed.get`, `feed.refresh`, `feed.presets`, `feed.test`, `feed.summarize`).
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use services::feed::{
+    extract_article_text, feed_title, google_news_topic_url, host_of, merge_and_dedupe,
+    parse_github_search_fallback, parse_github_trending_html, parse_hn_item, parse_rss_or_atom,
+    parse_summary_bullets, preset_by_id, presets_json, stable_id, summary_prompt, FeedItem,
+};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::Mutex;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::commands::App;
+
+const MAX_FEED_BYTES: u64 = 2 << 20; // 2 MB max per feed / article
+const MAX_ICON_BYTES: u64 = 256 << 10; // 256 KB max per favicon
+const MAX_ITEMS_TOTAL: usize = 90;
+const MAX_SUMMARIES_CACHED: usize = 80;
+const MAX_FAVICONS_CACHED: usize = 120;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FeedCache {
+    #[serde(default)]
+    items: Vec<FeedItem>,
+    #[serde(default)]
+    updated_at: i64,
+    #[serde(default)]
+    errors: HashMap<String, String>,
+    /// Authentic site favicons keyed by lowercase domain host (e.g. `cnnindonesia.com` -> `data:image/...`).
+    #[serde(default)]
+    favicons: HashMap<String, String>,
+    /// Cached Pony summaries keyed by item id.
+    #[serde(default)]
+    summaries: HashMap<String, CachedSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedSummary {
+    summary: String,
+    bullets: Vec<String>,
+    source: String,
+    at: i64,
+}
+
+pub struct Feed {
+    cache: Mutex<FeedCache>,
+    failed_icons: Mutex<HashSet<String>>,
+    refreshing: Mutex<()>,
+    kick: Mutex<Sender<()>>,
+}
+
+pub fn kick(app: &AppHandle) {
+    if let Some(f) = app.try_state::<Feed>() {
+        let _ = f.kick.lock().unwrap().send(());
+    }
+}
+
+fn cache_path(app: &AppHandle) -> PathBuf {
+    app.state::<App>().data_dir.join("feed-cache.json")
+}
+
+fn load_cache(app: &AppHandle) -> FeedCache {
+    let p = cache_path(app);
+    std::fs::read(&p)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_cache(app: &AppHandle, cache: &FeedCache) {
+    let p = cache_path(app);
+    if let Ok(bytes) = serde_json::to_vec(cache) {
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, &bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    }
+}
+
+fn feed_module_enabled(s: &Value) -> bool {
+    if s["feedEnabled"] == false {
+        return false;
+    }
+    s["modules"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .find(|m| m["id"].as_str() == Some("feed"))
+                .map(|m| m["on"] != false)
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
+}
+
+fn payload_from(cache: &FeedCache) -> Value {
+    json!({
+        "items": cache.items,
+        "updatedAt": cache.updated_at,
+        "errors": cache.errors,
+        "favicons": cache.favicons,
+        "summaries": cache.summaries,
+    })
+}
+
+/// Fetches a publisher's authentic favicon directly from its origin (no third-party tracker proxy)
+/// using `services::http::get_public_bytes` (SSRF + DNS-rebinding safe).
+fn fetch_origin_favicon(site_url: &str) -> Option<String> {
+    if !services::http::is_public_url(site_url) {
+        return None;
+    }
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok((200, _, body)) = services::http::get_public_bytes(site_url, 512 << 10) {
+        let html = String::from_utf8_lossy(&body);
+        let (_, icons) = services::bookmarks::page_meta(&html, site_url);
+        candidates.extend(icons.into_iter().take(4));
+    }
+    let fallback = services::bookmarks::absolute(site_url, "/favicon.ico");
+    if !candidates.contains(&fallback) {
+        candidates.push(fallback);
+    }
+    for ico_url in candidates {
+        if !services::http::is_public_url(&ico_url) {
+            continue;
+        }
+        let Ok((200, ct, bytes)) = services::http::get_public_bytes(&ico_url, MAX_ICON_BYTES) else {
+            continue;
+        };
+        if bytes.is_empty() {
+            continue;
+        }
+        let low_ct = ct.to_ascii_lowercase();
+        let mime = if low_ct.starts_with("image/") {
+            low_ct.split(';').next().unwrap_or("image/png").to_string()
+        } else if ico_url.to_ascii_lowercase().ends_with(".ico") {
+            "image/x-icon".into()
+        } else if ico_url.to_ascii_lowercase().ends_with(".svg") {
+            "image/svg+xml".into()
+        } else if ico_url.to_ascii_lowercase().ends_with(".png") {
+            "image/png".into()
+        } else {
+            continue;
+        };
+        return Some(format!(
+            "data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        ));
+    }
+    None
+}
+
+fn fetch_hn(limit: usize) -> Result<Vec<FeedItem>, String> {
+    let (status, _, body) = services::http::get_public_bytes(
+        "https://hacker-news.firebaseio.com/v0/topstories.json",
+        512 << 10,
+    )
+    .map_err(|_| "Couldn't reach Hacker News".to_string())?;
+    if status != 200 {
+        return Err(format!("Hacker News answered HTTP {status}"));
+    }
+    let ids: Vec<u64> = serde_json::from_slice(&body).map_err(|_| "Invalid Hacker News response".to_string())?;
+    let top: Vec<u64> = ids.into_iter().take(limit.clamp(4, 16)).collect();
+    let results: Vec<Option<FeedItem>> = std::thread::scope(|s| {
+        let handles: Vec<_> = top
+            .into_iter()
+            .map(|id| {
+                s.spawn(move || {
+                    let url = format!("https://hacker-news.firebaseio.com/v0/item/{id}.json");
+                    let (st, _, b) = services::http::get_public_bytes(&url, 128 << 10).ok()?;
+                    if st != 200 {
+                        return None;
+                    }
+                    let v: Value = serde_json::from_slice(&b).ok()?;
+                    parse_hn_item(&v)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().ok().flatten()).collect()
+    });
+    Ok(results.into_iter().flatten().collect())
+}
+
+fn fetch_github_trending(now_ms: i64, limit: usize) -> Result<Vec<FeedItem>, String> {
+    if let Ok((200, _, body)) = services::http::get_public_bytes("https://github.com/trending", MAX_FEED_BYTES) {
+        let html = String::from_utf8_lossy(&body);
+        let items = parse_github_trending_html(&html, now_ms, limit);
+        if !items.is_empty() {
+            return Ok(items);
+        }
+    }
+    // Resilient fallback: GitHub public repository search for hot repos created in the last 14 days
+    let since = (chrono::Utc::now() - chrono::Duration::days(14))
+        .format("%Y-%m-%d")
+        .to_string();
+    let api_url = format!(
+        "https://api.github.com/search/repositories?q=created:>{since}&sort=stars&order=desc&per_page={limit}"
+    );
+    let (status, _, body) = services::http::get_public_bytes(&api_url, 1 << 20)
+        .map_err(|_| "Couldn't reach GitHub Trending".to_string())?;
+    if status != 200 {
+        return Err(format!("GitHub Trending answered HTTP {status}"));
+    }
+    let v: Value = serde_json::from_slice(&body).map_err(|_| "Invalid GitHub response".to_string())?;
+    Ok(parse_github_search_fallback(&v, now_ms, limit))
+}
+
+#[derive(Clone)]
+struct FetchJob {
+    id: String,
+    name: String,
+    category: String,
+    brand: String,
+    color: String,
+    kind: String,
+    url: String,
+    site_url: String,
+    limit: usize,
+}
+
+fn build_jobs(s: &Value) -> Vec<FetchJob> {
+    let mut jobs = Vec::new();
+    let enabled_ids: Vec<String> = s["feedSources"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_else(|| {
+            services::feed::PRESETS
+                .iter()
+                .filter(|p| p.default_on)
+                .map(|p| p.id.to_string())
+                .collect()
+        });
+
+    for id in enabled_ids {
+        if let Some(p) = preset_by_id(&id) {
+            jobs.push(FetchJob {
+                id: p.id.into(),
+                name: p.name.into(),
+                category: p.category.into(),
+                brand: p.brand.into(),
+                color: p.color.into(),
+                kind: p.kind.into(),
+                url: p.url.into(),
+                site_url: p.site_url.into(),
+                limit: 12,
+            });
+        }
+    }
+
+    if let Some(topics) = s["feedGoogleTopics"].as_array() {
+        for raw in topics.iter().take(12) {
+            let topic = raw.as_str().unwrap_or("").trim();
+            if topic.is_empty() {
+                continue;
+            }
+            let slug = stable_id("gtopic", topic, topic);
+            jobs.push(FetchJob {
+                id: slug,
+                name: format!("Google News · {topic}"),
+                category: "topics".into(),
+                brand: "gnews".into(),
+                color: "#4285f4".into(),
+                kind: "rss".into(),
+                url: google_news_topic_url(topic),
+                site_url: "https://news.google.com".into(),
+                limit: 8,
+            });
+        }
+    }
+
+    if let Some(customs) = s["feedCustomUrls"].as_array() {
+        for (idx, raw) in customs.iter().take(20).enumerate() {
+            let url = raw["url"].as_str().unwrap_or("").trim();
+            if url.is_empty() || !services::http::is_public_url(url) {
+                continue;
+            }
+            let host = host_of(url);
+            let name = raw["name"]
+                .as_str()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(String::from)
+                .unwrap_or_else(|| if host.is_empty() { format!("Custom RSS {}", idx + 1) } else { host.clone() });
+            let color = raw["color"]
+                .as_str()
+                .filter(|c| c.starts_with('#') && c.len() == 7)
+                .unwrap_or("#f59e0b")
+                .to_string();
+            let id = raw["id"]
+                .as_str()
+                .filter(|x| !x.is_empty())
+                .map(String::from)
+                .unwrap_or_else(|| stable_id("custom", url, &name));
+            let origin = format!("https://{host}");
+            jobs.push(FetchJob {
+                id,
+                name,
+                category: "custom".into(),
+                brand: "favicon".into(),
+                color,
+                kind: "rss".into(),
+                url: url.to_string(),
+                site_url: origin,
+                limit: 10,
+            });
+        }
+    }
+
+    jobs
+}
+
+fn run_job(job: &FetchJob, now_ms: i64) -> Result<Vec<FeedItem>, String> {
+    match job.kind.as_str() {
+        "hn" => fetch_hn(job.limit),
+        "github_trending" => fetch_github_trending(now_ms, job.limit),
+        _ => {
+            if !services::http::is_public_url(&job.url) {
+                return Err("Refused non-public feed URL".into());
+            }
+            let (status, _, body) = services::http::get_public_bytes(&job.url, MAX_FEED_BYTES)
+                .map_err(|_| format!("Couldn't reach {}", job.name))?;
+            if !(200..300).contains(&status) {
+                return Err(format!("{} answered HTTP {status}", job.name));
+            }
+            let xml = String::from_utf8_lossy(&body);
+            let items = parse_rss_or_atom(
+                &xml,
+                &job.id,
+                &job.name,
+                &job.category,
+                &job.brand,
+                &job.color,
+                &job.site_url,
+                job.limit,
+            );
+            if items.is_empty() {
+                return Err(format!("No RSS/Atom entries found in {}", job.name));
+            }
+            Ok(items)
+        }
+    }
+}
+
+/// Refreshes all enabled sources in parallel, warms missing authentic site favicons, persists cache, and emits `feed`.
+fn refresh(app: &AppHandle) -> Value {
+    let feed_state = app.state::<Feed>();
+    let _guard = feed_state.refreshing.lock().unwrap();
+    let s = app.state::<App>().settings.get();
+    if !feed_module_enabled(&s) {
+        let cache = feed_state.cache.lock().unwrap();
+        return payload_from(&cache);
+    }
+    let jobs = build_jobs(&s);
+    if jobs.is_empty() {
+        let mut cache = feed_state.cache.lock().unwrap();
+        cache.items.clear();
+        cache.errors.clear();
+        cache.updated_at = chrono::Utc::now().timestamp_millis();
+        save_cache(app, &cache);
+        let v = payload_from(&cache);
+        let _ = app.emit("feed", &v);
+        return v;
+    }
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let results: Vec<(String, Result<Vec<FeedItem>, String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = jobs
+            .iter()
+            .map(|job| {
+                let id = job.id.clone();
+                scope.spawn(move || (id, run_job(job, now_ms)))
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok())
+            .collect()
+    });
+
+    let mut all_items = Vec::new();
+    let mut errors = HashMap::new();
+    for (id, res) in results {
+        match res {
+            Ok(items) => all_items.extend(items),
+            Err(err) => {
+                errors.insert(id, err);
+            }
+        }
+    }
+
+    let merged = merge_and_dedupe(all_items, MAX_ITEMS_TOTAL);
+
+    // Collect authentic favicon hosts we still need (Indonesian news portals, custom RSS, & Google News publishers)
+    let mut needed_hosts: Vec<String> = Vec::new();
+    {
+        let cache = feed_state.cache.lock().unwrap();
+        let failed = feed_state.failed_icons.lock().unwrap();
+        let mut seen = HashSet::new();
+        for job in &jobs {
+            if job.brand == "favicon" {
+                let h = host_of(&job.site_url);
+                if !h.is_empty() && !cache.favicons.contains_key(&h) && !failed.contains(&h) && seen.insert(h.clone()) {
+                    needed_hosts.push(h);
+                }
+            }
+        }
+        for it in &merged {
+            if !it.icon_host.is_empty()
+                && (it.brand == "favicon" || it.brand == "gnews")
+                && it.icon_host != "news.google.com"
+                && !cache.favicons.contains_key(&it.icon_host)
+                && !failed.contains(&it.icon_host)
+                && seen.insert(it.icon_host.clone())
+            {
+                needed_hosts.push(it.icon_host.clone());
+                if needed_hosts.len() >= 18 {
+                    break;
+                }
+            }
+        }
+    }
+
+    let fetched_icons: Vec<(String, Option<String>)> = if needed_hosts.is_empty() {
+        vec![]
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = needed_hosts
+                .into_iter()
+                .map(|host| {
+                    scope.spawn(move || {
+                        let url = format!("https://{host}");
+                        let ico = fetch_origin_favicon(&url);
+                        (host, ico)
+                    })
+                })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        })
+    };
+
+    let v = {
+        let mut cache = feed_state.cache.lock().unwrap();
+        let mut failed = feed_state.failed_icons.lock().unwrap();
+        for (host, ico) in fetched_icons {
+            if let Some(data_uri) = ico {
+                cache.favicons.insert(host, data_uri);
+            } else {
+                failed.insert(host);
+            }
+        }
+        // Keep favicon cache bounded
+        if cache.favicons.len() > MAX_FAVICONS_CACHED {
+            let active_hosts: HashSet<String> = merged.iter().map(|i| i.icon_host.clone()).collect();
+            cache.favicons.retain(|k, _| active_hosts.contains(k));
+        }
+        // Keep old items if every single source failed (e.g. temporarily offline)
+        if !merged.is_empty() || errors.is_empty() {
+            cache.items = merged;
+        }
+        cache.errors = errors;
+        cache.updated_at = now_ms;
+        save_cache(app, &cache);
+        payload_from(&cache)
+    };
+
+    app.state::<App>().log.line(&format!(
+        "feed: refreshed {} items ({} errors)",
+        v["items"].as_array().map(|a| a.len()).unwrap_or(0),
+        v["errors"].as_object().map(|m| m.len()).unwrap_or(0)
+    ));
+    let _ = app.emit("feed", &v);
+    v
+}
+
+/// Validates and previews a user-supplied custom RSS/Atom URL (plus fetches its real site favicon).
+fn test_feed_url(url: &str) -> Value {
+    let trimmed = url.trim();
+    if !services::http::is_public_url(trimmed) {
+        return json!({
+            "ok": false,
+            "error": "Paste a valid public https:// RSS or Atom feed URL.",
+        });
+    }
+    let (status, _, body) = match services::http::get_public_bytes(trimmed, MAX_FEED_BYTES) {
+        Ok(res) => res,
+        Err(_) => return json!({ "ok": false, "error": "Couldn't reach that feed URL." }),
+    };
+    if !(200..300).contains(&status) {
+        return json!({ "ok": false, "error": format!("Feed server answered HTTP {status}.") });
+    }
+    let xml = String::from_utf8_lossy(&body);
+    let host = host_of(trimmed);
+    let origin = format!("https://{host}");
+    let title = feed_title(&xml).unwrap_or_else(|| host.clone());
+    let items = parse_rss_or_atom(&xml, "test", &title, "custom", "favicon", "#f59e0b", &origin, 5);
+    if items.is_empty() {
+        return json!({
+            "ok": false,
+            "error": "No RSS 2.0 or Atom entries found at that URL.",
+        });
+    }
+    let icon = fetch_origin_favicon(&origin);
+    json!({
+        "ok": true,
+        "title": title,
+        "host": host,
+        "count": items.len(),
+        "sample": items.first().map(|i| i.title.as_str()).unwrap_or(""),
+        "icon": icon,
+    })
+}
+
+fn effective_summary_lang(app: &AppHandle) -> String {
+    let s = app.state::<App>().settings.get();
+    let pref = s["language"].as_str().unwrap_or("auto");
+    if pref != "auto" && !pref.trim().is_empty() {
+        return pref.to_string();
+    }
+    // When "auto", inspect system locale env or voiceLanguage preference as hint
+    let env_lang = std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LANG"))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if env_lang.starts_with("id") || s["voiceLanguage"].as_str() == Some("id") {
+        "id".into()
+    } else {
+        "en".into()
+    }
+}
+
+/// Summarizes a feed item into 3 crisp Pony bullet points (cached locally so re-opens cost 0 tokens).
+fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
+    let id = args.first().and_then(Value::as_str).unwrap_or("").trim();
+    let url = args.get(1).and_then(Value::as_str).unwrap_or("").trim();
+    let title = args.get(2).and_then(Value::as_str).unwrap_or("").trim();
+    let source = args.get(3).and_then(Value::as_str).unwrap_or("Feed").trim();
+    let snippet = args.get(4).and_then(Value::as_str).unwrap_or("").trim();
+    let force = args.get(5).and_then(Value::as_bool).unwrap_or(false);
+
+    if title.is_empty() && url.is_empty() {
+        return json!({ "ok": false, "error": "Missing article title or URL." });
+    }
+    let cache_key = if !id.is_empty() {
+        id.to_string()
+    } else {
+        stable_id("sum", url, title)
+    };
+
+    if !force {
+        if let Some(hit) = app.state::<Feed>().cache.lock().unwrap().summaries.get(&cache_key).cloned() {
+            return json!({
+                "ok": true,
+                "id": cache_key,
+                "summary": hit.summary,
+                "bullets": hit.bullets,
+                "source": hit.source,
+                "cached": true,
+            });
+        }
+    }
+
+    // Fetch public article text safely (no SSRF, strict size cap); fall back cleanly to RSS snippet if blocked
+    let mut body_text = String::new();
+    let mut from_article = false;
+    if !url.is_empty() && services::http::is_public_url(url) && host_of(url) != "news.google.com" {
+        if let Ok((200, ct, bytes)) = services::http::get_public_bytes(url, MAX_FEED_BYTES) {
+            let low_ct = ct.to_ascii_lowercase();
+            if low_ct.contains("text/") || low_ct.contains("html") || low_ct.contains("xml") || low_ct.is_empty() {
+                let html = String::from_utf8_lossy(&bytes);
+                let extracted = extract_article_text(&html, 5500);
+                if extracted.chars().count() >= 140 {
+                    body_text = extracted;
+                    from_article = true;
+                }
+            }
+        }
+    }
+    if body_text.is_empty() && !snippet.is_empty() {
+        body_text = snippet.to_string();
+    }
+
+    let lang = effective_summary_lang(app);
+    let (system, user_prompt) = summary_prompt(title, source, url, &body_text, &lang);
+    // Run with session=None so zero tools/exec/hands are ever exposed to untrusted web article text!
+    match crate::agents::ask(app, "chatAgent", &user_prompt, &system, false) {
+        Ok(raw) => {
+            let trimmed = raw.trim().to_string();
+            let bullets = parse_summary_bullets(&trimmed);
+            let src_label = if from_article { "article" } else { "snippet" }.to_string();
+            let entry = CachedSummary {
+                summary: trimmed.clone(),
+                bullets: bullets.clone(),
+                source: src_label.clone(),
+                at: chrono::Utc::now().timestamp_millis(),
+            };
+            {
+                let feed_state = app.state::<Feed>();
+                let mut cache = feed_state.cache.lock().unwrap();
+                cache.summaries.insert(cache_key.clone(), entry);
+                // Evict oldest summaries if over cap
+                if cache.summaries.len() > MAX_SUMMARIES_CACHED {
+                    let mut pairs: Vec<(String, i64)> = cache.summaries.iter().map(|(k, v)| (k.clone(), v.at)).collect();
+                    pairs.sort_by_key(|(_, at)| *at);
+                    for (old_k, _) in pairs.into_iter().take(cache.summaries.len() - MAX_SUMMARIES_CACHED) {
+                        cache.summaries.remove(&old_k);
+                    }
+                }
+                save_cache(app, &cache);
+            }
+            json!({
+                "ok": true,
+                "id": cache_key,
+                "summary": trimmed,
+                "bullets": bullets,
+                "source": src_label,
+                "cached": false,
+            })
+        }
+        Err(e) => json!({ "ok": false, "error": e }),
+    }
+}
+
+pub fn register(reg: &mut services::Registry, app: &AppHandle) {
+    let (tx, rx) = channel::<()>();
+    app.manage(Feed {
+        cache: Mutex::new(FeedCache::default()),
+        failed_icons: Mutex::new(HashSet::new()),
+        refreshing: Mutex::new(()),
+        kick: Mutex::new(tx),
+    });
+
+    reg.add("feed.presets", Box::new(|_, _| Ok(presets_json())));
+
+    let h = app.clone();
+    reg.add("feed.get", Box::new(move |_, _| {
+        let payload = {
+            let feed = h.state::<Feed>();
+            let cache = feed.cache.lock().unwrap();
+            payload_from(&cache)
+        };
+        let empty = payload["items"].as_array().map(|a| a.is_empty()).unwrap_or(true);
+        if empty {
+            kick(&h);
+        }
+        Ok(payload)
+    }));
+
+    let h = app.clone();
+    reg.add("feed.refresh", Box::new(move |_, _| Ok(refresh(&h))));
+
+    reg.add("feed.test", Box::new(|_, a| {
+        let url = a.first().and_then(Value::as_str).unwrap_or("");
+        Ok(test_feed_url(url))
+    }));
+
+    let h = app.clone();
+    reg.add("feed.summarize", Box::new(move |_, a| Ok(summarize_item(&h, &a))));
+
+    let h = app.clone();
+    std::thread::spawn(move || {
+        while h.try_state::<App>().is_none() {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        // Load persisted disk cache immediately so the Feed tab is never blank on startup
+        let initial = load_cache(&h);
+        let stale = {
+            let feed = h.state::<Feed>();
+            let mut cache = feed.cache.lock().unwrap();
+            *cache = initial;
+            let now = chrono::Utc::now().timestamp_millis();
+            let mins = h.state::<App>().settings.get()["feedRefreshMinutes"].as_i64().unwrap_or(30);
+            cache.items.is_empty() || (mins > 0 && now - cache.updated_at >= mins * 60_000)
+        };
+        {
+            let feed = h.state::<Feed>();
+            let v = payload_from(&feed.cache.lock().unwrap());
+            let _ = h.emit("feed", &v);
+        }
+        if stale {
+            refresh(&h);
+        }
+        loop {
+            let mins = h.state::<App>().settings.get()["feedRefreshMinutes"].as_u64().unwrap_or(30);
+            if mins == 0 {
+                // Manual mode: sleep until kicked by settings change or manual refresh
+                if rx.recv().is_err() {
+                    break;
+                }
+            } else {
+                let wait = Duration::from_secs(mins.clamp(5, 240) * 60);
+                let _ = rx.recv_timeout(wait);
+            }
+            // Drain coalesced kicks from rapid settings toggles
+            while rx.try_recv().is_ok() {}
+            refresh(&h);
+        }
+    });
+}

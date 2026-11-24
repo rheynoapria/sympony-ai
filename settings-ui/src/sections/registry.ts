@@ -3,6 +3,7 @@ import { plainText } from "../rows/logic.ts";
 import { applyOs } from "../rows/os.ts";
 import type { Row } from "../rows/types.ts";
 import { GENERAL_ROWS } from "./general.rows.ts";
+import { FEED_ROWS } from "./feed.rows.ts";
 import { VOICE_ROWS } from "./voice.rows.ts";
 import { AI_ROWS, AIUSAGE_ROWS, INTEGRATIONS_ROWS } from "./ai.rows.ts";
 import {
@@ -202,6 +203,15 @@ export const SECTIONS: readonly SectionMeta[] = [
     icon: "CheckSquare",
     tint: "#f59e0b",
     words: ["tasks", "google tasks", "sync", "checklist"],
+  },
+  {
+    id: "feed",
+    group: "features",
+    title: "Feed & RSS",
+    subtitle: "Hacker News, GitHub Trending, Google News, Indonesian news, custom RSS, and Pony summaries.",
+    icon: "BookOpenText",
+    tint: "#f59e0b",
+    words: ["feed", "rss", "atom", "news", "berita", "hacker news", "github trending", "google news", "ringkas", "summary"],
   },
   {
     id: "media",
@@ -483,6 +493,7 @@ export const SYNONYMS: Readonly<Record<string, string>> = {
   keahlian: "skills skill",
   kepribadian: "persona",
   kontrol: "control",
+  berita: "news feed rss",
 };
 
 export type RowsFor = readonly Row[] | ((os: OS) => readonly Row[]);
@@ -516,6 +527,7 @@ const REGISTERED_ROWS = new Map<string, RowsFor>([
   ["cursor", CURSOR_ROWS],
   ["wallpaper", WALLPAPER_ROWS],
   ["github", GITHUB_ROWS],
+  ["feed", FEED_ROWS],
 ]);
 
 export function registerSectionRows(sectionId: string, rows: RowsFor): void {

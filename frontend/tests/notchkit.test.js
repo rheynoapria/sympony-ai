@@ -39,11 +39,11 @@ describe('springCurve', () => {
 });
 
 describe('CARD_SIZES and packCards', () => {
-  test('declares exact grid footprints for all 24 modules plus hitl', () => {
+  test('declares exact grid footprints for all 25 modules plus hitl', () => {
     expect(K.CARD_SIZES.home).toEqual([4, 2]);
     expect(K.CARD_SIZES.prayer).toEqual([1, 2]);
     expect(K.CARD_SIZES.calendar).toEqual([2, 2]);
-    for (const id of ['chat', 'todo', 'control', 'shelf', 'stats', 'translate', 'notifs', 'launcher', 'hitl']) {
+    for (const id of ['chat', 'todo', 'control', 'shelf', 'stats', 'translate', 'notifs', 'launcher', 'feed', 'hitl']) {
       expect(K.CARD_SIZES[id]).toEqual([2, 1]);
     }
     for (const id of ['notes', 'pomodoro', 'weather', 'health', 'dayprogress', 'aiusage', 'screentime', 'bluetooth', 'github', 'radio', 'bookmarks', 'worldclock', 'teleprompter']) {

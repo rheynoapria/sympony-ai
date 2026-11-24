@@ -50,6 +50,7 @@
     translate: [2, 1],
     notifs: [2, 1],
     launcher: [2, 1],
+    feed: [2, 1],
     hitl: [2, 1],
     notes: [1, 1],
     pomodoro: [1, 1],

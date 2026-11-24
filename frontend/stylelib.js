@@ -24,6 +24,7 @@
     translate: ['2x1', '2x2', '1x1'],
     notifs: ['2x1', '2x2', '1x2', '1x1'],
     launcher: ['2x1', '2x2', '1x1'],
+    feed: ['2x1', '2x2', '1x1'],
     hitl: ['2x1', '2x2'],
     notes: ['1x1', '2x1', '1x2', '2x2'],
     pomodoro: ['1x1', '2x1', '1x2', '2x2'],

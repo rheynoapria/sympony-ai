@@ -12,7 +12,7 @@
     for (const f of subs[key] || []) { try { f(v); } catch (e) { console.error(key, e); } }
   };
   N.setData = set;
-  for (const ch of ['weather', 'health', 'github']) api.on(ch, (v) => set(ch, v));
+  for (const ch of ['weather', 'health', 'github', 'feed']) api.on(ch, (v) => set(ch, v));
   api.on('store:todo', (v) => set('todo', v));
   api.on('store:notes', (v) => set('notes', v));
   api.on('store:stopwatch', (v) => set('stopwatch', v));
@@ -78,5 +78,6 @@
     set('stopwatch', (await api.svc('store', 'get', 'stopwatch')) || { running: false, elapsed: 0, laps: [] });
     set('bookmarks', (await api.svc('store', 'get', 'bookmarks')) || { items: [], cats: [] });
     set('github', await api.svc('github', 'get'));
+    set('feed', await api.svc('feed', 'get').catch(() => ({ items: [] })));
   };
 })();

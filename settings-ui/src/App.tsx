@@ -33,6 +33,7 @@ import { control } from "@/sections/control";
 import { hud } from "@/sections/hud";
 import { battery } from "@/sections/battery";
 import { github } from "@/sections/github";
+import { feed } from "@/sections/feed";
 import { voice } from "@/sections/voice";
 import {
   cursor,
@@ -68,6 +69,7 @@ export const BODIES: Record<string, SectionBody> = {
   aiusage,
   integrations,
   github,
+  feed,
   voice,
   media,
   notifications,

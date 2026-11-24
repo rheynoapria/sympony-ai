@@ -99,6 +99,22 @@
  "expandedHeight": 196,
  "expandedHeightTall": 268,
  "expandedWidth": 660,
+ "feedCustomUrls": [],
+ "feedEnabled": true,
+ "feedGoogleTopics": [
+  "AI & LLM",
+  "Rust & Tauri"
+ ],
+ "feedPonySummary": true,
+ "feedRefreshMinutes": 30,
+ "feedSources": [
+  "hn",
+  "github_trending",
+  "gnews_id",
+  "cnn_id",
+  "tempo_id",
+  "antara_id"
+ ],
  "focusSound": "off",
  "focusSoundBreaks": false,
  "focusSoundVolume": 70,
@@ -285,6 +301,10 @@
   {
    "id": "github",
    "on": false
+  },
+  {
+   "id": "feed",
+   "on": true
   },
   {
    "id": "radio",
