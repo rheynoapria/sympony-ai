@@ -164,14 +164,14 @@ fn time_zone() -> Option<String> {
     (!tz.is_empty()).then_some(tz)
 }
 
-/// `{name, admin, country, lat, lon, tz}` from Nominatim's reverse answer: the city (or town, village, regency…),
-/// the province or state, the country. A city that is a province of its own (Jakarta) is named by its part (Central
-/// Jakarta), with the city as the province.
+/// `{name, admin, country, lat, lon, tz}` from Nominatim's reverse answer: the city or town, else the regency (an
+/// Indonesian kabupaten is `regency`, elsewhere `county`), else the village; the province or state; the country. A
+/// city that is a province of its own (Jakarta) is named by its part (Central Jakarta), with the city as the province.
 fn place_from(found: &Value, fix: &Fix, tz: Option<&str>) -> Option<Value> {
     let a = &found["address"];
     let first = |keys: &[&str]| keys.iter().find_map(|k| a[*k].as_str().filter(|s| !s.is_empty())).map(str::to_string);
     let state = first(&["state", "province", "region"]);
-    let city = first(&["city", "town", "municipality", "village", "county"]);
+    let city = first(&["city", "town", "municipality", "regency", "county", "village"]);
     let (name, admin) = match (city, state) {
         (Some(city), None) => match first(&["city_district"]) {
             Some(part) => (part, Some(city)),
@@ -201,6 +201,17 @@ mod tests {
     fn a_regency_when_there_is_no_city() {
         let found = json!({ "address": { "county": "Bogor", "state": "West Java", "country": "Indonesia" } });
         assert_eq!(place_from(&found, &AT, None).unwrap()["name"], "Bogor");
+        // (Nominatim's answer in Kabupaten Bekasi, a village there: the kabupaten, not the village nor the province)
+        let found = json!({ "address": { "village": "Sukadami", "regency": "Kab Bekasi", "state": "West Java", "country": "Indonesia" } });
+        let p = place_from(&found, &AT, None).unwrap();
+        assert_eq!((p["name"].as_str(), p["admin"].as_str()), (Some("Kab Bekasi"), Some("West Java")));
+    }
+
+    #[test]
+    fn a_town_before_its_village() {
+        // (Nominatim's answer in Karawang)
+        let found = json!({ "address": { "village": "Nagasari", "city_district": "Karawang Barat", "town": "Karawang", "state": "West Java", "country": "Indonesia" } });
+        assert_eq!(place_from(&found, &AT, None).unwrap()["name"], "Karawang");
     }
 
     #[test]
