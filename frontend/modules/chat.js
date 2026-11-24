@@ -732,6 +732,7 @@
     see: ['eye', 'var(--lav)', 'Looking at'],
     screen: ['eye', 'var(--sky)', 'Reading'],
     hands: ['hand-pointer', 'var(--lilac)', 'Working in'],
+    watch: ['eye', 'var(--lav)', 'Watching'],
     web: ['magnifying-glass', 'var(--sky)', 'Searching the web for'],
     page: ['globe', 'var(--sky)', 'Reading a page on'],
     read: ['file-lines', 'var(--sky)', 'Reading'],
@@ -1053,6 +1054,7 @@
       }
     }
     syncSend();
+    syncAutoUi();
     const newBtn = $('#chNew', page); if (newBtn) newBtn.disabled = (!msgs.length && !history) || pending;
     refreshCards();
   }
@@ -1190,7 +1192,8 @@
     // (a text file's text goes with this message only; the chat keeps just its name)
     const fileText = txts.map((a) => `\n\n[Attached file: ${a.name}]\n` + '```\n' + a.text + '\n```').join('');
     const wire = msgs.map(({ role, content }, i) => ({ role, content: i === msgs.length - 1 && fileText ? content + fileText : content }));
-    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '');
+    const autoOverride = typeof opts.autoUi === 'boolean' ? opts.autoUi : null;
+    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '', autoOverride);
     const done = tool.actions;
     const wasStopped = !!tool.stopped;
     const work = tool.steps.length ? { secs: Math.max(1, Math.round((Date.now() - tool.start) / 1000)), steps: tool.steps.map(({ kind, detail, sources }) => ({ kind, detail, ...(sources ? { sources } : {}) })) } : null;
@@ -1238,6 +1241,28 @@
     tool.stopped = true;
     api.svc('chat', 'stop', tool.session);
     syncSend();
+  }
+  // Auto UI pill: quick toggle inside the composer when Eyes & Hands are on
+  function syncAutoUi() {
+    const b = page && $('#chAutoUi', page);
+    if (!b) return;
+    const s = st.settings || {};
+    const avail = !!(s.ponyEyes && s.ponyHands);
+    b.hidden = !avail;
+    if (!avail) return;
+    const on = !!s.ponyAutoUi;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = on
+      ? _t('Auto UI: On — Pony operates UI, watches until responses finish, and continues automatically (financial/destructive actions still ask)')
+      : _t('Auto UI: Off — click to let Pony run full multi-step UI automation and watch until responses finish');
+  }
+  function toggleAutoUi(e) {
+    if (e) e.stopPropagation();
+    const next = !(st.settings && st.settings.ponyAutoUi);
+    if (st.settings) st.settings.ponyAutoUi = next;
+    syncAutoUi();
+    api.setSettings({ ponyAutoUi: next });
   }
   // the composer's round button: send (white arrow), or Stop (red square) while an answer is on its way
   function syncSend() {
@@ -1532,6 +1557,7 @@
           + `<button type="button" class="mini-btn" id="chFloat" title="${esc(_t('Pop out floating chat'))}" style="width:34px;height:34px;border-radius:17px">${fa('up-right-from-square')}</button>`)
         + `<div class="ch-bar"><span class="ch-who" title="${esc(((st.settings && st.settings.ponyName) || 'Pony') + (prov.label ? ' · ' + prov.label : ''))}"><canvas class="ch-pony-canvas" id="chPony" width="34" height="58"></canvas></span>`
         + `<input id="chIn" type="text" placeholder="${esc(_t('Ask anything…'))}" spellcheck="false">`
+        + `<button type="button" id="chAutoUi" class="ch-autoui" hidden aria-pressed="false" title="${esc(_t('Auto UI'))}">${fa('wand-magic-sparkles')}<span>${esc(_t('Auto UI'))}</span></button>`
         + `<button type="button" id="chClip" class="ch-clip" title="${esc(_t('Attach a picture or a file (⌘V pastes a screenshot)'))}">${fa('paperclip')}</button>`
         + `<input id="chPick" type="file" multiple hidden accept="image/*,.txt,.md,.csv,.tsv,.json,.log,.xml,.yaml,.yml,.toml,.ini,.html,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.php,.sh,.sql,.pdf">`
         + `<button type="button" id="chSend" class="mini-btn w" style="width:28px;height:28px" title="${esc(_t('Send'))}">${N.ic('up', 'width:12px;height:12px;stroke-width:3')}</button></div>`
@@ -1553,6 +1579,8 @@
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendInput(); } });
       input.addEventListener('input', syncSend);
       $('#chSend', page).onclick = sendInput;
+      const autoBtn = $('#chAutoUi', page);
+      if (autoBtn) autoBtn.onclick = toggleAutoUi;
       const pick = $('#chPick', page);
       $('#chClip', page).onclick = () => pick.click();
       pick.onchange = () => { [...pick.files].forEach(addFile); pick.value = ''; N.focusField(input); };
@@ -1578,7 +1606,7 @@
     },
     show() { if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },
     hide() { if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
-    onSettings() { launcher = null; syncHeaderPony(); N.loadAgents().then(render); },
+    onSettings() { launcher = null; syncHeaderPony(); syncAutoUi(); N.loadAgents().then(render); },
     takeFiles(type, paths) {
       if (history) return false;
       if (type === 'enter' || type === 'over') { dropZone(true); return true; }

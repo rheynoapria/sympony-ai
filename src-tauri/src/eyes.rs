@@ -12,6 +12,25 @@ pub fn available(app: &AppHandle) -> bool {
     app.state::<App>().settings.get()["ponyEyes"] == true
 }
 
+/// The name of the frontmost non-Sympony app currently on screen (only when Eyes is enabled,
+/// Accessibility is granted, and the app is not private/skipped).
+pub fn active_app(app: &AppHandle) -> Option<String> {
+    if !available(app) || !ax::trusted(false) {
+        return None;
+    }
+    let skip: Vec<String> = app.state::<App>().settings.get()["ponyEyesSkip"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    let (_, name, bundle) = ax::front_app(std::process::id() as i32)?;
+    if services::eyes::skipped(&bundle, &skip) {
+        return None;
+    }
+    Some(name)
+}
+
 /// Result of `screen_read`: text for the model plus an optional resized screenshot `(mime, base64)` for `mode: "vision"`.
 pub struct ReadResult {
     pub text: String,

@@ -2407,7 +2407,8 @@ function renderOpenVoice() {
     return;
   }
   const showLive = !st.settings || st.settings.voiceLive !== false;
-  const badge = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+  const autoBadge = v.agent && v.autoUi ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')} ${esc(_t('Auto UI'))}</span>` : '';
+  const badge = `${autoBadge}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
   if (v.state === 'listening') {
     el.dataset.ponyMood = 'listening';
     const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 12) : new Array(12).fill(0.08);
@@ -2462,6 +2463,7 @@ api.on('voice:state', (d) => {
     st.voice = {
       state: 'listening',
       agent: !!info.agent,
+      autoUi: !!info.autoUi,
       since: Date.now(),
       lang: (info.lang || (st.settings && st.settings.voiceLanguage) || 'id').toUpperCase(),
       partial: '',
@@ -2576,7 +2578,10 @@ api.on('voice:command', (d) => {
       const screenContext = sc && sc.app
         ? `Background hint (not an attached file; ignore unless the user's intent actually refers to their screen): the app in front when they spoke was ${sc.app}${sc.title ? ` — "${sc.title}"` : ''}.`
         : '';
-      N.chat.send(txt, screenContext ? { screenContext } : {});
+      const sendOpts = {};
+      if (screenContext) sendOpts.screenContext = screenContext;
+      if (typeof d.autoUi === 'boolean') sendOpts.autoUi = d.autoUi;
+      N.chat.send(txt, sendOpts);
     } else {
       const inp = $('#page-chat textarea, #page-chat input[type="text"]');
       if (inp) { inp.value = txt; inp.focus(); }
@@ -3125,7 +3130,10 @@ function renderClosed(animate) {
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
-        const langBadge = `<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
+        const autoTag = v.agent && v.autoUi
+          ? `<span class="v-lang v-autoui">${fa('wand-magic-sparkles')}${cam ? '' : ' ' + esc(_t('Auto UI'))}</span>`
+          : '';
+        const langBadge = `${autoTag}<span class="v-lang">${esc(v.agent ? 'Pony' : (v.lang || 'ID'))}</span>`;
         if (v.state === 'listening') {
           const bars = window.NotchKit && NotchKit.voiceBars ? NotchKit.voiceBars(v.rms, 24) : new Array(24).fill(0.08);
           const barsHtml = bars.map((b) => `<i style="transform:scaleY(${b.toFixed(3)})"></i>`).join('');

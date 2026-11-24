@@ -125,20 +125,31 @@ fn short(s: &str, n: usize) -> String {
 
 /// The window (`nodes[0]`) as numbered lines: `[3] button "Send"`, plain lines for its text. Returns the text and,
 /// for each number, the index of its node (Hands acts on them).
+///
+/// For large windows (such as chat apps with long history before a bottom composer), keeps the head, any visible
+/// text inputs/focused elements/sliders in the middle, and the tail (latest messages + bottom composer & buttons)
+/// so interactive controls at the bottom are never truncated away.
 pub fn list(nodes: &[Node]) -> (String, Vec<usize>) {
+    struct Entry {
+        node_idx: usize,
+        interactive: bool,
+        priority: bool,
+        body: String,
+    }
+
     let (wx, wy, ww, wh) = nodes.first().map(|n| n.frame).unwrap_or_default();
     let shown = |n: &Node| n.frame.2 > 1.0 && n.frame.3 > 1.0;
     let inside = |n: &Node| wh <= 0.0 || (n.frame.1 + n.frame.3 > wy && n.frame.1 < wy + wh && n.frame.0 + n.frame.2 > wx && n.frame.0 < wx + ww);
-    let (mut out, mut map, mut last, mut hidden) = (String::new(), Vec::new(), String::new(), 0usize);
+    let (mut entries, mut last, mut hidden) = (Vec::new(), String::new(), 0usize);
+    let mut total_chars = 0usize;
+    let mut total_items = 0usize;
+
     for (i, n) in nodes.iter().enumerate().skip(1) {
-        if !shown(n) || out.len() > MAX_CHARS {
+        if !shown(n) {
             continue;
         }
-        let line = if let Some(k) = kind(n) {
-            if map.len() >= MAX_ITEMS {
-                continue;
-            }
-            let mut l = format!("[{}] {k}", map.len() + 1);
+        if let Some(k) = kind(n) {
+            let mut l = k.to_string();
             if !n.label.is_empty() {
                 l += &format!(" \"{}\"", short(&n.label, 80));
             }
@@ -160,13 +171,15 @@ pub fn list(nodes: &[Node]) -> (String, Vec<usize>) {
             if !n.enabled {
                 l += " [disabled]";
             }
-            if !inside(n) {
+            let vis = inside(n);
+            if !vis {
                 l += " (scroll to reach)";
             }
-            map.push(i);
-            // (a button's own text follows it in the tree: not again)
+            let priority = vis && (n.focused || matches!(n.role.as_str(), "AXTextArea" | "AXTextField" | "AXComboBox" | "AXSlider"));
+            total_items += 1;
+            total_chars += l.len() + 7; // "[NNN] " + '\n'
             last = n.label.clone();
-            l
+            entries.push(Entry { node_idx: i, interactive: true, priority, body: l });
         } else if n.role == "AXStaticText" || n.role == "AXHeading" {
             let t = if n.role == "AXStaticText" { &n.value } else { &n.label };
             if t.trim().is_empty() || *t == last {
@@ -177,12 +190,129 @@ pub fn list(nodes: &[Node]) -> (String, Vec<usize>) {
                 continue;
             }
             last = t.clone();
-            if n.role == "AXHeading" { format!("## {}", short(t, 200)) } else { short(t, 200) }
-        } else {
-            continue;
-        };
-        out += &line;
-        out.push('\n');
+            let l = if n.role == "AXHeading" { format!("## {}", short(t, 200)) } else { short(t, 200) };
+            total_chars += l.len() + 1;
+            entries.push(Entry { node_idx: i, interactive: false, priority: false, body: l });
+        }
+    }
+
+    let mut out = String::new();
+    let mut map = Vec::new();
+    if total_chars <= MAX_CHARS && total_items <= MAX_ITEMS {
+        for e in &entries {
+            if e.interactive {
+                map.push(e.node_idx);
+                out += &format!("[{}] {}\n", map.len(), e.body);
+            } else {
+                out += &e.body;
+                out.push('\n');
+            }
+        }
+    } else {
+        const HEAD_CHARS: usize = 3_800;
+        const HEAD_ITEMS: usize = 90;
+        const TAIL_CHARS: usize = 6_800;
+        const TAIL_ITEMS: usize = 170;
+        const PRIORITY_CHARS: usize = 2_400;
+        const PRIORITY_ITEMS: usize = 40;
+        const OMIT_LINE: &str = "… (middle content omitted for length; mode \"text\" reads all text)\n";
+
+        let est_len = |e: &Entry| e.body.len() + if e.interactive { 7 } else { 1 };
+        let mut keep = vec![false; entries.len()];
+        let mut used_chars = 0usize;
+        let mut used_items = 0usize;
+
+        // 1. Always preserve visible priority controls (text areas, text fields, combo boxes, focused, sliders),
+        //    scanning from the bottom first so chat composers at the bottom are guaranteed a slot.
+        let (mut p_chars, mut p_items) = (0usize, 0usize);
+        for (idx, e) in entries.iter().enumerate().rev() {
+            if !e.priority {
+                continue;
+            }
+            let len = est_len(e);
+            if p_items < PRIORITY_ITEMS && p_chars + len <= PRIORITY_CHARS {
+                keep[idx] = true;
+                p_chars += len;
+                p_items += 1;
+                used_chars += len;
+                used_items += 1;
+            }
+        }
+
+        // 2. Keep the tail (latest messages, chat composer, Send/Submit buttons, bottom toolbars).
+        let (mut t_chars, mut t_items) = (0usize, 0usize);
+        for (idx, e) in entries.iter().enumerate().rev() {
+            let len = est_len(e);
+            if keep[idx] {
+                t_chars += len;
+                if e.interactive {
+                    t_items += 1;
+                }
+                continue;
+            }
+            if t_chars + len > TAIL_CHARS || (e.interactive && t_items >= TAIL_ITEMS) {
+                break;
+            }
+            if used_chars + len > MAX_CHARS.saturating_sub(OMIT_LINE.len() + 80) || (e.interactive && used_items >= MAX_ITEMS) {
+                break;
+            }
+            keep[idx] = true;
+            t_chars += len;
+            used_chars += len;
+            if e.interactive {
+                t_items += 1;
+                used_items += 1;
+            }
+        }
+
+        // 3. Keep the head (window top bar, active session title, sidebar/header navigation).
+        let (mut h_chars, mut h_items) = (0usize, 0usize);
+        for (idx, e) in entries.iter().enumerate() {
+            let len = est_len(e);
+            if keep[idx] {
+                h_chars += len;
+                if e.interactive {
+                    h_items += 1;
+                }
+                continue;
+            }
+            if h_chars + len > HEAD_CHARS || (e.interactive && h_items >= HEAD_ITEMS) {
+                break;
+            }
+            if used_chars + len > MAX_CHARS.saturating_sub(OMIT_LINE.len() + 80) || (e.interactive && used_items >= MAX_ITEMS) {
+                break;
+            }
+            keep[idx] = true;
+            h_chars += len;
+            used_chars += len;
+            if e.interactive {
+                h_items += 1;
+                used_items += 1;
+            }
+        }
+
+        // 4. Emit kept entries in exact reading order, collapsing skipped spans into one omission marker.
+        let mut skipping = false;
+        for (idx, e) in entries.iter().enumerate() {
+            if !keep[idx] {
+                skipping = true;
+                continue;
+            }
+            if skipping {
+                out += OMIT_LINE;
+                skipping = false;
+            }
+            if e.interactive {
+                map.push(e.node_idx);
+                out += &format!("[{}] {}\n", map.len(), e.body);
+            } else {
+                out += &e.body;
+                out.push('\n');
+            }
+        }
+        if skipping {
+            out += OMIT_LINE;
+        }
     }
     if hidden > 0 {
         out += &format!("… {hidden} more lines of text out of view (mode \"text\" reads them)\n");
@@ -282,6 +412,48 @@ mod tests {
         );
         assert_eq!(map, vec![1, 5, 6, 7, 10]);
         assert_eq!(super::text(&nodes), "kopi\nInbox\nMeeting at 3\nfar below");
+    }
+
+    #[test]
+    fn large_window_keeps_head_tail_and_bottom_composer() {
+        let mut win = n("AXWindow", "Paseo", "", 0.0);
+        win.frame = (0.0, 0.0, 1200.0, 900.0);
+        let mut nodes = vec![win];
+        nodes.push(n("AXHeading", "Explain Sympony project overview", "", 20.0));
+        nodes.push(n("AXButton", "Workspace Sympony", "", 40.0));
+        // Long chat history in the middle (> 16 KB) that previously truncated everything below it
+        for i in 0..140 {
+            let msg = format!("Message #{i}: {}", "long conversation line ".repeat(6));
+            nodes.push(n("AXStaticText", "", &msg, 60.0 + (i as f64) * 2.0));
+        }
+        // A visible input sitting right in the middle
+        let mid_idx = nodes.len();
+        nodes.push(n("AXTextField", "Filter messages", "", 400.0));
+        for i in 140..240 {
+            let msg = format!("Message #{i}: {}", "more transcript text ".repeat(6));
+            nodes.push(n("AXStaticText", "", &msg, 420.0 + ((i - 140) as f64) * 2.0));
+        }
+        // Bottom composer + Send button at the very end of the AX tree (like Paseo/Slack/ChatGPT)
+        let composer_idx = nodes.len();
+        nodes.push(n("AXTextArea", "Message agent...", "", 820.0));
+        let send_idx = nodes.len();
+        nodes.push(n("AXButton", "Send", "", 860.0));
+
+        let (text, map) = list(&nodes);
+        assert!(text.len() <= MAX_CHARS + 200, "output stayed within budget: {}", text.len());
+        assert!(text.contains("## Explain Sympony project overview"), "kept window header");
+        assert!(text.contains("middle content omitted"), "marked omitted middle");
+        assert!(text.contains("text field \"Filter messages\""), "kept middle visible input");
+        assert!(text.contains("text area \"Message agent...\""), "kept bottom chat composer");
+        assert!(text.contains("button \"Send\""), "kept bottom Send button");
+        assert!(map.contains(&mid_idx), "map includes middle input node index");
+        assert!(map.contains(&composer_idx), "map includes bottom composer node index");
+        assert!(map.contains(&send_idx), "map includes bottom Send button node index");
+        // Verify sequential numbering matches map 1-to-1
+        let comp_num = map.iter().position(|&idx| idx == composer_idx).unwrap() + 1;
+        assert!(text.contains(&format!("[{comp_num}] text area \"Message agent...\"")));
+        let send_num = map.iter().position(|&idx| idx == send_idx).unwrap() + 1;
+        assert!(text.contains(&format!("[{send_num}] button \"Send\"")));
     }
 
     #[test]

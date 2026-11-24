@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Full Auto UI Mode (`Auto UI` Toggle + `screen_watch`):** Added a quick `Auto UI` pill toggle inside Pony's chat composer (Notch & Floating Chat, synced with *Settings → Pony Assistant → Eyes → Hands*) and a zero-token Rust passive watcher (`screen_watch`) so Pony can send a command in an active UI, wait until the response settles, summarize results, and continue automatically while keeping financial/destructive actions, password fields, and private apps strictly guarded (`#21`).
+- **3-Layer Voice + Auto UI Integration:** Added a live `Auto UI` badge on the Voice listening pill when talking to Pony, voice-accessible `set_auto_ui` toggle (*"nyalakan/matikan auto UI"*), natural per-turn speech overrides (*"tunggu sampai selesai"*, *"otomatis"*, *"tanya dulu"*), and a 3-way `Voice Auto UI` preference in *Settings → Voice* (`#22`).
+- **Public Roadmap & Agent Collaboration Guide:** Added [AGENTS.md](AGENTS.md), updated issue templates, and linked the public GitHub Project board (**Sympony Roadmap**) in [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Fixed
+- **Active-UI-First Paseo Control & Deep Electron AX Reading:** Raised macOS Accessibility tree traversal depth (`60` → `96`), upgraded `services::eyes::list` to preserve **Head + Priority Middle + Tail** (preventing bottom chat composers and Send buttons from being truncated in long chats), added active front-app awareness for Active-UI-First automation, and made the Paseo bridge session-aware (`agents_list` → `agent_send` / `ask_user` with human-readable session labels instead of blindly spawning new threads) (`#20`).
+- **Voice Command Privacy Filter:** Filtered front-window hints during Voice Commands through `ponyEyesSkip` and password-manager exclusions for parity with Eyes (`#22`).
+
 ## [0.2.0-beta.4] - 2026-11-23
 
 ### Added

@@ -28,9 +28,18 @@ struct Run {
     out: Arc<Mutex<String>>,
 }
 
+/// Cached metadata for a Paseo agent session so approvals and follow-ups show human-readable session titles.
+#[derive(Clone, Default)]
+struct PaseoSession {
+    folder: String,
+    title: String,
+    short_id: String,
+}
+
 #[derive(Default)]
 pub struct Bridge {
     runs: Mutex<HashMap<String, Run>>,
+    sessions: Mutex<HashMap<String, PaseoSession>>,
     next: Mutex<u32>,
 }
 
@@ -43,10 +52,10 @@ pub fn available(app: &AppHandle) -> bool {
 pub fn tools() -> Vec<Value> {
     let obj = |props: Value, req: &[&str]| json!({"type": "object", "properties": props, "required": req});
     vec![
-        json!({"name": "agents_list", "description": "The coding agents running on this Mac (Paseo's, and the ones Pony started): id, state (running, idle, waiting on the user), project folder, title.", "inputSchema": obj(json!({}), &[])}),
-        json!({"name": "agent_start", "description": "Starts a coding agent in a project folder with a task (Sympony asks the user first). It works on its own; Sympony tells the user when it finishes. Use when the user asks to have an agent do something in a project.",
+        json!({"name": "agents_list", "description": "Lists existing coding agent sessions on this Mac (Paseo's recent sessions and the ones Pony started): id, state (running, idle, waiting on the user, closed), project folder, title, provider. ALWAYS call this BEFORE agent_start or agent_send when the user is not active in Paseo's UI, so you can continue an existing session instead of blindly creating a new one.", "inputSchema": obj(json!({}), &[])}),
+        json!({"name": "agent_start", "description": "Creates a BRAND-NEW coding agent conversation/session in a project folder with a task (Sympony asks the user first). WARNING: Do NOT use this when the user is currently active in Paseo's UI (operate directly in Paseo's chat input via screen_read + screen_do instead), and do NOT use this before calling agents_list to see whether an existing session should be continued with agent_send or clarified with ask_user.",
             "inputSchema": obj(json!({"project": {"type": "string", "description": "the project's folder name (e.g. Sympony) or its full path"}, "task": {"type": "string", "description": "the task, complete and clear, in the user's words where possible"}, "provider": {"type": "string", "description": "claude or codex; leave out for the one the user used last"}}), &["project", "task"])}),
-        json!({"name": "agent_send", "description": "Sends a message to an agent (Sympony asks the user first).", "inputSchema": obj(json!({"id": {"type": "string", "description": "the agent's id from agents_list or agent_start"}, "message": {"type": "string"}}), &["id", "message"])}),
+        json!({"name": "agent_send", "description": "Sends a message into an EXISTING coding agent session (Sympony asks the user first). Prefer this (after agents_list) over agent_start whenever continuing an existing Paseo/agent conversation while the user is not active in Paseo's UI. State the session title and project in your reply.", "inputSchema": obj(json!({"id": {"type": "string", "description": "the existing agent's id from agents_list or agent_start"}, "message": {"type": "string"}}), &["id", "message"])}),
         json!({"name": "agent_status", "description": "An agent's state and its last messages.", "inputSchema": obj(json!({"id": {"type": "string"}}), &["id"])}),
         json!({"name": "agent_stop", "description": "Stops what an agent is doing (Sympony asks the user first).", "inputSchema": obj(json!({"id": {"type": "string"}}), &["id"])}),
     ]
@@ -102,6 +111,55 @@ fn folders() -> Vec<String> {
     out
 }
 
+fn short_id(id: &str) -> String {
+    id.chars().take(7).collect()
+}
+
+fn cache_paseo_list(app: &AppHandle, v: &Value) {
+    let Some(arr) = v["agents"].as_array() else { return };
+    let bridge = app.state::<Bridge>();
+    let mut map = bridge.sessions.lock().unwrap();
+    for a in arr {
+        let id = a["id"].as_str().unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let sid = a["shortId"].as_str().filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| short_id(id));
+        map.insert(id.to_string(), PaseoSession {
+            folder: a["cwd"].as_str().unwrap_or("").to_string(),
+            title: a["title"].as_str().unwrap_or("").to_string(),
+            short_id: sid,
+        });
+    }
+}
+
+fn resolve_paseo_session(app: &AppHandle, id: &str) -> PaseoSession {
+    if let Some(s) = app.state::<Bridge>().sessions.lock().unwrap().get(id).cloned() {
+        return s;
+    }
+    if let Ok(st) = paseo_call("get_agent_status", json!({"agentId": id})) {
+        let folder = st["snapshot"]["cwd"].as_str().or(st["cwd"].as_str()).unwrap_or("").to_string();
+        let title = st["snapshot"]["title"].as_str().or(st["title"].as_str()).unwrap_or("").to_string();
+        let info = PaseoSession { folder, title, short_id: short_id(id) };
+        if !info.folder.is_empty() || !info.title.is_empty() {
+            app.state::<Bridge>().sessions.lock().unwrap().insert(id.to_string(), info.clone());
+        }
+        return info;
+    }
+    PaseoSession { folder: String::new(), title: String::new(), short_id: short_id(id) }
+}
+
+fn format_session_label(folder: &str, title: &str, sid: &str) -> String {
+    let proj = folder.trim_end_matches('/').rsplit('/').next().unwrap_or("").trim();
+    let t = cut(title, 56);
+    match (!proj.is_empty(), !t.is_empty()) {
+        (true, true) => format!("{proj} · “{t}” ({sid})"),
+        (true, false) => format!("{proj} ({sid})"),
+        (false, true) => format!("“{t}” ({sid})"),
+        (false, false) => sid.to_string(),
+    }
+}
+
 /// One of `NAMES`. Err: what the model reads.
 pub fn call(app: &AppHandle, session: &str, name: &str, args: &Value) -> Result<String, String> {
     let s = |k: &str| args[k].as_str().unwrap_or("").trim().to_string();
@@ -120,7 +178,9 @@ pub fn call(app: &AppHandle, session: &str, name: &str, args: &Value) -> Result<
             step(app, session, "");
             let mut out = vec![];
             if paseo_ready() {
-                out.push(services::agents::paseo_lines(&paseo_call("list_agents", json!({"limit": 15}))?));
+                let v = paseo_call("list_agents", json!({"limit": 25, "sinceHours": 720}))?;
+                cache_paseo_list(app, &v);
+                out.push(services::agents::paseo_lines(&v));
             }
             for (id, r) in app.state::<Bridge>().runs.lock().unwrap().iter() {
                 let folder = r.folder.rsplit('/').next().unwrap_or("");
@@ -139,7 +199,7 @@ pub fn call(app: &AppHandle, session: &str, name: &str, args: &Value) -> Result<
             let folder = services::agents::pick_folder(&project, &folders()).filter(|f| std::path::Path::new(f).is_dir())
                 .ok_or_else(|| format!("No project folder named {project} found; ask the user for its path"))?;
             let via = if paseo_ready() { "Paseo" } else { "Claude Code" };
-            if !ask(app, session, "agent_start", format!("{folder} · {via}{}\n{task}", if provider.is_empty() { String::new() } else { format!(" ({provider})") })) {
+            if !ask(app, session, "agent_start", format!("New session · {folder} · {via}{}\n{task}", if provider.is_empty() { String::new() } else { format!(" ({provider})") })) {
                 return declined();
             }
             step(app, session, &format!("{} · {}", folder.rsplit('/').next().unwrap_or(""), cut(&task, 40)));
@@ -148,18 +208,29 @@ pub fn call(app: &AppHandle, session: &str, name: &str, args: &Value) -> Result<
         "agent_send" => {
             let (id, message) = (s("id"), s("message"));
             let mine = app.state::<Bridge>().runs.lock().unwrap().get(&id).map(|r| (r.folder.clone(), r.running, r.session.clone(), r.title.clone()));
-            let where_ = mine.as_ref().map(|m| m.0.clone()).unwrap_or_else(|| id.clone());
+            let (where_, label, follow_folder) = match &mine {
+                Some((folder, _, _, title)) => {
+                    let lbl = format_session_label(folder, title, &id);
+                    (lbl.clone(), lbl, folder.clone())
+                }
+                None => {
+                    let info = resolve_paseo_session(app, &id);
+                    let lbl = format_session_label(&info.folder, &info.title, &info.short_id);
+                    let fol = if info.folder.is_empty() { id.clone() } else { info.folder };
+                    (lbl.clone(), lbl, fol)
+                }
+            };
             if !ask(app, session, "agent_send", format!("{where_}\n{message}")) {
                 return declined();
             }
-            step(app, session, &cut(&message, 50));
+            step(app, session, &cut(&format!("{label} · {message}"), 60));
             match mine {
                 Some((_, true, ..)) => Err("That agent is still working; wait for it, or stop it first".into()),
                 Some((folder, false, sid, _)) => start_claude(app, &folder, &message, Some((&id, &sid))),
                 None => {
                     paseo_call("send_agent_prompt", json!({"agentId": id, "prompt": message, "notifyOnFinish": false}))?;
-                    follow_paseo(app, &id, &where_);
-                    Ok(format!("Sent to {id}. Sympony tells the user when it finishes."))
+                    follow_paseo(app, &id, &follow_folder);
+                    Ok(format!("Sent to existing session {label}. Sympony tells the user when it finishes."))
                 }
             }
         }
@@ -213,11 +284,19 @@ fn paseo_create(folder: &str, task: &str, provider: &str) -> Result<(String, Str
 
 fn start_paseo(app: &AppHandle, folder: &str, task: &str, provider: &str) -> Result<String, String> {
     let (id, model) = paseo_create(folder, task, provider)?;
+    let title = cut(task, 58);
     if id.is_empty() {
-        return Ok(format!("Started in Paseo ({model}) in {folder}."));
+        return Ok(format!("Started new session “{title}” in Paseo ({model}) in {folder}."));
     }
+    let sid = short_id(&id);
+    app.state::<Bridge>().sessions.lock().unwrap().insert(id.clone(), PaseoSession {
+        folder: folder.to_string(),
+        title: title.clone(),
+        short_id: sid.clone(),
+    });
+    let lbl = format_session_label(folder, &title, &sid);
     follow_paseo(app, &id, folder);
-    Ok(format!("Started agent {id} ({model}) in {folder}. It works on its own in Paseo; its questions come to the notch, and Sympony tells the user when it finishes."))
+    Ok(format!("Started new session {lbl} ({model}). It works on its own in Paseo; its questions come to the notch, and Sympony tells the user when it finishes."))
 }
 
 /// Watches a Paseo agent until it stops working, then tells the chat.
@@ -321,6 +400,17 @@ mod tests {
     fn paseo_activity_loses_its_header() {
         assert_eq!(activity(&json!({"content": "Showing 1 of 2 activities (limited to 1)\n\npong"})), "pong");
         assert_eq!(activity(&json!({"content": "just text\n\nmore"})), "just text\n\nmore");
+    }
+
+    #[test]
+    fn session_labels_show_project_title_and_short_id() {
+        assert_eq!(
+            format_session_label("/Users/u/Playground/Sympony", "Explain Sympony project overview", &short_id("3d46d37d-3455-4438")),
+            "Sympony · “Explain Sympony project overview” (3d46d37)"
+        );
+        assert_eq!(format_session_label("/Users/u/Sympony", "", "abc1234"), "Sympony (abc1234)");
+        assert_eq!(format_session_label("", "My chat", "abc1234"), "“My chat” (abc1234)");
+        assert_eq!(format_session_label("", "", "abc1234"), "abc1234");
     }
 
     /// Claude Code for real, in a fresh folder: a task, then going on in the same session.

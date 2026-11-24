@@ -435,6 +435,26 @@ function VoiceBody({ settings, set }: CustomPartProps) {
               onChange={(v) => set({ voiceCommandKey: v })}
             />
           </SettingsRow>
+          {settings.ponyEyes === true && settings.ponyHands === true && (
+            <SettingsRow
+              label={t("Voice Auto UI")}
+              description={t(
+                "Control whether voice commands to Pony run in Auto UI mode or follow the chat toggle."
+              )}
+            >
+              <SegmentedControl
+                size="sm"
+                aria-label={t("Voice Auto UI")}
+                value={String(settings.voiceAutoUi || "follow")}
+                onValueChange={(v) => set({ voiceAutoUi: v })}
+                options={[
+                  { value: "follow", label: t("Follow chat") },
+                  { value: "on", label: t("Always on") },
+                  { value: "off", label: t("Always off") },
+                ]}
+              />
+            </SettingsRow>
+          )}
           <div className="flex items-center justify-between gap-3 py-3">
             <div className="min-w-0">
               <div className="text-[12.5px] font-medium text-foreground">{t("Test trigger")}</div>

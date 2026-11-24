@@ -30,11 +30,25 @@
     show(d) {
       clearTimeout(hideTimer);
       ensurePony(d);
+      document.body.classList.remove('watching');
       $('status-t').textContent = d.status ? t('Pony is using {app}', { app: d.status }) : t('Pony is using your screen');
       document.body.classList.add('on');
       if (pony) pony.setMood('working');
     },
+    watch(d) {
+      clearTimeout(hideTimer);
+      ensurePony(d);
+      document.body.classList.add('watching', 'on');
+      label.classList.remove('on');
+      const app = d.status || '';
+      const s = typeof d.elapsed === 'number' && d.elapsed > 0 ? ` (${d.elapsed}s)` : '';
+      $('status-t').textContent = app
+        ? (d.busy ? t('Watching {app} (working)…', { app }) : t('Watching {app}…', { app })) + s
+        : t('Watching your screen…') + s;
+      if (pony) pony.setMood('working');
+    },
     move(d) {
+      document.body.classList.remove('watching');
       cur.style.transform = `translate(${Math.round(d.x)}px, ${Math.round(d.y)}px)`;
       const w = words(d);
       label.textContent = w;
@@ -51,7 +65,7 @@
     },
     hide() {
       label.classList.remove('on');
-      document.body.classList.remove('on');
+      document.body.classList.remove('on', 'watching');
       if (pony) pony.setMood('done');
     },
   };

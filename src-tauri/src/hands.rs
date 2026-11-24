@@ -35,6 +35,8 @@ struct View {
 pub struct Hands {
     views: Mutex<HashMap<String, View>>,
     actions: Mutex<HashMap<String, usize>>,
+    /// per-session Auto UI override (from voice commands or per-turn intent phrases)
+    session_auto: Mutex<HashMap<String, bool>>,
     /// per run: the steps that worked (elements by role and label) and the last changes, for routine_save
     trail: Mutex<HashMap<String, (Vec<Value>, String)>>,
     /// the runs already told how to act (with their first screen read, not in every request's system prompt)
@@ -50,6 +52,49 @@ pub struct Hands {
 pub fn available(app: &AppHandle) -> bool {
     let s = app.state::<App>().settings.get();
     s["ponyEyes"] == true && s["ponyHands"] == true
+}
+
+/// Sets a per-session Auto UI override (voice commands, per-turn intent, or `set_auto_ui` mid-run).
+pub fn set_session_auto_ui(app: &AppHandle, session: &str, on: bool) {
+    if !session.is_empty() {
+        app.state::<Hands>().session_auto.lock().unwrap().insert(session.to_string(), on);
+    }
+}
+
+/// Whether Auto UI mode is active for `session` (per-session override first, else global `ponyAutoUi`; requires Hands on).
+pub fn auto_ui_for(app: &AppHandle, session: &str) -> bool {
+    if !available(app) {
+        return false;
+    }
+    if !session.is_empty() {
+        if let Some(&ov) = app.state::<Hands>().session_auto.lock().unwrap().get(session) {
+            return ov;
+        }
+    }
+    app.state::<App>().settings.get()["ponyAutoUi"] == true
+}
+
+/// `set_auto_ui` tool: persists `ponyAutoUi` in Settings (syncing notch, floating chat, and Settings UI)
+/// and updates the current session immediately.
+pub fn set_auto_ui(app: &AppHandle, session: &str, args: &Value) -> Result<String, String> {
+    if !available(app) {
+        return Err("Turn on Eyes and Hands first in Settings → Pony Assistant → Eyes.".into());
+    }
+    let Some(enabled) = args["enabled"].as_bool() else {
+        return Err("set_auto_ui requires boolean `enabled`".into());
+    };
+    crate::commands::apply_settings_patch(app, json!({"ponyAutoUi": enabled}));
+    set_session_auto_ui(app, session, enabled);
+    let _ = app.emit("agent:step", json!({
+        "session": session,
+        "kind": "hands",
+        "detail": if enabled { "Auto UI on" } else { "Auto UI off" },
+    }));
+    Ok(if enabled {
+        "Auto UI mode is now ON (synced to the chat bar and Settings). Financial and destructive actions still ask first.".into()
+    } else {
+        "Auto UI mode is now OFF (back to Assisted mode).".into()
+    })
 }
 
 /// Eyes read a window as elements: Hands acts on that view.
@@ -76,6 +121,7 @@ pub fn forget(app: &AppHandle, session: &str) {
     if let Some(h) = app.try_state::<Hands>() {
         let had = h.views.lock().unwrap().remove(session).is_some();
         h.actions.lock().unwrap().remove(session);
+        h.session_auto.lock().unwrap().remove(session);
         h.trail.lock().unwrap().remove(session);
         h.taught.lock().unwrap().remove(session);
         if had {
@@ -317,7 +363,8 @@ pub fn call(app: &AppHandle, session: &str, args: &Value) -> Result<String, Stri
         let mut acts = st.actions.lock().unwrap();
         let n = acts.entry(session.to_string()).or_default();
         *n += steps.len();
-        if *n > h::MAX_ACTIONS {
+        let limit = if auto_ui_for(app, session) { h::MAX_ACTIONS_AUTO } else { h::MAX_ACTIONS };
+        if *n > limit {
             return Err("That's a lot of steps for one request: stop and tell the user where it got stuck.".into());
         }
     }
@@ -577,8 +624,154 @@ fn has_risky_button(app: &AppHandle, session: &str) -> bool {
     })
 }
 
+/// `screen_watch`: passively watches the active window in Rust (0 LLM tokens, no mouse movement) until an AI/app
+/// response finishes and settles, or optional `wait_for` text appears, or `timeout_s` expires. Refreshes the
+/// remembered view so Pony can summarize results and continue acting immediately.
+pub fn watch(app: &AppHandle, session: &str, args: &Value) -> Result<String, String> {
+    if !available(app) {
+        return Err("Hands are off (Settings → Pony Assistant → Abilities → Eyes)".into());
+    }
+    if ax::secure_input() {
+        return Err("A password field is active, so Pony doesn't watch now.".into());
+    }
+    let skip: Vec<String> = app.state::<App>().settings.snapshot()["ponyEyesSkip"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    let me = std::process::id() as i32;
+    let wanted_app = args["app"].as_str().map(str::trim).filter(|s| !s.is_empty());
+
+    let (pid, app_name, bundle, win, old_nodes, old_map) = if let Some(req) = wanted_app {
+        let Some((pid, name, bundle)) = ax::find_running_app(req, me) else {
+            return Err(format!("Couldn't find running app \"{req}\" to watch."));
+        };
+        if services::eyes::skipped(&bundle, &skip) {
+            return Err(format!("{name} is kept private, so Pony doesn't watch it."));
+        }
+        let Some(win) = ax::window(pid) else {
+            return Err(format!("{name} shows no window Sympony can watch."));
+        };
+        let (nodes, _) = ax::read(&win, 6000);
+        let (_, map) = services::eyes::list(&nodes);
+        (pid, name, bundle, win, nodes, map)
+    } else {
+        let cached = {
+            let st = app.state::<Hands>();
+            let views = st.views.lock().unwrap();
+            views.get(session).map(|v| (v.pid, v.app.clone(), v.bundle.clone(), v.win.clone(), v.nodes.clone(), v.map.clone()))
+        };
+        if let Some(c) = cached {
+            if services::eyes::skipped(&c.2, &skip) {
+                return Err(format!("{} is kept private, so Pony doesn't watch it.", c.1));
+            }
+            c
+        } else {
+            let Some((pid, name, bundle)) = ax::front_app(me) else {
+                return Err("There is no window to watch. Call screen_read first.".into());
+            };
+            if services::eyes::skipped(&bundle, &skip) {
+                return Err(format!("{name} is kept private, so Pony doesn't watch it."));
+            }
+            let Some(win) = ax::window(pid) else {
+                return Err(format!("{name} shows no window Sympony can watch."));
+            };
+            let (nodes, _) = ax::read(&win, 6000);
+            let (_, map) = services::eyes::list(&nodes);
+            (pid, name, bundle, win, nodes, map)
+        }
+    };
+
+    let timeout_s = args["timeout_s"].as_f64().unwrap_or(120.0).clamp(5.0, 300.0) as f32;
+    let settle_s = args["settle_s"].as_f64().unwrap_or(2.5).clamp(1.5, 10.0) as f32;
+    let wait_for = args["wait_for"].as_str().map(String::from);
+
+    let baseline_text = services::eyes::text(&old_nodes);
+    let mut tracker = h::WatchTracker::new(baseline_text.clone(), wait_for, settle_s, timeout_s);
+
+    let _ = app.emit("agent:step", json!({"session": session, "kind": "watch", "detail": app_name.chars().take(60).collect::<String>()}));
+    let gen = begin(app, &app_name, win.frame());
+    show(app, json!({"do": "watch", "status": app_name, "elapsed": 0, "busy": false}));
+
+    let started = std::time::Instant::now();
+    let mut last_ui_sec = 0u64;
+    let (cur_win, final_nodes, final_els, outcome) = loop {
+        std::thread::sleep(Duration::from_millis(800));
+        if crate::brain::stopped(app, session) {
+            end_later_ms(app, gen, 400);
+            return Err("the user stopped Pony while watching".into());
+        }
+        if ax::secure_input() {
+            end_later_ms(app, gen, 400);
+            return Err("a password field became active, so Pony stopped watching".into());
+        }
+        if ax::front_app(me).is_some_and(|(_, _, b)| services::eyes::skipped(&b, &skip)) {
+            end_later_ms(app, gen, 400);
+            return Err("a private app came to the front, so Pony stopped watching".into());
+        }
+
+        let cur_win = ax::window(pid).unwrap_or_else(|| win.clone());
+        let (nodes, els) = ax::read(&cur_win, 6000);
+        if nodes.is_empty() {
+            end_later_ms(app, gen, 400);
+            return Err(format!("{app_name}'s window closed or became unreadable while watching."));
+        }
+        let url = nodes.iter().find(|n| n.role == "AXWebArea").map(|n| n.url.clone()).unwrap_or_default();
+        if services::eyes::blocked_url(&url) {
+            end_later_ms(app, gen, 400);
+            return Err("That page is a password manager or vault, so Pony stopped watching.".into());
+        }
+        let busy = h::is_busy(&nodes);
+        let text = services::eyes::text(&nodes);
+        let elapsed = started.elapsed().as_secs_f32();
+        let state = tracker.tick(busy, &text, elapsed);
+
+        let sec = started.elapsed().as_secs();
+        if sec > last_ui_sec {
+            last_ui_sec = sec;
+            show(app, json!({"do": "watch", "status": app_name, "elapsed": sec, "busy": busy}));
+        }
+
+        if state != h::WatchState::Watching {
+            break (cur_win, nodes, els, state);
+        }
+    };
+
+    let elapsed_s = started.elapsed().as_secs();
+    let title = cur_win.text("AXTitle");
+    let url = final_nodes.iter().find(|n| n.role == "AXWebArea").map(|n| n.url.clone()).unwrap_or_default();
+    let final_text = services::eyes::text(&final_nodes);
+    let new_text = h::diff_text(&baseline_text, &final_text, 6000);
+    let (list, map) = services::eyes::list(&final_nodes);
+    let what = h::changes(&old_nodes, &old_map, &final_nodes, &map, &list);
+    remember(app, session, pid, &app_name, &bundle, cur_win, final_nodes, final_els, map);
+    end_later(app, gen);
+
+    let status_line = match outcome {
+        h::WatchState::Settled => format!("Watch finished after {elapsed_s}s (response settled)."),
+        h::WatchState::Matched => format!("Watch matched target text after {elapsed_s}s."),
+        h::WatchState::QuietTimeout => format!("Watch stopped after {elapsed_s}s with no new activity (the window may still be idle or hidden)."),
+        h::WatchState::TimedOut | h::WatchState::Watching => format!("Watch reached {elapsed_s}s timeout (showing what appeared so far)."),
+    };
+    app.state::<App>().log.line(&format!("hands: watch {app_name}: {status_line} (+{} chars)", new_text.len()));
+
+    let mut body = String::new();
+    if !new_text.trim().is_empty() {
+        body.push_str("New text since watching started:\n");
+        body.push_str(&new_text);
+        body.push_str("\n\n");
+    } else {
+        body.push_str("(No new text appeared during watch.)\n\n");
+    }
+    body.push_str("Screen changes & updated element numbers:\n");
+    body.push_str(&what);
+    let wrapped = services::eyes::wrap(&app_name, &title, &url, &body);
+    Ok(format!("{status_line}\n{wrapped}"))
+}
+
 fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, step: &Value) -> Result<String, String> {
-    let is_yolo = yolo(app);
+    let is_yolo = yolo(app) || auto_ui_for(app, session);
     let kind = step["do"].as_str().unwrap_or("");
     let n = step["n"].as_u64().map(|n| n as usize);
     let target = match n {
@@ -848,6 +1041,7 @@ fn one(app: &AppHandle, session: &str, pid: i32, win: &ax::El, app_name: &str, s
                 }
                 std::thread::sleep(Duration::from_millis(140));
                 ax::press_combo(0, 0x0010_0000); // cmd+a: the old text goes
+                std::thread::sleep(Duration::from_millis(45));
                 if text.is_empty() {
                     ax::press_key(51, false); // Backspace/Delete actually clears the field
                 } else {

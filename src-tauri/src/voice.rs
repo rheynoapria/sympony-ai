@@ -539,9 +539,17 @@ impl VoiceRuntime {
             } else {
                 mode
             };
+            let skip: Vec<String> = s
+                .get("ponyEyesSkip")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
             let screen = (mode == VoiceMode::Command && s.get("ponyEyes").and_then(Value::as_bool) == Some(true))
                 .then(|| platform::ax::front_app(std::process::id() as i32))
                 .flatten()
+                .filter(|(_, _, bundle)| !services::eyes::skipped(bundle, &skip))
                 .map(|(pid, name, _)| (name, platform::ax::window(pid).map(|w| w.text("AXTitle")).unwrap_or_default()));
             if let Ok(mut g) = self.screen.lock() {
                 *g = screen;
@@ -869,8 +877,15 @@ impl VoiceRuntime {
                 || sympony_home().join("skills").is_dir();
             if has_pony {
                 let screen = self.screen.lock().ok().and_then(|mut g| g.take()).map(|(app, title)| json!({"app": app, "title": title}));
-                self.log(&format!("voice: {} chars to Pony", text.chars().count()));
-                let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen }));
+                let hands_on = s.get("ponyEyes") == Some(&Value::Bool(true)) && s.get("ponyHands") == Some(&Value::Bool(true));
+                let base_auto = self.voice_auto_ui(&s);
+                let auto_ui = if hands_on {
+                    services::hands::parse_auto_ui_override(&text).unwrap_or(base_auto)
+                } else {
+                    false
+                };
+                self.log(&format!("voice: {} chars to Pony (autoUi={auto_ui})", text.chars().count()));
+                let _ = self.app.emit("voice:command", json!({ "text": text, "screen": screen, "autoUi": auto_ui }));
                 let _ = self.app.emit(
                     "voice:result",
                     json!({
@@ -956,23 +971,34 @@ impl VoiceRuntime {
         }
     }
 
+    fn voice_auto_ui(&self, s: &Value) -> bool {
+        let hands_on = s.get("ponyEyes") == Some(&Value::Bool(true)) && s.get("ponyHands") == Some(&Value::Bool(true));
+        let chat_auto = s.get("ponyAutoUi") == Some(&Value::Bool(true));
+        let pref = s.get("voiceAutoUi").and_then(Value::as_str).unwrap_or("follow");
+        services::hands::voice_auto_ui_effective(hands_on, chat_auto, pref)
+    }
+
     fn emit_state(&self, st: &VState, was_cancel: bool) {
         let payload = match st {
             VState::Idle => json!({
                 "state": if was_cancel { "cancelled" } else { "idle" },
                 "ms": self.now_ms(),
             }),
-            VState::Listening { since_ms } => json!({
-                "state": "listening",
-                "ms": since_ms,
-                "agent": self.mode.lock().map(|m| *m == VoiceMode::Command).unwrap_or(false),
-                "lang": self
-                    .settings()
-                    .get("voiceLanguage")
-                    .and_then(Value::as_str)
-                    .unwrap_or("id")
-                    .to_uppercase(),
-            }),
+            VState::Listening { since_ms } => {
+                let s = self.settings();
+                let agent = self.mode.lock().map(|m| *m == VoiceMode::Command).unwrap_or(false);
+                json!({
+                    "state": "listening",
+                    "ms": since_ms,
+                    "agent": agent,
+                    "autoUi": agent && self.voice_auto_ui(&s),
+                    "lang": s
+                        .get("voiceLanguage")
+                        .and_then(Value::as_str)
+                        .unwrap_or("id")
+                        .to_uppercase(),
+                })
+            }
             VState::Transcribing => json!({
                 "state": "transcribing",
                 "ms": self.now_ms(),

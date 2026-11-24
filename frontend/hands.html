@@ -31,6 +31,8 @@
     @keyframes flowX { to { transform: translateX(-50%); } }
     @keyframes flowY { to { transform: translateY(-50%); } }
     #edges { animation: breathe 4.5s ease-in-out infinite; }
+    body.watching #edges { opacity: .55; }
+    body.watching #cur { opacity: 0; transition: opacity 250ms var(--ease); }
     @keyframes breathe { 50% { opacity: .72; } }
 
     /* what Pony is doing, under the notch */

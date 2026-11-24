@@ -86,6 +86,20 @@ export function PonyEyes({ settings, set }: Props) {
             </div>
             <Switch checked={settings.ponyHands === true} aria-label={t("Hands")} onCheckedChange={(checked) => void set({ ponyHands: checked })} />
           </div>
+          {settings.ponyHands === true && (
+            <div className="flex items-start gap-3 border-t border-border/60 pt-2.5" data-k="ponyAutoUi">
+              <span className="icon-tile mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px]" style={tileStyle("Zap")} aria-hidden="true">
+                <BrandIcon name="Zap" className="size-4" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="text-[13px] font-medium text-foreground">{t("Auto UI")}</div>
+                <div className="text-[12px] leading-snug text-muted-foreground">
+                  {t("Let Pony run multi-step UI tasks, watch apps until responses finish, summarize results, and continue automatically (financial and destructive actions still ask first)")}
+                </div>
+              </div>
+              <Switch checked={settings.ponyAutoUi === true} aria-label={t("Auto UI")} onCheckedChange={(checked) => void set({ ponyAutoUi: checked })} />
+            </div>
+          )}
           <div className="flex flex-col gap-1.5 border-t border-border/60 pt-2.5 text-[12px] text-muted-foreground" data-k="ponyEyesSkip">
             <span>{t("Never read:")}</span>
             <div className="flex flex-wrap items-center gap-1.5">

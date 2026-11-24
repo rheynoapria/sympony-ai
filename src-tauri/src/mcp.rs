@@ -238,9 +238,21 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
             };
         }
         if kind == "out" && hands && services::hands::NAMES.contains(&call["name"].as_str().unwrap_or("")) {
-            // `screen_do` returns live screen changes/text from another app -> taint the session like `screen_read`.
+            let tool_name = call["name"].as_str().unwrap_or("");
+            if tool_name == "set_auto_ui" {
+                return match crate::hands::set_auto_ui(app, &session, &call["arguments"]) {
+                    Ok(text) => json!({"ok": true, "text": text}),
+                    Err(e) => json!({"ok": false, "error": e}),
+                };
+            }
+            // `screen_do` and `screen_watch` return live screen changes/text from another app -> taint the session like `screen_read`.
             m.mark_tainted(&session);
-            return match crate::hands::call(app, &session, &call["arguments"]) {
+            let res = if tool_name == "screen_watch" {
+                crate::hands::watch(app, &session, &call["arguments"])
+            } else {
+                crate::hands::call(app, &session, &call["arguments"])
+            };
+            return match res {
                 Ok(text) => json!({"ok": true, "text": text}),
                 Err(e) => json!({"ok": false, "error": e}),
             };
@@ -480,7 +492,7 @@ fn dirs_data() -> std::path::PathBuf {
 pub(crate) fn tool_taints_turn(name: &str) -> bool {
     matches!(
         name,
-        "web_search" | "read_web_page" | "screen_read" | "screen_do" | "ask_ai" | "agent_status"
+        "web_search" | "read_web_page" | "screen_read" | "screen_do" | "screen_watch" | "ask_ai" | "agent_status"
     )
 }
 
@@ -525,10 +537,10 @@ mod tests {
         assert!(mcp.is_tainted("s1"));
         mcp.close("s1");
         assert!(!mcp.is_tainted("s1"));
-        for t in ["web_search", "read_web_page", "screen_read", "screen_do", "ask_ai", "agent_status"] {
+        for t in ["web_search", "read_web_page", "screen_read", "screen_do", "screen_watch", "ask_ai", "agent_status"] {
             assert!(tool_taints_turn(t), "must taint turn: {t}");
         }
-        for safe in ["routine_save", "agents_list", "agent_stop", "remember"] {
+        for safe in ["routine_save", "agents_list", "agent_stop", "remember", "set_auto_ui"] {
             assert!(!tool_taints_turn(safe), "must not mark as taint source: {safe}");
         }
     }

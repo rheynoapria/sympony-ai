@@ -486,6 +486,16 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let tools = session.is_some() && (crate::brain::on(&h) || pick(&h, "chatAgent").is_some_and(|a| tools_for(a["id"].as_str().unwrap_or(""))));
         let context = if tools { "(not included: call get_context when you need it)" } else { context };
 
+        // Optional per-turn Auto UI override (explicit from Voice Command, or detected from user's latest prompt)
+        let explicit_auto_ui = a.get(6).and_then(Value::as_bool);
+        let last_user_text = msgs.iter().rev().find(|m| m["role"] == "user").and_then(|m| m["content"].as_str()).unwrap_or("");
+        let turn_auto_override = explicit_auto_ui.or_else(|| services::hands::parse_auto_ui_override(last_user_text));
+        if let (Some(s), Some(ov)) = (session, turn_auto_override) {
+            if !brief && crate::hands::available(&h) {
+                crate::hands::set_session_auto_ui(&h, s, ov);
+            }
+        }
+
         let (pony_name, pony_preset, pony_text) = services::pony::persona_settings(&settings);
         let skills_off = crate::pony::skills_off_from(&settings);
 
@@ -533,10 +543,17 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             if eyes_on {
                 system.push_str("\n\n");
                 system.push_str(services::eyes::RULES);
+                if let Some(app_name) = crate::eyes::active_app(&h) {
+                    system.push_str(&format!("\nActive app on screen right now: {app_name}."));
+                }
             }
             if hands_on {
                 system.push_str("\n\n");
                 system.push_str(services::hands::BRIEF);
+                if session.is_some_and(|s| crate::hands::auto_ui_for(&h, s)) {
+                    system.push_str("\n\n");
+                    system.push_str(services::hands::AUTO_UI_RULES);
+                }
             }
             if askai_on {
                 system.push_str("\n\n");
@@ -582,6 +599,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             };
         if let Some(s) = session {
             h.state::<Agents>().chat_runs.lock().unwrap().remove(s);
+            crate::hands::forget(&h, s);
             crate::brain::forget_stop(&h, s);
             crate::brain::set_chat(&h, s, None);
         }

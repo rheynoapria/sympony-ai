@@ -645,12 +645,12 @@ pub fn paseo_model(provider: &str, agents: &Value) -> Option<String> {
 
 /// Paseo's agents as lines for the model: short id, state, folder, title.
 pub fn paseo_lines(agents: &Value) -> String {
-    let lines: Vec<String> = agents["agents"].as_array().into_iter().flatten().take(15).map(|a| {
+    let lines: Vec<String> = agents["agents"].as_array().into_iter().flatten().take(25).map(|a| {
         let state = if a["requiresAttention"] == true { "waiting on the user" } else { a["status"].as_str().unwrap_or("?") };
         let folder = a["cwd"].as_str().unwrap_or("").rsplit('/').next().unwrap_or("");
         format!("{} · {} · {} · {} ({})", a["id"].as_str().unwrap_or(""), state, folder, a["title"].as_str().unwrap_or(""), a["provider"].as_str().unwrap_or(""))
     }).collect();
-    if lines.is_empty() { "No agents in Paseo in the last two days.".into() } else { lines.join("\n") }
+    if lines.is_empty() { "No agents in Paseo in the last 30 days.".into() } else { lines.join("\n") }
 }
 
 #[cfg(test)]

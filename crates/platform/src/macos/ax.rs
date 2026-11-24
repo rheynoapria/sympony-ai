@@ -308,7 +308,7 @@ pub fn read(win: &El, max: usize) -> (Vec<Node>, Vec<El>) {
             || (f.1 + f.3 > wf.1 - wf.3 && f.1 < wf.1 + 2.0 * wf.3 && f.0 + f.2 > wf.0 - wf.2 && f.0 < wf.0 + 2.0 * wf.2);
         let mut stack: Vec<(El, u16)> = vec![(win.clone(), 0)];
         while let Some((e, depth)) = stack.pop() {
-            if nodes.len() >= max || depth > 60 || e.0.is_null() {
+            if nodes.len() >= max || depth > 96 || e.0.is_null() {
                 continue;
             }
             objc2::rc::autoreleasepool(|_| {
