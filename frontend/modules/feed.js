@@ -54,10 +54,42 @@
     return docLang.startsWith('id') ? 'id' : 'en';
   }
 
+  const SUMMARY_VER = 'v2';
+
   function cachedSummaryFor(summaries, id) {
     if (!summaries || !id) return null;
     const lang = effectiveSummaryLang();
-    return summaries[`${id}:${lang}`] || (summaryLangPref() === 'auto' ? summaries[id] : null) || null;
+    return summaries[`${SUMMARY_VER}:${id}:${lang}`] || null;
+  }
+
+  function fmtInline(raw) {
+    let s = esc(String(raw || ''));
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+    return s;
+  }
+
+  function storyThumb(item, images, favicons, cls = '', icoSize = 15) {
+    const thumbUrl = (item && item.image) || (images && item && images[item.id]) || '';
+    const tint = (item && item.color) || '#8b5cf6';
+    const imgHtml = thumbUrl
+      ? `<img class="fd-thumb-img" src="${esc(thumbUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : '';
+    return `<span class="fd-thumb${cls ? ' ' + cls : ''}${thumbUrl ? '' : ' empty'}" style="--thumb-tint:${esc(tint)}">`
+      + `<span class="fd-thumb-ph">${sourceIcon(item, favicons, icoSize)}</span>`
+      + `${imgHtml}</span>`;
+  }
+
+  function bindThumbFallbacks(root) {
+    if (!root) return;
+    $$('.fd-thumb-img', root).forEach((img) => {
+      img.onerror = () => {
+        const wrap = img.closest('.fd-thumb');
+        if (wrap) wrap.classList.add('empty');
+        img.remove();
+      };
+    });
   }
 
   function cycleSummaryLang() {
@@ -96,7 +128,7 @@
   }
 
   function feedData() {
-    return N.data.feed || { items: [], updatedAt: 0, errors: {}, favicons: {}, summaries: {} };
+    return N.data.feed || { items: [], updatedAt: 0, errors: {}, favicons: {}, images: {}, summaries: {} };
   }
 
   function filterDefs(items) {
@@ -157,7 +189,7 @@
       const res = await api.svc('feed', 'summarize', it.id, it.url, it.title, it.publisher || it.sourceName, it.snippet || '', !!force, lang);
       if (res && res.ok) {
         const cur = feedData();
-        const key = res.key || busyKey;
+        const key = res.key || `${SUMMARY_VER}:${busyKey}`;
         const nextSums = { ...(cur.summaries || {}), [key]: { summary: res.summary, bullets: res.bullets || [], source: res.source || 'article', at: Date.now() } };
         N.setData('feed', { ...cur, summaries: nextSums });
       } else {
@@ -225,9 +257,9 @@
       bodyHtml = `<div class="fd-sum-load"><div class="fd-shimmer"></div><div class="fd-shimmer w85"></div><div class="fd-shimmer w70"></div>`
         + `<span class="fd-sum-status"><span class="fd-spark-pulse">${SPARKLE_SVG}</span><span>${esc(_t('Pony is reading and summarizing…'))}</span></span></div>`;
     } else if (ponyOn && cachedSum && Array.isArray(cachedSum.bullets) && cachedSum.bullets.length) {
-      bodyHtml = `<ul class="fd-bullets sc-y">${cachedSum.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>`;
+      bodyHtml = `<ul class="fd-bullets sc-y">${cachedSum.bullets.map((b) => `<li>${fmtInline(b)}</li>`).join('')}</ul>`;
     } else if (ponyOn && cachedSum && cachedSum.summary) {
-      bodyHtml = `<div class="fd-sum-text sc-y">${esc(cachedSum.summary)}</div>`;
+      bodyHtml = `<div class="fd-sum-text sc-y">${fmtInline(cachedSum.summary)}</div>`;
     } else if (err) {
       bodyHtml = `<div class="fd-sum-err"><span class="sub">${esc(err)}</span>`
         + `<div class="row" style="gap:6px"><button type="button" class="sbtn" id="fdRetrySum">${esc(_t('Try again'))}</button>`
@@ -272,6 +304,7 @@
     const d = feedData();
     const allItems = Array.isArray(d.items) ? d.items : [];
     const favicons = d.favicons || {};
+    const images = d.images || {};
     const summaries = d.summaries || {};
     const ponyOn = !st.settings || st.settings.feedPonySummary !== false;
 
@@ -321,7 +354,7 @@
             const hasSum = !!cachedSummaryFor(summaries, it.id);
             const isBusy = summarizing.has(`${it.id}:${effectiveSummaryLang()}`);
             return `<div class="fd-tcard" data-id="${esc(it.id)}" data-url="${esc(it.url)}">`
-              + sourceIcon(it, favicons, 16)
+              + storyThumb(it, images, favicons, 'sm', 14)
               + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
               + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
               + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${isBusy ? SPINNER_SVG : SPARKLE_SVG}</button>` : '')
@@ -342,7 +375,7 @@
         const queueHtml = `<div class="fd-spot-q sc-y">` + items.slice(0, 18).map((it) => {
           const isSel = sel && sel.id === it.id;
           return `<button type="button" class="fd-qrow${isSel ? ' on' : ''}" data-id="${esc(it.id)}">`
-            + sourceIcon(it, favicons, 14)
+            + storyThumb(it, images, favicons, 'xs', 12)
             + `<span class="t1">${esc(it.title)}</span></button>`;
         }).join('') + `</div>`;
 
@@ -375,7 +408,7 @@
           const hasSum = !!cachedSummaryFor(summaries, it.id);
           const isBusy = summarizing.has(`${it.id}:${effectiveSummaryLang()}`);
           return `<div class="fd-row${isSel ? ' on' : ''}" data-id="${esc(it.id)}" data-url="${esc(it.url)}">`
-            + sourceIcon(it, favicons, 18)
+            + storyThumb(it, images, favicons, '', 15)
             + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
             + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
             + `<div class="fd-row-acts">`
@@ -412,6 +445,7 @@
     }
 
     // ---- Shared event wiring across all 3 styles
+    bindThumbFallbacks(page);
     $$('.fd-chip', page).forEach((b) => {
       b.onclick = () => { activeFilter = b.dataset.filt || 'all'; tickerPreviewOpen = false; render(); };
     });
@@ -497,14 +531,16 @@
     const d = feedData();
     const items = Array.isArray(d.items) ? d.items : [];
     const favicons = d.favicons || {};
+    const images = d.images || {};
     const right = items.length ? _t('{n} stories', { n: items.length }) : (d.updatedAt ? ago(d.updatedAt) : '');
     const body = items.length
       ? `<div class="fd-card-list">` + items.slice(0, 2).map((it) =>
-        `<div class="fd-card-row">${sourceIcon(it, favicons, 15)}`
+        `<div class="fd-card-row">${storyThumb(it, images, favicons, 'xs', 12)}`
         + `<div class="fd-card-txt"><div class="t1">${esc(it.title)}</div>`
         + `<div class="sub t1">${esc(itemMeta(it))}</div></div></div>`).join('') + `</div>`
       : `<div class="sub" style="margin-top:auto">${esc(_t('Hacker News, GitHub Trending & Indonesian news'))}</div>`;
     el.innerHTML = `${N.hd('rss', _t('Feed & RSS'), right)}${body}`;
+    bindThumbFallbacks(el);
   }
 
   function refreshCards() {

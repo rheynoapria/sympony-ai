@@ -312,6 +312,29 @@ pub fn model_name(app: &AppHandle) -> Option<String> {
     app.state::<App>().settings.get()[setting].as_str().map(|m| m.trim().to_string()).filter(|m| !m.is_empty())
 }
 
+/// Enriches thin/JS-rendered or Google News redirect articles via Sympony AI's `/v1/fetch` or `/v1/search`
+/// when `ponyBrain == "sympony"` and web access is enabled. Returns `None` silently in local/custom API modes.
+pub fn fetch_article_fallback(app: &AppHandle, url: &str, title: &str) -> Option<String> {
+    let settings = app.state::<App>().settings.get();
+    if settings["ponyBrain"] != "sympony" || settings["symponyWeb"] == false {
+        return None;
+    }
+    let host = services::feed::host_of(url);
+    if host == "news.google.com" || url.is_empty() {
+        if title.trim().is_empty() {
+            return None;
+        }
+        let body = json!({ "query": title.trim(), "news": true, "max_results": 4 });
+        let v = call(app, "POST", "/v1/search", Some(&body), 15).ok()?;
+        let mut idx = 1usize;
+        let (digest, _) = services::brain::search_digest(&v, &mut idx);
+        return (digest.chars().count() >= 60).then_some(digest);
+    }
+    let v = call(app, "POST", "/v1/fetch", Some(&json!({ "url": url, "max_characters": 6500 })), 20).ok()?;
+    let text = services::brain::page_text(&v);
+    (text.chars().count() >= 60).then_some(text)
+}
+
 /// One answer to `turns` (user / assistant messages, services::brain::turns). `session`: a chat run that may use
 /// Sympony's tools (as agents.rs's runs do).
 pub fn ask(app: &AppHandle, turns: &[Value], images: &[String], system: &str, session: Option<&str>, brief: bool) -> Result<String, String> {
