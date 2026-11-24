@@ -81,7 +81,7 @@ export function isTauri(): boolean {
 }
 
 /** These permissions are macOS's (the browser preview counts as a Mac). */
-const onMac = () => {
+export const onMac = () => {
   const os = typeof window === "undefined" ? undefined : (window as unknown as { SYMPONY_OS?: string }).SYMPONY_OS;
   return !os || os === "macos";
 };

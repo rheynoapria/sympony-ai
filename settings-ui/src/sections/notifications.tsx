@@ -12,6 +12,7 @@ import {
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { Button } from "@/components/ui/knowns/button";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { LeadText, Rows } from "@/rows/Rows";
 import type { CustomPart, CustomPartProps, SectionBody } from "@/rows/types";
@@ -150,7 +151,7 @@ function NotifAccessPart({ settings }: CustomPartProps) {
         ) : (
           <div className="flex items-start gap-2 rounded-[9px] border border-border bg-muted/40 px-3 py-2.5 text-[12.5px] text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-            <span>{t("Sympony can’t find macOS’s notifications on this Mac.")}</span>
+            <span>{onMac() ? t("Sympony can’t find macOS’s notifications on this Mac.") : t("Sympony can’t read Windows’ notifications on this PC.")}</span>
           </div>
         )}
       </div>

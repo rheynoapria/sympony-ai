@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type CSSProperties } from "react";
-import { onboardingApi, type PermId, type PermStatusMap } from "../api";
+import { onboardingApi, onMac, type PermId, type PermStatusMap } from "../api";
 import { copy, type CopyKey } from "../copy";
 import { OnboardingIcon, type OnboardingIconName, TickIcon } from "../icons";
 
@@ -121,7 +121,7 @@ export function PermsStep({
     <>
       <h2 className="x">{copy("permsTitle", undefined, lang)}</h2>
       <p className="lead x" style={{ "--i": 1 } as CSSProperties}>
-        {copy("permsSub", undefined, lang)}
+        {copy(onMac() ? "permsSub" : "permsSubPc", undefined, lang)}
       </p>
       <div className="list" id="perms">
         {perms.length === 0 && !withAi ? (

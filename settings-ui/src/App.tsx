@@ -6,6 +6,7 @@ import {
 import { ToastProvider } from "@/components/ui/knowns/toast";
 import { t } from "@/lib/i18n";
 import { notch, type Settings } from "@/lib/notch";
+import { detectOS } from "@/lib/platform";
 import { Rows } from "@/rows/Rows";
 import type { SectionBody } from "@/rows/types";
 import {
@@ -90,23 +91,6 @@ export const BODIES: Record<string, SectionBody> = {
   stats,
   about,
 };
-
-function detectOS(): OS {
-  if (typeof window !== "undefined" && !window.notch) {
-    const q = new URLSearchParams(window.location.search).get("os");
-    if (q === "macos" || q === "windows" || q === "linux") return q;
-  }
-  const fromHost = typeof window !== "undefined" ? window.SYMPONY_OS : undefined;
-  if (fromHost === "macos" || fromHost === "windows" || fromHost === "linux") {
-    return fromHost;
-  }
-  if (typeof navigator !== "undefined") {
-    const plat = navigator.platform || "";
-    if (/Win/i.test(plat)) return "windows";
-    if (/Linux/i.test(plat)) return "linux";
-  }
-  return "macos";
-}
 
 function readInitialTheme(): Theme {
   if (typeof window !== "undefined") {

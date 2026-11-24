@@ -91,15 +91,36 @@ const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
       }
       return r;
     }),
-  media: (rows) =>
+  integrations: (rows) =>
     rows.map((r) =>
-      r.t === "lead"
+      "k" in r && r.k === "paseoEnabled"
+        ? {
+            ...r,
+            sub: "The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this Mac every second, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.",
+          }
+        : r
+    ),
+  media: (rows) =>
+    rows.map((r) => {
+      if ("k" in r && r.k === "ytVideo") {
+        return {
+          ...r,
+          sub: "While a video plays on youtube.com in Brave, Chrome, Edge, Arc, Vivaldi, Opera or Safari, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s tab addresses to find it (macOS asks once). YouTube Music stays the music view.",
+        };
+      }
+      if ("k" in r && r.k === "lyricsExtra") {
+        return {
+          ...r,
+          sub: "Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this Mac.",
+        };
+      }
+      return r.t === "lead"
         ? {
             ...r,
             html: "Works with whatever plays on this Mac: browsers (YouTube, SoundCloud…), Spotify, the Music app and other players. For Spotify and Music, macOS asks once whether Sympony may control them: click <b>OK</b> (or later: System Settings → Privacy & Security → Automation → Sympony). Music shows on the <b>Home</b> tab and in the closed Sympony; it has no tab of its own.",
           }
-        : r
-    ),
+        : r;
+    }),
   notifications: (rows) => {
     const out = rows.map((r) => {
       if (r.t === "lead") {
@@ -131,6 +152,10 @@ const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
     }
     return out;
   },
+  voice: (rows) =>
+    rows.map((r) =>
+      "k" in r && r.k === "voiceEnabled" ? { ...r, sub: "Speak Indonesian anywhere on your Mac, completely on-device" } : r
+    ),
   screentime: (rows) =>
     rows.map((r) =>
       "k" in r && r.k === "screenTimeExcluded"

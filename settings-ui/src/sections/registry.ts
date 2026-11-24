@@ -42,6 +42,8 @@ export interface SectionMeta {
   group: SectionGroup;
   title: string;
   subtitle: string;
+  /** The subtitle on a Mac, where it names the computer (`subtitle` is the PC's). */
+  macSubtitle?: string;
   icon: string;
   tint?: string;
   words?: string[];
@@ -189,7 +191,8 @@ export const SECTIONS: readonly SectionMeta[] = [
     id: "voice",
     group: "features",
     title: "Voice",
-    subtitle: "Speak Indonesian anywhere on your Mac, completely on-device",
+    subtitle: "Speak Indonesian anywhere on your PC, completely on-device",
+    macSubtitle: "Speak Indonesian anywhere on your Mac, completely on-device",
     icon: "Mic",
     tint: "#ef4444",
     words: ["voice", "suara", "dikte", "dictation", "stt", "mikrofon", "kamus", "dictionary"],
@@ -531,7 +534,9 @@ export function sectionRows(id: string, os: OS): Row[] {
 
 export function sectionsFor(os: OS): SectionMeta[] {
   const hidden = HIDDEN_BY_OS[os];
-  return SECTIONS.filter((s) => !hidden.has(s.id));
+  return SECTIONS.filter((s) => !hidden.has(s.id)).map((s) =>
+    os === "macos" && s.macSubtitle ? { ...s, subtitle: s.macSubtitle } : s
+  );
 }
 
 export function resolveSection(id: string | null | undefined, os: OS): string {
