@@ -278,9 +278,22 @@ fn get_json_with_follows_same_origin_redirect_and_post_mcp_does_not_repost_302()
     let addr2 = l2.local_addr().unwrap();
     let h2 = std::thread::spawn(move || {
         let (mut s, _) = l2.accept().unwrap();
+        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(2)));
         let mut b = [0u8; 4096];
-        let _ = s.read(&mut b);
+        let mut got = 0;
+        // Read headers + body before closing so Windows does not send TCP RST (10053) on unread bytes.
+        while got < b.len() {
+            let n = s.read(&mut b[got..]).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            got += n;
+            if String::from_utf8_lossy(&b[..got]).contains("\"jsonrpc\"") {
+                break;
+            }
+        }
         s.write_all(b"HTTP/1.1 302 Found\r\nLocation: /mcp/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        let _ = s.shutdown(std::net::Shutdown::Write);
     });
     let (st2, _, _) = http::post_mcp(&format!("http://{addr2}/mcp"), &[], &serde_json::json!({"jsonrpc": "2.0"}), 5).unwrap();
     h2.join().unwrap();

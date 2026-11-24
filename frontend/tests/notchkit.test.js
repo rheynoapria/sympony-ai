@@ -583,4 +583,69 @@ describe('renderMarkdown (GFM chat & live stream rendering)', () => {
     expect(custom.expandedWidth).toBe(700);
     expect(custom.expandedHeightTall).toBe(290);
   });
+
+  test('createWheelPager prevents macOS trackpad momentum double-jumps while allowing deliberate swipes', () => {
+    const pager = K.createWheelPager();
+    const steps = [];
+    let t = 1000;
+
+    // 1. Single strong macOS trackpad flick with a long 1100 ms inertial glide tail (60 Hz)
+    const flick = [
+      12, 26, 42, 48, 44, 38, 32, 27, 23, 19, 16, 13, 11, 9, 8, 7, 6, 5, 5, 4,
+      4, 3, 3, 3, 2, 2, 2, 2, 2, 1.5, 1.5, 1.2, 1, 1, 1, 0.8, 0.8, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+    ];
+    for (const dx of flick) {
+      const r = pager.feed({ deltaX: dx, deltaY: 1, now: t });
+      if (r.dir) steps.push({ t, dir: r.dir });
+      t += 16;
+    }
+    expect(steps.length).toBe(1);
+    expect(steps[0].dir).toBe(1);
+
+    // 2. Deliberate second swipe after a 160 ms quiet gap fires cleanly once
+    t += 160;
+    const second = [18, 34, 24, 14, 8, 4, 2];
+    for (const dx of second) {
+      const r = pager.feed({ deltaX: dx, deltaY: 0, now: t });
+      if (r.dir) steps.push({ t, dir: r.dir });
+      t += 16;
+    }
+    expect(steps.length).toBe(2);
+    expect(steps[1].dir).toBe(1);
+
+    // 3. Deliberate fast second swipe in same direction after momentum decays low (no full pause)
+    const p2 = K.createWheelPager();
+    let t2 = 2000;
+    let count2 = 0;
+    for (const dx of [24, 34, 22, 15, 10, 7, 5, 4, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 24, 32, 14, 6, 3]) {
+      const r = p2.feed({ deltaX: dx, deltaY: 0, now: t2 });
+      if (r.dir) count2 += r.dir;
+      t2 += 16;
+    }
+    expect(count2).toBe(2);
+
+    // 4. Quick opposite-direction reversal mid-glide (>180 ms after firing) steps back once
+    t += 220;
+    let rev = 0;
+    for (const dx of [-20, -32, -18, -8, -4]) {
+      const r = pager.feed({ deltaX: dx, deltaY: 0, now: t });
+      if (r.dir) rev += r.dir;
+      t += 16;
+    }
+    expect(rev).toBe(-1);
+
+    // 5. Diagonal vertical scroll wobble does not trigger horizontal slide and resets partial drift
+    t += 200;
+    expect(pager.feed({ deltaX: 14, deltaY: 16, now: t })).toEqual({ handled: false, dir: 0 });
+    expect(pager.feed({ deltaX: 25, deltaY: 0, now: t + 16 })).toEqual({ handled: true, dir: 0 });
+    expect(pager.feed({ deltaX: 10, deltaY: 20, now: t + 32 })).toEqual({ handled: false, dir: 0 });
+    // Previous 25 px drift was cleared by the vertical scroll, so another 25 px does not cross 48 px
+    expect(pager.feed({ deltaX: 25, deltaY: 0, now: t + 48 })).toEqual({ handled: true, dir: 0 });
+
+    // 6. Discrete mouse wheel notch (deltaMode = 1) fires once per click
+    t += 250;
+    expect(pager.feed({ deltaX: 2, deltaY: 0, deltaMode: 1, now: t })).toEqual({ handled: true, dir: 1 });
+  });
 });

@@ -826,6 +826,100 @@
     return out.join('');
   }
 
+  /**
+   * Momentum-safe single-step horizontal wheel/trackpad pager.
+   * Locks out the entire inertial glide tail of a single macOS/Windows trackpad swipe (even 700-1500 ms)
+   * while unlocking immediately after a quiet pause, an intentional opposite-direction reversal, or an
+   * unmistakable fresh finger impulse once momentum has decayed.
+   */
+  function createWheelPager(opts) {
+    const o = opts || {};
+    const threshold = Number(o.threshold) > 0 ? Number(o.threshold) : 48;
+    const quietMs = Number(o.quietMs) > 0 ? Number(o.quietMs) : 140;
+    const reverseMs = Number(o.reverseMs) > 0 ? Number(o.reverseMs) : 180;
+    const reaccelMs = Number(o.reaccelMs) > 0 ? Number(o.reaccelMs) : 340;
+    const axisRatio = Number(o.axisRatio) > 0 ? Number(o.axisRatio) : 1.25;
+
+    let acc = 0;
+    let lastAt = 0;
+    let fired = false;
+    let firedAt = 0;
+    let firedDir = 0;
+    let minAbsAfterFire = Infinity;
+
+    function reset() {
+      acc = 0;
+      fired = false;
+      firedDir = 0;
+      minAbsAfterFire = Infinity;
+    }
+
+    function scaleDelta(v, deltaMode) {
+      const n = Number(v) || 0;
+      if (deltaMode === 1) return n * 33;
+      if (deltaMode === 2) return n * 120;
+      return n;
+    }
+
+    function feed(ev) {
+      const now = ev && typeof ev.now === 'number' ? ev.now : Date.now();
+      const mode = ev && typeof ev.deltaMode === 'number' ? ev.deltaMode : 0;
+      const dx = scaleDelta(ev && ev.deltaX, mode);
+      const dy = scaleDelta(ev && ev.deltaY, mode);
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (absX < 0.5 && absY < 0.5) return { handled: false, dir: 0 };
+
+      if (lastAt > 0 && now - lastAt >= quietMs) {
+        reset();
+      }
+
+      if (absX <= absY * axisRatio) {
+        if (!fired) acc = 0;
+        return { handled: false, dir: 0 };
+      }
+
+      const dir = dx > 0 ? 1 : -1;
+      lastAt = now;
+
+      if (fired) {
+        if (dir !== firedDir && now - firedAt >= reverseMs && absX >= 6) {
+          reset();
+        } else {
+          if (absX < minAbsAfterFire) minAbsAfterFire = absX;
+          const decayedAndReaccelerated =
+            dir === firedDir
+            && now - firedAt >= reaccelMs
+            && minAbsAfterFire <= 6
+            && absX >= Math.max(22, minAbsAfterFire * 3.5 + 12);
+          if (!decayedAndReaccelerated) {
+            return { handled: true, dir: 0 };
+          }
+          reset();
+        }
+      }
+
+      if (acc !== 0 && Math.sign(acc) !== dir) {
+        acc = 0;
+      }
+
+      acc += dx;
+      if (Math.abs(acc) >= threshold) {
+        const stepDir = acc > 0 ? 1 : -1;
+        acc = 0;
+        fired = true;
+        firedAt = now;
+        firedDir = stepDir;
+        minAbsAfterFire = absX;
+        return { handled: true, dir: stepDir };
+      }
+      return { handled: true, dir: 0 };
+    }
+
+    return { feed, reset };
+  }
+
   const api = {
     meterLevel,
     meter,
@@ -853,6 +947,7 @@
     resolveModuleFrame,
     closedStateKey,
     renderMarkdown,
+    createWheelPager,
   };
 
   if (typeof window !== 'undefined') window.NotchKit = api;

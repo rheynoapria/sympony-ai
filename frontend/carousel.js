@@ -240,7 +240,7 @@
   }
 
   function eventSourceInfo(ev) {
-    const raw = String((ev && (ev.link || ev.location)) || '').toLowerCase();
+    const raw = String((ev && (ev.url || ev.link || ev.location)) || '').toLowerCase();
     if (/zoom\.us|zoomgov\.com/.test(raw)) return { bundle: 'us.zoom.xos', name: 'Zoom', fb: fa('video') };
     if (/slack\.com/.test(raw)) return { bundle: 'com.tinyspeck.slackmacgap', name: 'Slack', fb: fa('hashtag') };
     if (/meet\.google\.com/.test(raw)) return { bundle: 'com.google.Chrome', alt: 'com.apple.Safari', name: 'Google Meet', fb: fa('video') };
@@ -275,8 +275,7 @@
     pillFocus: false,
     drag: null,
     swallowClickUntil: 0,
-    wAcc: 0,
-    wLock: 0,
+    wheelPager: window.NotchKit && NotchKit.createWheelPager ? NotchKit.createWheelPager() : null,
   };
 
   function isModulesView() {
@@ -1051,20 +1050,24 @@
   window.addEventListener('pointerup', endDrag);
   window.addEventListener('pointercancel', endDrag);
 
-  // Horizontal trackpad swipe between pages
+  // Horizontal trackpad/wheel swipe between pages (momentum-safe single-step recognizer)
   viewEl.addEventListener('wheel', (e) => {
-    if (cs.special || cs.fullMod || cs.pages.length <= 1) return;
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    if (e.defaultPrevented || cs.special || cs.fullMod || cs.pages.length <= 1) return;
     const scx = e.target.closest('.sc-x');
     if (scx && scx.scrollWidth > scx.clientWidth + 2) return;
-    e.preventDefault();
-    if (Date.now() < cs.wLock) return;
-    cs.wAcc += e.deltaX;
-    if (Math.abs(cs.wAcc) > 40) {
-      step(Math.sign(cs.wAcc));
-      cs.wAcc = 0;
-      cs.wLock = Date.now() + 450;
+    if (!cs.wheelPager && window.NotchKit && NotchKit.createWheelPager) {
+      cs.wheelPager = NotchKit.createWheelPager();
     }
+    if (!cs.wheelPager) return;
+    const res = cs.wheelPager.feed({
+      deltaX: e.deltaX,
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode,
+      now: Date.now(),
+    });
+    if (!res.handled) return;
+    e.preventDefault();
+    if (res.dir) step(res.dir);
   }, { passive: false });
 
   // Menu notch (#pill) hover / focus reveal (bottom ~36 px of #notch, #hotzone, #pill; 280 ms hide delay)
