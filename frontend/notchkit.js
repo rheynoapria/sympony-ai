@@ -416,7 +416,9 @@
       || (styleH < 240 && def.id !== 'bento')
     );
 
-    let wantW = baseW;
+    let wantW = (sizeMode !== 'custom' && Number.isFinite(Number(def.width)) && Number(def.width) > 0)
+      ? Math.max(baseW, Number(def.width))
+      : baseW;
     let wantH = baseH;
     if (sizeMode === 'fit') {
       wantH = styleH;

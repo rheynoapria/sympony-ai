@@ -387,15 +387,28 @@
         + `<div class="row" style="gap:6px"><button type="button" class="sbtn" id="fdRetrySum">${esc(_t('Try again'))}</button>`
         + `<button type="button" class="sbtn" id="fdAiSet">${esc(_t('Pony Settings'))}</button></div></div>`;
     } else {
-      const snip = sel.snippet
+      bodyHtml = sel.snippet
         ? `<div class="fd-snip sc-y">${esc(sel.snippet)}</div>`
         : `<div class="fd-snip sub">${esc(_t('Tap Summarize with Pony for 3 key takeaways, or open the original article.'))}</div>`;
-      const cta = ponyOn
-        ? `<button type="button" class="fd-pony-cta" id="fdRunSum">${SPARKLE_SVG}<span>${esc(_t('Summarize with Pony'))}</span></button>`
-        : '';
-      bodyHtml = `${snip}${cta}`;
     }
-    return { bodyHtml, cachedSum, busy };
+    const showRunCta = ponyOn && !cachedSum && !busy && !err;
+    return { bodyHtml, cachedSum, busy, showRunCta };
+  }
+
+  function summaryFooterHtml(ponyOn, showRunCta) {
+    if (showRunCta) {
+      return `<div class="fd-sum-foot">`
+        + `<button type="button" class="fd-pony-cta" id="fdRunSum">${SPARKLE_SVG}<span>${esc(_t('Summarize with Pony'))}</span></button>`
+        + `<button type="button" class="fd-act icon-only" id="fdAskPony" title="${esc(_t('Ask Pony'))}">${fa('comment-dots', 'regular')}</button>`
+        + `<button type="button" class="fd-act icon-only" id="fdSaveBm" title="${esc(_t('Save to Bookmarks'))}">${fa('bookmark', 'regular')}</button>`
+        + `<button type="button" class="fd-act compact" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
+        + `</div>`;
+    }
+    return `<div class="fd-sum-foot">`
+      + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
+      + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
+      + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
+      + `</div>`;
   }
 
   function langPillHtml() {
@@ -422,7 +435,7 @@
     if (!sel) {
       return `<div class="fd-sum-empty">${SPARKLE_SVG}<span>${esc(_t('Select any story to read or summarize with Pony'))}</span></div>`;
     }
-    const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
+    const { bodyHtml, cachedSum, showRunCta } = buildSummaryBody(sel, summaries, ponyOn);
     const sumTag = cachedSum
       ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
       : '';
@@ -432,11 +445,7 @@
       + `${ponyOn ? langPillHtml() : ''}${sumTag}</div>`
       + `<div class="fd-sum-title-row">${sourceIcon(sel, favicons, 16)}<div class="fd-sum-title">${esc(sel.title)}</div></div>`
       + `<div class="fd-sum-body">${bodyHtml}</div>`
-      + `<div class="fd-sum-foot">`
-      + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-      + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
-      + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
-      + `</div>`;
+      + summaryFooterHtml(ponyOn, showRunCta);
   }
 
   function bindDetailActions(sel, ponyOn) {
@@ -536,53 +545,56 @@
           : '';
 
     if (style === 'headlines') {
-      // ---- Compact Ticker: borderless 2-column headline cards + inline Pony summary sheet on click
-      let mainHtml = emptyHtml;
-      if (!mainHtml) {
-        if (tickerPreviewOpen && sel) {
-          const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
-          const sumTag = cachedSum
-            ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
-            : '';
-          mainHtml = `<div class="fd-ticker-sheet">`
-            + `<div class="fd-sum-head">`
-            + `<button type="button" class="fd-regen" id="fdCloseSheet" title="${esc(_t('Back'))}">${fa('chevron-left')}</button>`
-            + `${sourceIcon(sel, favicons, 15)}<span class="fd-sum-title t1" style="flex:1">${esc(sel.title)}</span>`
-            + `${ponyOn ? langPillHtml() : ''}${sumTag}</div>`
-            + `<div class="fd-sum-body">${bodyHtml}</div>`
-            + `<div class="fd-sum-foot">`
-            + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-            + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
-            + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
-            + `</div></div>`;
-        } else {
-          mainHtml = `<div class="fd-ticker-grid sc-y">` + items.slice(0, 16).map((it) => {
-            const hasSum = !!cachedSummaryFor(summaries, it.id);
-            const isBusy = summarizing.has(`${it.id}:${effectiveSummaryLang()}`);
-            return `<div class="fd-tcard" data-id="${esc(it.id)}" data-url="${esc(it.url)}">`
-              + storyThumb(it, images, favicons, 'sm', 14)
-              + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
-              + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
-              + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${isBusy ? SPINNER_SVG : SPARKLE_SVG}</button>` : '')
-              + `</div>`;
-          }).join('') + `</div>`;
-        }
+      // ---- Compact Ticker: borderless 2-column headline cards + full-stage inline Pony summary sheet on click
+      if (emptyHtml) {
+        page.innerHTML = `<div class="fd-ticker">${barHtml}${emptyHtml}</div>`;
+      } else if (tickerPreviewOpen && sel) {
+        const { bodyHtml, cachedSum, showRunCta } = buildSummaryBody(sel, summaries, ponyOn);
+        const sumTag = cachedSum
+          ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
+          : '';
+        const sheetHtml = `<div class="fd-ticker-sheet">`
+          + `<div class="fd-sum-head">`
+          + `<button type="button" class="fd-back-pill" id="fdCloseSheet">${fa('chevron-left')}<span>${esc(_t('Back'))}</span></button>`
+          + `${sourceIcon(sel, favicons, 16)}<span class="fd-sum-title one-line" style="flex:1">${esc(sel.title)}</span>`
+          + `<span class="fd-sum-src t1">${esc(sel.publisher || sel.sourceName)}</span>`
+          + `${ponyOn ? langPillHtml() : ''}${sumTag}`
+          + `<button type="button" class="fd-regen" id="fdPrev" title="${esc(_t('Previous'))}">${fa('chevron-left')}</button>`
+          + `<button type="button" class="fd-regen" id="fdNext" title="${esc(_t('Next'))}">${fa('chevron-right')}</button></div>`
+          + `<div class="fd-sum-body">${bodyHtml}</div>`
+          + summaryFooterHtml(ponyOn, showRunCta)
+          + `</div>`;
+        page.innerHTML = `<div class="fd-ticker in-sheet">${sheetHtml}</div>`;
+      } else {
+        const gridHtml = `<div class="fd-ticker-grid sc-y">` + items.slice(0, 18).map((it) => {
+          const hasSum = !!cachedSummaryFor(summaries, it.id);
+          const isBusy = summarizing.has(`${it.id}:${effectiveSummaryLang()}`);
+          return `<div class="fd-tcard" data-id="${esc(it.id)}" data-url="${esc(it.url)}">`
+            + storyThumb(it, images, favicons, 'sm', 14)
+            + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
+            + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
+            + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${isBusy ? SPINNER_SVG : SPARKLE_SVG}</button>` : '')
+            + `</div>`;
+        }).join('') + `</div>`;
+        page.innerHTML = `<div class="fd-ticker">${barHtml}${gridHtml}</div>`;
       }
-      page.innerHTML = `<div class="fd-ticker">${barHtml}${mainHtml}</div>`;
     } else if (style === 'focus') {
       // ---- Briefing Spotlight: hero story + inline Pony briefing left, Next Up queue right
       if (emptyHtml) {
         page.innerHTML = `<div class="fd-spot-wrap">${barHtml}${emptyHtml}</div>`;
       } else {
-        const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
+        const { bodyHtml, cachedSum, showRunCta } = buildSummaryBody(sel, summaries, ponyOn);
         const sumTag = cachedSum
           ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
           : '';
         const queueHtml = `<div class="fd-spot-q sc-y">` + items.slice(0, 18).map((it) => {
           const isSel = sel && sel.id === it.id;
+          const hasSum = !!cachedSummaryFor(summaries, it.id);
           return `<button type="button" class="fd-qrow${isSel ? ' on' : ''}" data-id="${esc(it.id)}">`
             + storyThumb(it, images, favicons, 'xs', 12)
-            + `<span class="t1">${esc(it.title)}</span></button>`;
+            + `<span class="fd-qrow-txt">${esc(it.title)}</span>`
+            + (hasSum ? `<span class="fd-qdot" aria-hidden="true"></span>` : '')
+            + `</button>`;
         }).join('') + `</div>`;
 
         page.innerHTML = `<div class="fd-spot">`
@@ -594,11 +606,8 @@
           + `<button type="button" class="fd-regen" id="fdNext" title="${esc(_t('Next'))}">${fa('chevron-right')}</button></div>`
           + `<div class="fd-spot-title">${esc(sel.title)}</div>`
           + `<div class="fd-sum-body">${bodyHtml}</div>`
-          + `<div class="fd-sum-foot">`
-          + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
-          + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
-          + `</div></div>`
+          + summaryFooterHtml(ponyOn, showRunCta)
+          + `</div>`
           + `<div class="fd-spot-side">`
           + `<div class="fd-bar"><span class="fd-spot-qlbl">${esc(_t('Next Up'))}</span>`
           + `<div class="fd-tools"><button type="button" class="fd-tbtn${refreshing ? ' spin' : ''}" id="fdRefresh" title="${esc(_t('Refresh'))}">${fa('arrows-rotate')}</button>`
@@ -749,21 +758,6 @@
           if (!d || !d.id || !d.text) return;
           const lang = d.lang || effectiveSummaryLang();
           sumStreams[`${d.id}:${lang}`] = d.text;
-          if (interactiveJob && interactiveJob.id === d.id && N.setFeedSum) {
-            const liveB = parseLiveBullets(d.text);
-            const lastB = liveB.length ? liveB[liveB.length - 1] : d.text;
-            const cleanPrev = String(lastB || '').replace(/\*\*/g, '').replace(/`/g, '').trim();
-            N.setFeedSum({
-              active: true,
-              id: interactiveJob.id,
-              title: interactiveJob.title,
-              source: interactiveJob.source,
-              since: interactiveJob.since,
-              phase: 'writing',
-              preview: cleanPrev,
-              chars: d.text.length,
-            });
-          }
           if (!page || selectedId !== d.id) return;
           const bodyEl = $('.fd-sum-body', page);
           if (bodyEl) {

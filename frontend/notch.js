@@ -710,7 +710,6 @@ function sideWidth(act) {
     case 'brief': return 100;
     case 'tele': return teleSide();
     case 'voice': return 110;
-    case 'feed-sum': return 118;
     default: return 60;
   }
 }
@@ -925,7 +924,7 @@ notchEl.addEventListener('mousedown', (e) => {
       }
       const act = currentActivity();
       if (act && act.kind === 'tele') { N.tele.resume(); return; }
-      if (act && act.kind === 'feed-sum') { openNotch('feed'); return; }
+      if (feedSumActive()) { openNotch('feed'); return; }
       if (act && act.kind === 'brief') { st.activity = null; openNotch('chat'); return; }
       if (act && act.kind === 'toast' && act.data && act.data.onboard) {
         st.activity = null; renderClosed(true); layout();
@@ -2398,13 +2397,13 @@ function feedSumActive() {
 }
 function setFeedSum(next) {
   st.feedSum = next && next.active ? { ...next } : null;
-  renderClosed(true);
+  renderClosed();
   layout();
 }
 function revealFeedSummary(title) {
   st.feedSum = null;
   st.ponyDoneUntil = Date.now() + 2800;
-  if (st.hudOnly) { renderClosed(true); layout(); return; }
+  if (st.hudOnly) { renderClosed(); layout(); return; }
   if (!st.open) {
     if (st.tucked) st.tucked = false;
     openNotch('feed');
@@ -2427,6 +2426,7 @@ function revealFeedSummary(title) {
     }
   } else {
     syncPonyMood();
+    outlineSync();
   }
 }
 
@@ -2690,15 +2690,12 @@ function currentActivity() {
   if (st.hudOnly) return st.hudLast || null;
   if (voiceActive()) return { kind: 'voice', data: st.voice };
   const now = Date.now();
-  if (feedSumActive() && !(st.activity && st.activity.until > now && st.activity.kind.startsWith('hud'))) {
-    return { kind: 'feed-sum', data: st.feedSum };
-  }
   if (st.activity && st.activity.until > now) return st.activity;
   return activitySplit().main;
 }
 
 function bubbleActivity() {
-  if (st.open || st.hudOnly || teleStrip() || voiceActive() || feedSumActive()) return null;
+  if (st.open || st.hudOnly || teleStrip() || voiceActive()) return null;
   if (st.activity && st.activity.until > Date.now()) return null;
   if (st.settings && st.settings.shellForm === 'drawer') return null;
   return activitySplit().bubble;
@@ -2782,7 +2779,7 @@ setInterval(() => {
   if (st.open || !st.settings) return;
   const act = currentActivity();
   const bb = bubbleActivity();
-  if ((act && ['pomodoro', 'stopwatch', 'timer', 'sys', 'fps', 'event-soon', 'todo-due', 'todo-sum', 'prayer-soon', 'feed-sum'].includes(act.kind))
+  if ((act && ['pomodoro', 'stopwatch', 'timer', 'sys', 'fps', 'event-soon', 'todo-due', 'todo-sum', 'prayer-soon'].includes(act.kind))
     || (bb && ['pomodoro', 'timer', 'stopwatch'].includes(bb.kind))) renderClosed();
   // a countdown whose time came (the prayer's, an event's) leaves the list: what shows instead is drawn now, rather
   // than the countdown staying at 0:00 until something else draws the closed notch (GitHub #60)
@@ -3226,32 +3223,6 @@ function renderClosed(animate) {
         L = `<div class="act-icon" style="color:var(--orange)">${fa('scroll')}</div><span class="act-text">${_t('Teleprompter')}</span>`;
         R = `<span class="act-text act-dim">${teleLeftText()}</span><div class="act-icon tele-go">${fa('play')}</div>`;
         break;
-      case 'feed-sum': {
-        const fs = act.data || {};
-        const elapsed = Math.max(0, (Date.now() - (fs.since || Date.now())) / 1000);
-        const pct = fs.phase === 'writing'
-          ? Math.max(76, Math.min(96, 74 + Math.round((fs.chars || 0) / 18)))
-          : Math.round(14 + 62 * (1 - Math.exp(-elapsed / 7.5)));
-        const statusLbl = fs.phase === 'writing' ? _t('Writing…') : _t('Summarizing…');
-        const leftCore = `<span class="fd-cs-spin" aria-hidden="true"></span><span class="v-status-lbl fd-cs-lbl">${esc(statusLbl)}</span>`;
-        const rCore = `<span class="v-time clk" style="color:#d8b4fe">${esc(voiceFmtTime(elapsed * 1000))}</span>${ring(pct, '#c084fc', 16, 13)}`;
-        if (cam) {
-          const eye = ponyEyeHtml('think', 1);
-          L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
-          R = `<span class="pony-side">${eye}<span class="pony-outer">${rCore}</span></span>`;
-        } else {
-          L = leftCore;
-          M = ponyEyeHtml('think', 2);
-          R = rCore;
-        }
-        const subTxt = fs.preview ? fs.preview : (fs.title || _t('Pony Summary'));
-        B = `<div class="fd-cs-below">`
-          + `<div class="fd-cs-top"><span class="fd-cs-src">${esc(fs.source || 'Pony')}</span><span class="fd-cs-txt t1" dir="auto">${esc(subTxt)}</span><span class="fd-cs-pct n">${pct}%</span></div>`
-          + `<div class="fd-cs-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>`
-          + `</div>`;
-        belowMeta = { extra: 40, wide: 396 };
-        break;
-      }
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
@@ -6014,8 +5985,10 @@ function outlineGlow() {
   }
   // Agent approval / question card waiting in the closed notch
   if (claudeShowing()) return { c: 'amber', key: 'claude', loops: Infinity };
-  // AI Chat working on an answer: the Buddy's bubble, a brief, or one asked in the tab before Sympony closed
-  if (window.N && N.chat && N.chat.pending()) return { c: 'blue', key: 'ai', loops: Infinity };
+  // AI Chat or Pony Feed Summary working on an answer before Sympony closed: standard outer notch glow
+  if ((window.N && N.chat && N.chat.pending()) || feedSumActive()) {
+    return { c: 'blue', key: feedSumActive() ? 'feed-sum' : 'ai', loops: Infinity };
+  }
   // Fresh notification arriving while closed: brief 2-loop blue outline
   if (now < outline.notifUntil && notifShowing()) return { c: 'blue', key: 'notif:' + outline.notifKey, loops: 2 };
   // Instant 1-loop preview when toggling Glowing outline ON in Settings
@@ -6052,8 +6025,8 @@ function outlineSync() {
   if (!s) return;
   notchEl.classList.toggle('shelf-swell', !!s.fxShelfFly); // files fly into the Shelf: its page swells during a drag (notch.css)
   const shown = outlineShown();
-  // (the hourly chime's light is asked for in its own setting, so it doesn't wait for fxGlow)
-  const glow = shown ? (s.fxGlow && outlineGlow()) || chimeLight() : null;
+  // (the hourly chime's light and interactive Feed summary glow run directly without waiting for fxGlow)
+  const glow = shown ? (((s.fxGlow || feedSumActive()) && outlineGlow()) || chimeLight()) : null;
   const blink = shown && !glow && s.fxTimerLine && Date.now() < outline.blinkUntil;
   const run = shown && !glow && !blink ? outlineTimer() : null;
   const live = !!(glow || blink || run);
