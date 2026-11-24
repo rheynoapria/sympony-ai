@@ -3,11 +3,13 @@ import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-lay
 import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
 import { Slider } from "@/components/ui/knowns/slider";
 import { Switch } from "@/components/ui/knowns/switch";
+import { NewBadge } from "@/components/shell/NewBadge";
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { t } from "@/lib/i18n";
 import type { Settings } from "@/lib/notch";
 import { cn } from "@/lib/knowns/utils";
+import { isNewKeyUnseen, markNewKeysSeen, useWhatsNew } from "@/lib/whatsNew";
 import type { OS } from "@/sections/registry";
 import { commitValue, leadNodes, patchFor, plainText, rowValue } from "./logic";
 import { applyOs, optionsFor } from "./os";
@@ -348,6 +350,7 @@ export function Rows({
   part?: string | null;
   onNavigate?: (target: string) => void;
 }) {
+  useWhatsNew();
   const filtered = applyOs(sectionId, rows, os);
   const blocks = groupRows(filtered);
 
@@ -368,6 +371,7 @@ export function Rows({
                 key={`c-${r.id}-${ri}`}
                 data-spot={r.spot}
                 data-row-label={r.label ? plainText(t(r.label)) : undefined}
+                onPointerDown={r.newKey ? () => markNewKeysSeen([r.newKey]) : undefined}
                 className="py-3 first:pt-0 last:pb-0 empty:hidden"
               >
                 <Comp
@@ -384,15 +388,35 @@ export function Rows({
             continue;
           }
           if (r.t === "h2" || r.t === "lead") continue;
+          const showNew = isNewKeyUnseen(r.newKey);
           items.push(
             <div
               key={`f-${r.k}-${ri}`}
               data-spot={r.spot}
               data-row-label={plainText(t(r.label))}
+              onPointerDown={showNew ? () => markNewKeysSeen([r.newKey]) : undefined}
+              onKeyDown={
+                showNew
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        markNewKeysSeen([r.newKey]);
+                      }
+                    }
+                  : undefined
+              }
               className="py-3 first:pt-0 last:pb-0"
             >
               <SettingsRow
-                label={t(r.label)}
+                label={
+                  showNew ? (
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <span>{t(r.label)}</span>
+                      <NewBadge />
+                    </span>
+                  ) : (
+                    t(r.label)
+                  )
+                }
                 description={r.sub ? <RichInline html={r.sub} /> : undefined}
               >
                 <FieldControl row={r} settings={settings} set={set} os={os} />

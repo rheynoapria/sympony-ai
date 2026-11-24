@@ -46,6 +46,8 @@ export interface SectionMeta {
   icon: string;
   tint?: string;
   words?: string[];
+  /** Optional versioned key to display a dismissible "New" badge in the Sidebar until opened */
+  newKey?: string;
 }
 
 export interface SearchHit {
@@ -194,6 +196,7 @@ export const SECTIONS: readonly SectionMeta[] = [
     icon: "Mic",
     tint: "#ef4444",
     words: ["voice", "suara", "dikte", "dictation", "stt", "mikrofon", "kamus", "dictionary"],
+    newKey: "v0.2b5:sec:voice",
   },
   {
     id: "todo",
@@ -212,6 +215,7 @@ export const SECTIONS: readonly SectionMeta[] = [
     icon: "BookOpenText",
     tint: "#f59e0b",
     words: ["feed", "rss", "atom", "news", "berita", "hacker news", "github trending", "google news", "ringkas", "summary"],
+    newKey: "v0.2b5:sec:feed",
   },
   {
     id: "media",

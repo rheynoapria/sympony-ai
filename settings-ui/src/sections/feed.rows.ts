@@ -86,6 +86,7 @@ export const FEED_ROWS: readonly Row[] = [
     placeholder: "Default (Pony’s active model)",
     short: true,
     words: "fast model flash mini haiku speed cepat ringkasan",
+    newKey: "v0.2b5:item:feed:feedSummaryModel",
   },
   {
     t: "toggle",
@@ -93,6 +94,7 @@ export const FEED_ROWS: readonly Row[] = [
     label: "Auto-summarize in background",
     sub: "Automatically pre-summarize the newest stories in batches right after feeds refresh so summaries open instantly",
     words: "auto summary background batch otomatis ringkas latar belakang",
+    newKey: "v0.2b5:item:feed:feedAutoSummary",
   },
   {
     t: "select",

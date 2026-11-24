@@ -4,11 +4,13 @@ import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-lay
 import { Button } from "@/components/ui/knowns/button";
 import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
 import { Switch } from "@/components/ui/knowns/switch";
+import { NewBadge } from "@/components/shell/NewBadge";
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { SectionIcon } from "@/components/shell/icons";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/knowns/utils";
+import { isNewKeyUnseen, markNewKeysSeen, useWhatsNew } from "@/lib/whatsNew";
 import {
   activeStyleOption,
   ALLOWED_GRID_SIZES,
@@ -43,7 +45,10 @@ function readRestoreTab(): boolean {
   }
 }
 
+const STYLE_LIBRARY_NEW_KEY = "v0.2b5:item:modules:styleLibrary";
+
 function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
+  useWhatsNew();
   const every = (Array.isArray(settings.modules) ? settings.modules : []) as ModuleEntry[];
   const hiddenIds = new Set(offTabs(os));
   const mods = os === "windows" ? every : every.filter((m) => !hiddenIds.has(m.id));
@@ -79,6 +84,11 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
   };
 
   const toggle = (i: number, on: boolean) => {
+    const mod = mods[i];
+    if (mod) {
+      const meta = moduleMetaFor(mod.id, os);
+      if (meta.newKey) markNewKeysSeen([meta.newKey]);
+    }
     const next = mods.map((m, idx) => (idx === i ? { ...m, on } : m));
     save(next);
   };
@@ -217,8 +227,24 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
     <div className="flex flex-col gap-5">
       <LeadText html="Each ON module is a page in the notch; this order is the swipe order." />
 
-      <PanelCard title={t("Module Style Library")} icon={groupIcon("Module Style Library")}>
-        <div className="divide-y divide-border/80" data-k="cardStyle">
+      <PanelCard
+        title={
+          isNewKeyUnseen(STYLE_LIBRARY_NEW_KEY) ? (
+            <span className="inline-flex items-center gap-2">
+              <span>{t("Module Style Library")}</span>
+              <NewBadge />
+            </span>
+          ) : (
+            t("Module Style Library")
+          )
+        }
+        icon={groupIcon("Module Style Library")}
+      >
+        <div
+          className="divide-y divide-border/80"
+          data-k="cardStyle"
+          onPointerDown={() => markNewKeysSeen([STYLE_LIBRARY_NEW_KEY])}
+        >
           <div className="pb-3.5">
             <div className="text-[13px] font-medium text-foreground">{t("Quick style presets")}</div>
             <p className="mt-0.5 text-[12px] text-muted-foreground">
@@ -377,10 +403,11 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                   <SectionIcon name={meta.icon} className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-[13px] font-medium text-foreground">
                       {t(meta.title)}
                     </span>
+                    {isNewKeyUnseen(meta.newKey) && <NewBadge />}
                     {(() => {
                       const opt = activeStyleOption(settings, m.id);
                       const secId = MODULE_TO_SETTINGS_SECTION[m.id];
@@ -388,7 +415,10 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                       return (
                         <button
                           type="button"
-                          onClick={() => onNavigate?.(secId)}
+                          onClick={() => {
+                            if (meta.newKey) markNewKeysSeen([meta.newKey]);
+                            onNavigate?.(secId);
+                          }}
                           title={t("Customize style & layout")}
                           className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border/80 bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
                         >

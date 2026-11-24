@@ -1,10 +1,11 @@
 //! Sympony Voice V1 runtime: state machine wiring, lazy local/cloud engines,
 //! global modifier triggers, `voice.*` svc handlers, and `voice:*` events.
 //! Kept outside `crates/contract/contract.json` so core parity stays 216/216.
+use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -115,7 +116,9 @@ struct ActiveDownload {
     id: String,
     done: u64,
     total: u64,
+    phase: String,
     status: String,
+    seq: u64,
 }
 
 type DictStamp = Option<(Option<SystemTime>, u64)>;
@@ -152,6 +155,9 @@ pub struct VoiceRuntime {
     active_stream: Mutex<Option<Box<dyn Stream>>>,
     stream_stop: Arc<AtomicBool>,
     download_cancel: Arc<AtomicBool>,
+    download_worker_running: AtomicBool,
+    download_seq: AtomicU64,
+    download_queue: Mutex<VecDeque<String>>,
     active_download: Mutex<Option<ActiveDownload>>,
     light_suggested: AtomicBool,
     ax_waiting: AtomicBool,
@@ -182,6 +188,9 @@ impl VoiceRuntime {
             active_stream: Mutex::new(None),
             stream_stop: Arc::new(AtomicBool::new(false)),
             download_cancel: Arc::new(AtomicBool::new(false)),
+            download_worker_running: AtomicBool::new(false),
+            download_seq: AtomicU64::new(1),
+            download_queue: Mutex::new(VecDeque::new()),
             active_download: Mutex::new(None),
             light_suggested: AtomicBool::new(light_suggested),
             ax_waiting: AtomicBool::new(false),
@@ -1186,6 +1195,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                     Ok(VState::Error(_)) => "error",
                     Err(_) => "idle",
                 };
+                let queued_ids: Vec<String> = rt
+                    .download_queue
+                    .lock()
+                    .map(|q| q.iter().cloned().collect())
+                    .unwrap_or_default();
                 let dl = rt
                     .active_download
                     .lock()
@@ -1196,7 +1210,10 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                             "id": d.id,
                             "done": d.done,
                             "total": d.total,
+                            "phase": d.phase,
                             "status": d.status,
+                            "queued": queued_ids,
+                            "seq": d.seq,
                         })
                     });
                 Ok(json!({
@@ -1241,78 +1258,266 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
                 let Some(spec) = models::find(&id) else {
                     return Err(anyhow::anyhow!("unknown model id: {id}"));
                 };
-                rt.download_cancel.store(false, Ordering::Relaxed);
-                if let Ok(mut d) = rt.active_download.lock() {
-                    *d = Some(ActiveDownload {
-                        id: id.clone(),
-                        done: 0,
-                        total: spec.size,
-                        status: "downloading".into(),
-                    });
+                if models::is_downloaded(&id) {
+                    let seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                    let queued: Vec<String> = rt
+                        .download_queue
+                        .lock()
+                        .map(|q| q.iter().cloned().collect())
+                        .unwrap_or_default();
+                    let _ = rt.app.emit(
+                        "voice:download",
+                        json!({
+                            "id": id,
+                            "done": spec.size,
+                            "total": spec.size,
+                            "phase": "done",
+                            "status": "done",
+                            "queued": queued,
+                            "seq": seq,
+                        }),
+                    );
+                    rt.sync_triggers();
+                    return Ok(json!({ "ok": true, "id": id, "alreadyDownloaded": true }));
                 }
+
+                // Dedup against the active download and pending queue so rapid/setup clicks never spawn
+                // two competing HTTP writers against the same `.part` file.
+                {
+                    let mut q = rt
+                        .download_queue
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("download queue lock poisoned"))?;
+                    let active_same = rt
+                        .active_download
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.as_ref().map(|d| d.id == id && d.status == "downloading"))
+                        .unwrap_or(false);
+                    if active_same {
+                        return Ok(json!({ "ok": true, "id": id, "deduped": true }));
+                    }
+                    if q.iter().any(|x| x == &id) {
+                        return Ok(json!({ "ok": true, "id": id, "queued": true }));
+                    }
+                    q.push_back(id.clone());
+                }
+
+                // If the single download worker is already running, notify UI of the updated queue.
+                if rt.download_worker_running.swap(true, Ordering::AcqRel) {
+                    let queued: Vec<String> = rt
+                        .download_queue
+                        .lock()
+                        .map(|q| q.iter().cloned().collect())
+                        .unwrap_or_default();
+                    if let Ok(mut guard) = rt.active_download.lock() {
+                        if let Some(ref mut cur) = *guard {
+                            cur.seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                            let _ = rt.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": cur.id,
+                                    "done": cur.done,
+                                    "total": cur.total,
+                                    "phase": cur.phase,
+                                    "status": cur.status,
+                                    "queued": queued,
+                                    "seq": cur.seq,
+                                }),
+                            );
+                        }
+                    }
+                    return Ok(json!({ "ok": true, "id": id, "queued": true }));
+                }
+
+                rt.download_cancel.store(false, Ordering::Relaxed);
                 let rt_bg = Arc::clone(&rt);
-                let id_bg = id.clone();
                 thread::spawn(move || {
-                    let last_emit = Mutex::new(Instant::now() - Duration::from_secs(1));
-                    let res = models::download(
-                        &id_bg,
-                        |done, total| {
+                    loop {
+                        while !rt_bg.download_cancel.load(Ordering::Relaxed) {
+                            let next_opt = rt_bg
+                                .download_queue
+                                .lock()
+                                .ok()
+                                .and_then(|mut q| q.pop_front());
+                            let Some(id_bg) = next_opt else {
+                                break;
+                            };
+                            let Some(spec_bg) = models::find(&id_bg) else {
+                                continue;
+                            };
+
+                            let queued_snapshot = || -> Vec<String> {
+                                rt_bg
+                                    .download_queue
+                                    .lock()
+                                    .map(|q| q.iter().cloned().collect())
+                                    .unwrap_or_default()
+                            };
+
+                            let init_seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
                             if let Ok(mut d) = rt_bg.active_download.lock() {
                                 *d = Some(ActiveDownload {
                                     id: id_bg.clone(),
-                                    done,
-                                    total,
+                                    done: 0,
+                                    total: spec_bg.size,
+                                    phase: "downloading".into(),
                                     status: "downloading".into(),
+                                    seq: init_seq,
                                 });
                             }
-                            if let Ok(mut t) = last_emit.lock() {
-                                if t.elapsed() >= Duration::from_millis(120) || done >= total {
-                                    *t = Instant::now();
+                            let _ = rt_bg.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": id_bg,
+                                    "done": 0,
+                                    "total": spec_bg.size,
+                                    "phase": "downloading",
+                                    "status": "downloading",
+                                    "queued": queued_snapshot(),
+                                    "seq": init_seq,
+                                }),
+                            );
+
+                            let last_emit = Mutex::new(Instant::now() - Duration::from_secs(1));
+                            let max_done = AtomicU64::new(0);
+                            let entered_verify = AtomicBool::new(false);
+                            let res = models::download(
+                                &id_bg,
+                                |raw_done, raw_total| {
+                                    let total = if raw_total > 0 { raw_total } else { spec_bg.size };
+                                    let clamped = raw_done.min(total);
+                                    let prev = max_done.fetch_max(clamped, Ordering::Relaxed);
+                                    let done = prev.max(clamped);
+                                    let verifying = total > 0 && done >= total;
+                                    let phase_str = if verifying { "verifying" } else { "downloading" };
+                                    let phase_just_changed =
+                                        verifying && !entered_verify.swap(true, Ordering::Relaxed);
+
+                                    let should_emit = if let Ok(mut t) = last_emit.lock() {
+                                        if phase_just_changed || t.elapsed() >= Duration::from_millis(100) {
+                                            *t = Instant::now();
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = Some(ActiveDownload {
+                                            id: id_bg.clone(),
+                                            done,
+                                            total,
+                                            phase: phase_str.into(),
+                                            status: "downloading".into(),
+                                            seq,
+                                        });
+                                    }
+                                    if should_emit {
+                                        let _ = rt_bg.app.emit(
+                                            "voice:download",
+                                            json!({
+                                                "id": id_bg,
+                                                "done": done,
+                                                "total": total,
+                                                "phase": phase_str,
+                                                "status": "downloading",
+                                                "queued": queued_snapshot(),
+                                                "seq": seq,
+                                            }),
+                                        );
+                                    }
+                                },
+                                &rt_bg.download_cancel,
+                            );
+
+                            match res {
+                                Ok(_) => {
+                                    let rem = queued_snapshot();
+                                    if rem.is_empty() {
+                                        if let Ok(mut d) = rt_bg.active_download.lock() {
+                                            *d = None;
+                                        }
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
                                     let _ = rt_bg.app.emit(
                                         "voice:download",
                                         json!({
                                             "id": id_bg,
-                                            "done": done,
-                                            "total": total,
-                                            "status": "downloading",
+                                            "done": spec_bg.size,
+                                            "total": spec_bg.size,
+                                            "phase": "done",
+                                            "status": "done",
+                                            "queued": rem,
+                                            "seq": seq,
                                         }),
                                     );
+                                    rt_bg.sync_triggers();
+                                }
+                                Err(VoiceError::Cancelled) => {
+                                    if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                        q.clear();
+                                    }
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = None;
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    let _ = rt_bg.app.emit(
+                                        "voice:download",
+                                        json!({
+                                            "id": id_bg,
+                                            "status": "cancelled",
+                                            "queued": [],
+                                            "seq": seq,
+                                        }),
+                                    );
+                                    break;
+                                }
+                                Err(e) => {
+                                    if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                        q.clear();
+                                    }
+                                    if let Ok(mut d) = rt_bg.active_download.lock() {
+                                        *d = None;
+                                    }
+                                    let seq = rt_bg.download_seq.fetch_add(1, Ordering::Relaxed);
+                                    let _ = rt_bg.app.emit(
+                                        "voice:download",
+                                        json!({
+                                            "id": id_bg,
+                                            "status": "error",
+                                            "error": e.to_string(),
+                                            "queued": [],
+                                            "seq": seq,
+                                        }),
+                                    );
+                                    break;
                                 }
                             }
-                        },
-                        &rt_bg.download_cancel,
-                    );
-                    if let Ok(mut d) = rt_bg.active_download.lock() {
-                        *d = None;
-                    }
-                    match res {
-                        Ok(_) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({
-                                    "id": id_bg,
-                                    "done": spec.size,
-                                    "total": spec.size,
-                                    "status": "done",
-                                }),
-                            );
-                            rt_bg.sync_triggers();
                         }
-                        Err(VoiceError::Cancelled) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({ "id": id_bg, "status": "cancelled" }),
-                            );
+
+                        if rt_bg.download_cancel.load(Ordering::Relaxed) {
+                            if let Ok(mut q) = rt_bg.download_queue.lock() {
+                                q.clear();
+                            }
                         }
-                        Err(e) => {
-                            let _ = rt_bg.app.emit(
-                                "voice:download",
-                                json!({
-                                    "id": id_bg,
-                                    "status": "error",
-                                    "error": e.to_string(),
-                                }),
-                            );
+                        if let Ok(mut d) = rt_bg.active_download.lock() {
+                            *d = None;
+                        }
+                        rt_bg.download_worker_running.store(false, Ordering::Release);
+                        let has_more = rt_bg
+                            .download_queue
+                            .lock()
+                            .map(|q| !q.is_empty())
+                            .unwrap_or(false);
+                        if !has_more
+                            || rt_bg.download_cancel.load(Ordering::Relaxed)
+                            || rt_bg.download_worker_running.swap(true, Ordering::AcqRel)
+                        {
+                            break;
                         }
                     }
                 });
@@ -1327,7 +1532,26 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         reg.add(
             "voice.cancelDownload",
             Box::new(move |_, _| {
+                if let Ok(mut q) = rt.download_queue.lock() {
+                    q.clear();
+                }
                 rt.download_cancel.store(true, Ordering::Relaxed);
+                if !rt.download_worker_running.load(Ordering::Acquire) {
+                    if let Ok(mut d) = rt.active_download.lock() {
+                        if let Some(prev) = d.take() {
+                            let seq = rt.download_seq.fetch_add(1, Ordering::Relaxed);
+                            let _ = rt.app.emit(
+                                "voice:download",
+                                json!({
+                                    "id": prev.id,
+                                    "status": "cancelled",
+                                    "queued": [],
+                                    "seq": seq,
+                                }),
+                            );
+                        }
+                    }
+                }
                 Ok(json!({ "ok": true }))
             }),
         );

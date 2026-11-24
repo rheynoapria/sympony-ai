@@ -6,6 +6,8 @@ export interface ModuleMeta {
   icon: string;
   title: string;
   sub: string;
+  /** Optional versioned key to display a dismissible "New" badge in Settings -> Modules */
+  newKey?: string;
 }
 
 export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
@@ -74,6 +76,7 @@ export const MODULE_META: Readonly<Record<string, ModuleMeta>> = {
     icon: "BookOpenText",
     title: "Feed & RSS",
     sub: "Hacker News, GitHub Trending, Google News, Indonesian news and custom RSS",
+    newKey: "v0.2b5:mod:feed",
   },
   radio: {
     icon: "Radio",

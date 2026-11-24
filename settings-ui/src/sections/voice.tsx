@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Check, Info, Mic, ShieldCheck, Trash2 } from "@/components/icons";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Info, Mic, ShieldCheck, Trash2, X } from "@/components/icons";
 import { Badge } from "@/components/ui/knowns/badge";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { Button } from "@/components/ui/knowns/button";
@@ -39,17 +39,64 @@ interface VoiceStatus {
 
 const DEFAULT_DICT: UserDict = { version: 1, terms: [], replacements: [] };
 
+export function mergeDownloadProgress(
+  prev: DownloadProgress | null,
+  incoming: DownloadProgress,
+  fallbackSize: number
+): DownloadProgress {
+  const total = incoming.total > 0 ? incoming.total : prev?.id === incoming.id && prev.total > 0 ? prev.total : fallbackSize;
+  const sameId = prev && prev.id === incoming.id && prev.status === "downloading";
+  const done = sameId ? Math.max(prev.done, incoming.done) : incoming.done;
+  return {
+    ...incoming,
+    total,
+    done: total > 0 ? Math.min(total, Math.max(0, done)) : Math.max(0, done),
+  };
+}
+
 function VoiceBody({ settings, set }: CustomPartProps) {
   const [status, setStatus] = useState<VoiceStatus | null>(null);
   const [devices, setDevices] = useState<string[]>([]);
   const [dict, setDict] = useState<UserDict>(DEFAULT_DICT);
   const [downloadProg, setDownloadProg] = useState<DownloadProgress | null>(null);
+  const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
   const [liveState, setLiveState] = useState<string>("idle");
   const [livePartial, setLivePartial] = useState<string>("");
   const [rms, setRms] = useState<number>(0);
   const [cloudKey, setCloudKey] = useState<string>("");
   const [showSetup, setShowSetup] = useState<boolean>(false);
   const [historyCleared, setHistoryCleared] = useState<boolean>(false);
+
+  const lastSeqRef = useRef<number>(0);
+  const modelsRef = useRef<VoiceModelInfo[]>([]);
+  modelsRef.current = status?.models ?? [];
+
+  const applyStatusSnapshot = useCallback((st: VoiceStatus | null | undefined) => {
+    if (!st || typeof st !== "object") return;
+    setStatus(st);
+    const active = st.activeDownload;
+    if (active && active.status === "downloading") {
+      const incomingSeq = typeof active.seq === "number" ? active.seq : 0;
+      // Only hydrate from status polling if we haven't already seen a newer live event.
+      if (incomingSeq === 0 || incomingSeq > lastSeqRef.current) {
+        if (incomingSeq > 0) lastSeqRef.current = incomingSeq;
+        const size = st.models?.find((m) => m.id === active.id)?.size ?? 0;
+        setDownloadProg((prev) => {
+          if (incomingSeq === 0 && prev !== null) return prev;
+          return mergeDownloadProgress(prev, active, size);
+        });
+      }
+    }
+  }, []);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const st = (await notch.svc("voice", "status")) as VoiceStatus;
+      applyStatusSnapshot(st);
+    } catch {
+      /* mock or offline */
+    }
+  }, [applyStatusSnapshot]);
 
   const refresh = useCallback(async () => {
     try {
@@ -58,10 +105,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
         notch.svc("voice", "devices") as Promise<string[]>,
         notch.svc("voice", "dict") as Promise<UserDict>,
       ]);
-      if (st && typeof st === "object") {
-        setStatus(st);
-        if (st.activeDownload) setDownloadProg(st.activeDownload);
-      }
+      applyStatusSnapshot(st);
       if (Array.isArray(devs)) setDevices(devs);
       if (d && Array.isArray(d.terms)) {
         setDict({
@@ -73,18 +117,59 @@ function VoiceBody({ settings, set }: CustomPartProps) {
     } catch {
       /* mock or offline */
     }
-  }, []);
+  }, [applyStatusSnapshot]);
 
   useEffect(() => {
     refresh();
     const u1 = notch.on("voice:download", (p) => {
       const info = p as DownloadProgress | null;
       if (!info) return;
+      if (typeof info.seq === "number" && info.seq > 0) {
+        if (info.seq < lastSeqRef.current) return;
+        lastSeqRef.current = info.seq;
+      }
       if (info.status === "downloading") {
-        setDownloadProg(info);
+        setDownloadErrors((prev) => {
+          if (!(info.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[info.id];
+          return next;
+        });
+        const fallback = modelsRef.current.find((m) => m.id === info.id)?.size ?? 0;
+        setDownloadProg((prev) => mergeDownloadProgress(prev, info, fallback));
+      } else if (info.status === "error") {
+        setDownloadErrors((prev) => ({
+          ...prev,
+          [info.id]: info.error || t("Download failed"),
+        }));
+        setDownloadProg(null);
+        void refreshStatus();
+      } else if (info.status === "done") {
+        setDownloadErrors((prev) => {
+          if (!(info.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[info.id];
+          return next;
+        });
+        const nextId = info.queued?.[0];
+        if (nextId) {
+          const nextSize = modelsRef.current.find((m) => m.id === nextId)?.size ?? 0;
+          setDownloadProg({
+            id: nextId,
+            done: 0,
+            total: nextSize,
+            phase: "downloading",
+            status: "downloading",
+            queued: info.queued?.slice(1) ?? [],
+            seq: info.seq,
+          });
+        } else {
+          setDownloadProg(null);
+        }
+        void refreshStatus();
       } else {
         setDownloadProg(null);
-        refresh();
+        void refreshStatus();
       }
     });
     const u2 = notch.on("voice:state", (p) => {
@@ -104,10 +189,10 @@ function VoiceBody({ settings, set }: CustomPartProps) {
       if (typeof info?.rms === "number") setRms(info.rms);
     });
     const u5 = notch.on("voice:perm", () => {
-      refresh();
+      void refreshStatus();
     });
     const onFocus = () => {
-      refresh();
+      void refreshStatus();
     };
     window.addEventListener("focus", onFocus);
     return () => {
@@ -118,15 +203,17 @@ function VoiceBody({ settings, set }: CustomPartProps) {
       u5();
       window.removeEventListener("focus", onFocus);
     };
-  }, [refresh]);
+  }, [refresh, refreshStatus]);
+
+  const isAnyDownloading = downloadProg?.status === "downloading";
 
   useEffect(() => {
     const micOk = status?.permissions?.microphone === "granted";
     const axOk = status?.permissions?.accessibility === "granted";
-    if (micOk && axOk) return;
-    const iv = window.setInterval(refresh, 2000);
+    if ((micOk && axOk) || isAnyDownloading) return;
+    const iv = window.setInterval(refreshStatus, 2000);
     return () => window.clearInterval(iv);
-  }, [status?.permissions?.microphone, status?.permissions?.accessibility, refresh]);
+  }, [status?.permissions?.microphone, status?.permissions?.accessibility, isAnyDownloading, refreshStatus]);
 
   const enabled = Boolean(settings.voiceEnabled);
   const tierRaw = String(settings.voiceTier || "auto");
@@ -166,8 +253,41 @@ function VoiceBody({ settings, set }: CustomPartProps) {
   };
 
   const handleDownload = async (id: string) => {
-    setDownloadProg({ id, done: 0, total: 100, status: "downloading" });
+    setDownloadErrors((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    const size = models.find((m) => m.id === id)?.size ?? 0;
+    setDownloadProg((prev) => {
+      if (prev && prev.status === "downloading") {
+        if (prev.id === id || prev.queued?.includes(id)) return prev;
+        return { ...prev, queued: [...(prev.queued ?? []), id] };
+      }
+      return { id, done: 0, total: size, phase: "downloading", status: "downloading", queued: [] };
+    });
     await notch.svc("voice", "download", id);
+  };
+
+  const handleDownloadAllMissing = async (missing: VoiceModelInfo[]) => {
+    if (missing.length === 0) return;
+    setDownloadErrors({});
+    const [first, ...rest] = missing;
+    setDownloadProg((prev) => {
+      if (prev && prev.status === "downloading") return prev;
+      return {
+        id: first.id,
+        done: 0,
+        total: first.size,
+        phase: "downloading",
+        status: "downloading",
+        queued: rest.map((m) => m.id),
+      };
+    });
+    for (const m of missing) {
+      await notch.svc("voice", "download", m.id);
+    }
   };
 
   const handleCancelDownload = async () => {
@@ -177,7 +297,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
 
   const handleDeleteModel = async (id: string) => {
     await notch.svc("voice", "deleteModel", id);
-    await refresh();
+    await refreshStatus();
   };
 
   const handleSaveDict = async (next: UserDict) => {
@@ -212,7 +332,12 @@ function VoiceBody({ settings, set }: CustomPartProps) {
 
   const micGranted = status?.permissions?.microphone === "granted";
   const axGranted = status?.permissions?.accessibility === "granted";
-  const modelsReady = neededModels.every((m) => m.downloaded);
+  const missingModels = neededModels.filter((m) => !m.downloaded);
+  const modelsReady = neededModels.length > 0 ? missingModels.length === 0 : false;
+  const activeSetupPct =
+    isAnyDownloading && downloadProg && downloadProg.total > 0
+      ? Math.min(100, Math.round((downloadProg.done / downloadProg.total) * 100))
+      : 0;
   const levelPct = Math.min(100, Math.round(Math.pow(Math.min(1, rms * 4.5), 0.65) * 100));
 
   return (
@@ -235,7 +360,10 @@ function VoiceBody({ settings, set }: CustomPartProps) {
           <div className="flex flex-col gap-2.5 p-4">
             <div className="flex items-center justify-between gap-2 text-[12.5px]">
               <div className="flex items-center gap-2">
-                <StatusDot tone={modelsReady ? "success" : "warning"} />
+                <StatusDot
+                  state={isAnyDownloading ? "busy" : "idle"}
+                  tone={modelsReady ? "success" : isAnyDownloading ? "accent" : "warning"}
+                />
                 <span>{t("Step 1: Download speech models")}</span>
               </div>
               {modelsReady ? (
@@ -243,12 +371,22 @@ function VoiceBody({ settings, set }: CustomPartProps) {
                   <Check className="mr-1 size-3" />
                   {t("Done")}
                 </Badge>
+              ) : isAnyDownloading ? (
+                <div className="flex items-center gap-2">
+                  <Badge variant="soft" tone="info" className="tabular-nums">
+                    {downloadProg?.phase === "verifying"
+                      ? t("Verifying…")
+                      : `${t("Downloading…")} ${activeSetupPct}%`}
+                  </Badge>
+                  <Button size="sm" variant="secondary" icon={<X />} onClick={handleCancelDownload}>
+                    {t("Cancel")}
+                  </Button>
+                </div>
               ) : (
                 <Button
                   size="sm"
                   onClick={() => {
-                    const firstMissing = neededModels.find((m) => !m.downloaded);
-                    if (firstMissing) handleDownload(firstMissing.id);
+                    void handleDownloadAllMissing(missingModels);
                   }}
                 >
                   {t("Download")}
@@ -330,6 +468,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
                     key={m.id}
                     model={m}
                     progress={downloadProg}
+                    error={downloadErrors[m.id] ?? null}
                     onDownload={handleDownload}
                     onCancel={handleCancelDownload}
                     onDelete={handleDeleteModel}

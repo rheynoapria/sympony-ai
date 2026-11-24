@@ -54,6 +54,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { UpdateBanner } from "@/components/shell/UpdateBanner";
 import { SectionIcon } from "@/components/shell/icons";
 import { hasPendingBadge, useUpdateState } from "@/lib/update";
+import { flushSectionItemsSeen, markSectionOpened } from "@/lib/whatsNew";
 
 const THEME_STORAGE_KEY = "sympony.settingsTheme";
 
@@ -280,6 +281,28 @@ function SettingsShell() {
     () => visible.find((s) => s.id === secId) ?? visible[0],
     [visible, secId]
   );
+
+  // Dismiss Sidebar "New" badge when a section is opened; flush inner row/module "New" badges
+  // when leaving the section or hiding/closing the Settings window.
+  useEffect(() => {
+    const id = activeSection.id;
+    markSectionOpened(id, os);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        flushSectionItemsSeen(id, os);
+      }
+    };
+    const onPageHide = () => {
+      flushSectionItemsSeen(id, os);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      flushSectionItemsSeen(id, os);
+    };
+  }, [activeSection.id, os]);
 
   const body = BODIES[activeSection.id];
 

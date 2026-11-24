@@ -353,6 +353,7 @@ export const GENERAL_ROWS: readonly Row[] = [
       ["auto", "Automatic (fit display)"],
       ["custom", "Custom"],
     ],
+    newKey: "v0.2b5:item:general:notchSizeMode",
   },
   {
     t: "range",
