@@ -27,25 +27,31 @@ function makeServicePart(svc: "claude" | "codex"): CustomPart {
 
     useEffect(() => {
       let alive = true;
-      notch
-        .svc("aiusage", "status")
-        .then((res) => {
-          if (alive && res && typeof res === "object") {
-            setStatus(res as AiUsageStatus);
-          }
-        })
-        .catch(() => {});
+      const pull = () => {
+        notch
+          .svc("aiusage", "status")
+          .then((res) => {
+            if (alive && res && typeof res === "object") {
+              setStatus(res as AiUsageStatus);
+            }
+          })
+          .catch(() => {});
+      };
+      pull();
+      const unsub = notch.on("aiusage", pull);
       return () => {
         alive = false;
+        unsub();
       };
     }, [settings[key]]);
 
+    const mac = os === "macos";
     const s = status?.[svc];
     let statusLine: React.ReactNode = null;
 
     if (s && svc === "claude") {
       if (!s.found) {
-        if (os === "macos") {
+        if (mac) {
           statusLine = s.denied ? (
             <span className="text-amber-500">
               ●{" "}
@@ -76,15 +82,19 @@ function makeServicePart(svc: "claude" | "codex"): CustomPart {
             ●{" "}
             {s.plan
               ? t("Found: {plan} plan", { plan: s.plan })
-              : t("Found on this PC")}
+              : mac
+                ? t("Found on this Mac")
+                : t("Found on this PC")}
           </span>
         );
       }
     } else if (s) {
       statusLine = s.found ? (
         <span className="text-emerald-600 dark:text-emerald-400">
-          ● {t("Found on this PC")}
+          ● {mac ? t("Found on this Mac") : t("Found on this PC")}
         </span>
+      ) : mac ? (
+        t("Not found: use Codex CLI on this Mac first")
       ) : (
         t("Not found: use Codex CLI on this PC first")
       );

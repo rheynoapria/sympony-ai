@@ -2301,6 +2301,11 @@
     'Empty: defaults to sonnet. Enter any Claude alias or model ID (e.g. sonnet, opus, haiku).': 'Kosong: default ke sonnet. Isi alias atau ID model Claude apa saja (mis. sonnet, opus, haiku).',
     'Eyes, Hands, Ask other AIs, Commands & files, and Outside MCP tools require Sympony AI, your own server, or Claude Code (Brain tab).': 'Eyes, Hands, Tanya AI lain, Perintah & file, dan tool MCP luar membutuhkan Sympony AI, server Anda sendiri, atau Claude Code (tab Otak).',
     'Automatic background learning runs with Sympony AI or your own server. With Claude Code you can still ask Pony to remember or forget facts directly.': 'Belajar otomatis di latar berjalan dengan Sympony AI atau server Anda sendiri. Dengan Claude Code Anda tetap bisa meminta Pony mengingat atau melupakan fakta secara langsung.',
+    'How much of your Claude and Codex plan limits you’ve used, in a tab of its own: the 5-hour session and the week. Sympony reads them on this Mac. For Claude it asks Anthropic with Claude Code’s own sign-in, as Claude Code’s /usage does; Codex’s come from its logs, offline. Nothing else is sent anywhere.': 'Seberapa banyak batas paket Claude dan Codex yang sudah terpakai, di tab tersendiri: sesi 5 jam dan mingguan. Sympony membacanya di Mac ini. Untuk Claude, Sympony menanyakan Anthropic lewat login Claude Code seperti /usage; Codex diambil dari log-nya secara offline. Tidak ada data lain yang dikirim.',
+    'Reads Claude Code’s sign-in on this Mac': 'Membaca login Claude Code di Mac ini',
+    'Reads Codex CLI’s logs on this Mac': 'Membaca log Codex CLI di Mac ini',
+    'Found on this Mac': 'Ditemukan di Mac ini',
+    'Not found: use Codex CLI on this Mac first': 'Tidak ditemukan: gunakan Codex CLI di Mac ini terlebih dahulu',
   };
   const extra = window.SYMPONY_LANG === 'id' ? EXTRA_ID : null;
   // Overrides downloaded table wording where needed for macOS

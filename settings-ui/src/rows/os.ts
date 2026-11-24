@@ -91,6 +91,22 @@ const MAC_ROWS: Record<string, (rows: Row[]) => Row[]> = {
       }
       return r;
     }),
+  aiusage: (rows) =>
+    rows.map((r) => {
+      if (r.t === "lead") {
+        return {
+          ...r,
+          html: "How much of your Claude and Codex plan limits you’ve used, in a tab of its own: the 5-hour session and the week. Sympony reads them on this Mac. For Claude it asks Anthropic with Claude Code’s own sign-in, as Claude Code’s /usage does; Codex’s come from its logs, offline. Nothing else is sent anywhere.",
+        };
+      }
+      if (r.t === "custom" && r.id === "claude") {
+        return { ...r, sub: "Reads Claude Code’s sign-in on this Mac" };
+      }
+      if (r.t === "custom" && r.id === "codex") {
+        return { ...r, sub: "Reads Codex CLI’s logs on this Mac" };
+      }
+      return r;
+    }),
   integrations: (rows) =>
     rows.map((r) =>
       "k" in r && r.k === "paseoEnabled"

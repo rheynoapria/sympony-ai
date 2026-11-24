@@ -56,7 +56,7 @@ pub fn claude_rows(u: &Value) -> Vec<Value> {
 }
 
 /// Claude Code's sign-in (its Keychain item or `.credentials.json`).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Oauth {
     pub token: String,
     /// ms; 0 when it doesn't say
@@ -69,14 +69,112 @@ fn cap(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
+/// Decodes even-length ASCII hex (macOS `security find-generic-password -w` outputs hex when a Keychain value
+/// contains newlines or non-ASCII bytes).
+fn decode_hex_utf8(s: &str) -> Option<String> {
+    if s.len() < 4 || s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(s.len() / 2);
+    for pair in s.as_bytes().chunks_exact(2) {
+        let hex = std::str::from_utf8(pair).ok()?;
+        out.push(u8::from_str_radix(hex, 16).ok()?);
+    }
+    String::from_utf8(out).ok()
+}
+
 pub fn claude_oauth(text: &str) -> Option<Oauth> {
-    let v: Value = serde_json::from_str(text).ok()?;
+    let trimmed = text.trim();
+    let v: Value = serde_json::from_str(trimmed)
+        .ok()
+        .or_else(|| decode_hex_utf8(trimmed).and_then(|d| serde_json::from_str(&d).ok()))?;
     let o = &v["claudeAiOauth"];
     let token = o["accessToken"].as_str().filter(|t| !t.is_empty())?.to_string();
     let kind = o["subscriptionType"].as_str().unwrap_or("");
     let tier = o["rateLimitTier"].as_str().unwrap_or("");
     let plan = if kind == "max" && tier.contains("20x") { "Max 20x".into() } else if kind == "max" && tier.contains("5x") { "Max 5x".into() } else { cap(kind) };
     Some(Oauth { token, expires_at: o["expiresAt"].as_i64().unwrap_or(0), plan })
+}
+
+/// Keychain service names Claude Code uses: custom `CLAUDE_CONFIG_DIR` gets a `-<sha256[:8]>` suffix, alongside the
+/// default `"Claude Code-credentials"`.
+pub fn claude_keychain_items(config_dir: Option<&str>) -> Vec<String> {
+    use sha2::{Digest, Sha256};
+    let mut out = Vec::new();
+    if let Some(dir) = config_dir.map(str::trim).filter(|d| !d.is_empty()) {
+        let hash = Sha256::digest(dir.as_bytes());
+        let suffix: String = hash[..4].iter().map(|b| format!("{b:02x}")).collect();
+        out.push(format!("Claude Code-credentials-{suffix}"));
+    }
+    out.push("Claude Code-credentials".to_string());
+    out
+}
+
+/// Picks the fresher OAuth credential between two sources (e.g. Keychain vs `.credentials.json`): an unexpired token
+/// always beats an expired one; ties prefer the later `expires_at`.
+pub fn pick_freshest_oauth(a: Option<Oauth>, b: Option<Oauth>, now_ms: i64) -> Option<Oauth> {
+    let is_fresh = |o: &Oauth| o.expires_at == 0 || o.expires_at >= now_ms;
+    match (a, b) {
+        (Some(x), Some(y)) => match (is_fresh(&x), is_fresh(&y)) {
+            (true, false) => Some(x),
+            (false, true) => Some(y),
+            _ => if y.expires_at > x.expires_at { Some(y) } else { Some(x) },
+        },
+        (Some(x), None) => Some(x),
+        (None, Some(y)) => Some(y),
+        (None, None) => None,
+    }
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for ch in chars.by_ref() {
+                if ('@'..='~').contains(&ch) {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Parses human-readable `claude -p /usage` stdout lines as a fallback when Keychain cannot be read directly:
+///   Current session: 63% used · resets ...
+///   Current week (all models): 86% used · resets ...
+///   Current week (Sonnet): 12% used · resets ...
+pub fn claude_cli_rows(stdout: &str) -> Vec<Value> {
+    let clean = strip_ansi(stdout);
+    let mut rows = Vec::new();
+    for raw in clean.lines() {
+        let line = raw.trim();
+        let Some((head, rest)) = line.split_once(':') else { continue };
+        let pct_str = rest.trim().split('%').next().unwrap_or("").trim();
+        let Ok(pct) = pct_str.parse::<f64>() else { continue };
+        if !pct.is_finite() || !(0.0..=100.0).contains(&pct) {
+            continue;
+        }
+        let low = head.trim().to_ascii_lowercase();
+        if low == "current session" {
+            rows.push(row("session", pct, None));
+        } else if let Some(inner) = head.trim().strip_prefix("Current week (").and_then(|s| s.strip_suffix(')'))
+            .or_else(|| head.trim().strip_prefix("current week (").and_then(|s| s.strip_suffix(')')))
+        {
+            let mut r = row("week", pct, None);
+            if !inner.eq_ignore_ascii_case("all models") && !inner.trim().is_empty() {
+                r["model"] = json!(inner.trim());
+            }
+            rows.push(r);
+        } else if low == "current week" {
+            rows.push(row("week", pct, None));
+        }
+    }
+    rows
 }
 
 /// The last `token_count` event with limits in a Codex session log: its rows (primary: the session of its window,

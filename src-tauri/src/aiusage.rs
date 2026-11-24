@@ -12,9 +12,10 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::App;
 
-const ITEM: &str = "Claude Code-credentials";
 /// The tab says it shows every minute; without that for this long it's gone.
 const WATCH: Duration = Duration::from_secs(180);
+/// Minimum interval between automatic `claude -p /usage` token-refresh invocations.
+const CLI_REFRESH_COOLDOWN: Duration = Duration::from_secs(300);
 
 #[derive(Default)]
 pub struct AiUsage {
@@ -24,6 +25,8 @@ pub struct AiUsage {
     warned: Mutex<HashMap<String, i64>>,
     /// the sign-in read last, kept till it expires or is refused (so the Keychain is asked rarely)
     oauth: Mutex<Option<services::aiusage::Oauth>>,
+    /// last time we asked `claude -p /usage` to refresh an expired OAuth sign-in
+    last_cli_refresh: Mutex<Option<Instant>>,
     /// the Keychain was asked / said no (turning Claude off and on asks again)
     asked: AtomicBool,
     denied: AtomicBool,
@@ -33,8 +36,12 @@ fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
+fn claude_config_dir() -> Option<String> {
+    std::env::var("CLAUDE_CONFIG_DIR").ok().filter(|s| !s.trim().is_empty())
+}
+
 fn claude_file() -> PathBuf {
-    std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude")).join(".credentials.json")
+    claude_config_dir().map(PathBuf::from).unwrap_or_else(|| home().join(".claude")).join(".credentials.json")
 }
 
 fn codex_sessions() -> PathBuf {
@@ -42,6 +49,7 @@ fn codex_sessions() -> PathBuf {
 }
 
 /// `security`, given a minute (macOS may be asking the user); after that it counts as a no.
+#[cfg(target_os = "macos")]
 fn security(args: &[&str]) -> std::io::Result<std::process::Output> {
     use std::process::Stdio;
     let mut c = std::process::Command::new("/usr/bin/security").args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
@@ -56,33 +64,160 @@ fn security(args: &[&str]) -> std::io::Result<std::process::Output> {
     c.wait_with_output()
 }
 
+#[cfg(target_os = "macos")]
+fn claude_keychain_exists() -> bool {
+    let dir = claude_config_dir();
+    services::aiusage::claude_keychain_items(dir.as_deref())
+        .iter()
+        .any(|item| security(&["find-generic-password", "-s", item]).is_ok_and(|o| o.status.success()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn claude_keychain_exists() -> bool {
+    false
+}
+
+/// Finds the `claude` CLI binary across macOS/Linux (using login-shell PATH) and Windows.
+fn find_claude_bin() -> Option<PathBuf> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        crate::agents::which("claude")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        if let Some(h) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+            dirs.push(h.join(".local").join("bin"));
+        }
+        if let Some(a) = std::env::var_os("APPDATA").map(PathBuf::from) {
+            dirs.push(a.join("npm"));
+        }
+        for d in dirs {
+            for name in ["claude.exe", "claude.cmd", "claude"] {
+                let p = d.join(name);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Runs Claude Code's built-in `/usage` slash command (zero LLM tokens) to let Claude Code refresh its own expired
+/// OAuth access token in Keychain / `.credentials.json` and returns its stdout as an optional fallback.
+fn refresh_claude_via_cli() -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let bin = find_claude_bin()?;
+    let mut cmd = Command::new(&bin);
+    cmd.args(["-p", "/usage", "--no-session-persistence", "--tools", "", "--max-turns", "1"]);
+    #[cfg(not(target_os = "windows"))]
+    cmd.env("PATH", crate::agents::path());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    platform::process::own_group(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()));
+    let mut child = cmd.spawn().ok()?;
+    let pid = child.id();
+    let stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.take(512 * 1024).read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let start = Instant::now();
+    let ok = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st.success(),
+            Ok(None) if start.elapsed() < Duration::from_secs(20) => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                platform::process::kill_group(pid);
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let out = reader.join().ok().unwrap_or_default();
+    if ok { Some(out) } else { None }
+}
+
+fn try_cli_refresh(u: &AiUsage) -> Option<String> {
+    {
+        let mut last = u.last_cli_refresh.lock().unwrap();
+        if last.is_some_and(|t| t.elapsed() < CLI_REFRESH_COOLDOWN) {
+            return None;
+        }
+        *last = Some(Instant::now());
+    }
+    refresh_claude_via_cli()
+}
+
 /// Claude Code's sign-in: Err("notfound" | "denied").
 fn claude_sign_in(u: &AiUsage) -> Result<services::aiusage::Oauth, &'static str> {
     u.asked.store(true, Ordering::SeqCst);
-    let out = security(&["find-generic-password", "-s", ITEM, "-w"]);
-    if let Ok(o) = &out {
-        if o.status.success() {
-            u.denied.store(false, Ordering::SeqCst);
-            if let Some(a) = services::aiusage::claude_oauth(String::from_utf8_lossy(&o.stdout).trim()) {
-                return Ok(a);
+    let now_ms = now();
+    #[cfg(target_os = "macos")]
+    let (kc_oauth, kc_denied) = {
+        let mut kc_oauth: Option<services::aiusage::Oauth> = None;
+        let mut kc_denied = false;
+        let dir = claude_config_dir();
+        for item in services::aiusage::claude_keychain_items(dir.as_deref()) {
+            let out = security(&["find-generic-password", "-s", &item, "-w"]);
+            match out {
+                Ok(o) if o.status.success() => {
+                    u.denied.store(false, Ordering::SeqCst);
+                    if let Some(a) = services::aiusage::claude_oauth(String::from_utf8_lossy(&o.stdout).trim()) {
+                        kc_oauth = services::aiusage::pick_freshest_oauth(kc_oauth, Some(a), now_ms);
+                    }
+                }
+                Ok(o) if o.status.code() != Some(44) => {
+                    // (44: errSecItemNotFound; anything else from the Keychain means access was denied/cancelled)
+                    kc_denied = true;
+                }
+                _ => {}
             }
         }
+        (kc_oauth, kc_denied)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let (kc_oauth, kc_denied): (Option<services::aiusage::Oauth>, bool) = (None, false);
+
+    let file_oauth = std::fs::read_to_string(claude_file()).ok().and_then(|t| services::aiusage::claude_oauth(&t));
+    // Never mask an explicit Keychain denial behind an already-expired `.credentials.json` file.
+    if kc_denied && kc_oauth.is_none() {
+        let file_fresh = file_oauth.as_ref().is_some_and(|a| a.expires_at == 0 || a.expires_at >= now_ms);
+        if !file_fresh {
+            u.denied.store(true, Ordering::SeqCst);
+            return Err("denied");
+        }
     }
-    // (44: no such item; anything else from the Keychain: not allowed)
-    let missing = out.as_ref().map(|o| o.status.success() || o.status.code() == Some(44)).unwrap_or(true);
-    if let Some(a) = std::fs::read_to_string(claude_file()).ok().and_then(|t| services::aiusage::claude_oauth(&t)) {
-        return Ok(a);
+    if let Some(best) = services::aiusage::pick_freshest_oauth(kc_oauth, file_oauth, now_ms) {
+        return Ok(best);
     }
-    if missing {
-        Err("notfound")
-    } else {
+    if kc_denied {
         u.denied.store(true, Ordering::SeqCst);
         Err("denied")
+    } else {
+        Err("notfound")
     }
 }
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp_millis()
+}
+
+fn fetch_claude_api(token: &str) -> Result<(u16, Value), String> {
+    let auth = format!("Bearer {token}");
+    services::http::get_json_with(
+        "https://api.anthropic.com/api/oauth/usage",
+        &[("Authorization", &auth), ("anthropic-beta", "oauth-2025-04-20")],
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Claude's numbers; a note (expired, error…) keeps the rows read before.
@@ -98,20 +233,57 @@ fn read_claude(u: &AiUsage, old: &Value) -> Value {
         v
     };
     let expired = |a: &services::aiusage::Oauth| a.expires_at > 0 && a.expires_at < now();
+    let cli_fallback = |stdout: &str, plan: Option<&str>| -> Option<Value> {
+        let rows = services::aiusage::claude_cli_rows(stdout);
+        if rows.is_empty() {
+            return None;
+        }
+        let mut v = json!({"rows": rows, "updatedAt": now()});
+        if let Some(p) = plan.filter(|p| !p.is_empty()).map(String::from).or_else(|| old["plan"].as_str().map(String::from)) {
+            v["plan"] = json!(p);
+        }
+        Some(v)
+    };
+
     // the one kept, else (none, or it ran out: Claude Code may have refreshed it since) read again
     let kept = u.oauth.lock().unwrap().clone().filter(|a| !expired(a));
-    let a = match kept.map(Ok).unwrap_or_else(|| claude_sign_in(u)) {
-        Ok(a) => a,
-        Err(n) => return json!({"rows": [], "note": n}),
+    let mut cli_out: Option<String> = None;
+    let mut sign_in = kept.map(Ok).unwrap_or_else(|| claude_sign_in(u));
+
+    // When the short-lived access token expired (or macOS Keychain denied access after an update), ask Claude Code's
+    // own zero-token `/usage` command to refresh its sign-in, then re-read Keychain/file (or parse its output).
+    let needs_refresh = match &sign_in {
+        Ok(a) => expired(a),
+        Err("denied") => true,
+        Err(_) => false,
     };
-    // (Sympony never refreshes Claude Code's sign-in: Claude Code does when it runs)
-    if expired(&a) {
-        *u.oauth.lock().unwrap() = None;
-        return keep("expired", Some(&a.plan), None);
+    if needs_refresh {
+        if let Some(out) = try_cli_refresh(u) {
+            cli_out = Some(out);
+            sign_in = claude_sign_in(u);
+        }
     }
+
+    let a = match sign_in {
+        Ok(a) if !expired(&a) => a,
+        Ok(a) => {
+            *u.oauth.lock().unwrap() = None;
+            if let Some(v) = cli_out.as_deref().and_then(|s| cli_fallback(s, Some(&a.plan))) {
+                return v;
+            }
+            return keep("expired", Some(&a.plan), None);
+        }
+        Err(n) => {
+            if let Some(v) = cli_out.as_deref().and_then(|s| cli_fallback(s, None)) {
+                u.denied.store(false, Ordering::SeqCst);
+                return v;
+            }
+            return json!({"rows": [], "note": n});
+        }
+    };
+
     *u.oauth.lock().unwrap() = Some(a.clone());
-    let auth = format!("Bearer {}", a.token);
-    match services::http::get_json_with("https://api.anthropic.com/api/oauth/usage", &[("Authorization", &auth), ("anthropic-beta", "oauth-2025-04-20")]) {
+    match fetch_claude_api(&a.token) {
         Ok((200, v)) => {
             let rows = services::aiusage::claude_rows(&v);
             if rows.is_empty() {
@@ -121,10 +293,29 @@ fn read_claude(u: &AiUsage, old: &Value) -> Value {
         }
         Ok((401, _)) | Ok((403, _)) => {
             *u.oauth.lock().unwrap() = None;
+            // Token revoked/rotated early: ask Claude Code to refresh once, then retry API or use CLI output.
+            if cli_out.is_none() {
+                if let Some(out) = try_cli_refresh(u) {
+                    if let Ok(fresh) = claude_sign_in(u) {
+                        if !expired(&fresh) && fresh.token != a.token {
+                            *u.oauth.lock().unwrap() = Some(fresh.clone());
+                            if let Ok((200, v)) = fetch_claude_api(&fresh.token) {
+                                let rows = services::aiusage::claude_rows(&v);
+                                if !rows.is_empty() {
+                                    return json!({"rows": rows, "plan": fresh.plan, "updatedAt": now()});
+                                }
+                            }
+                        }
+                    }
+                    if let Some(v) = cli_fallback(&out, Some(&a.plan)) {
+                        return v;
+                    }
+                }
+            }
             keep("expired", Some(&a.plan), None)
         }
         Ok((s, _)) => keep("error", Some(&a.plan), Some(format!("HTTP {s}"))),
-        Err(e) => keep("error", Some(&a.plan), Some(e.to_string())),
+        Err(e) => keep("error", Some(&a.plan), Some(e)),
     }
 }
 
@@ -182,6 +373,18 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let u = h.state::<AiUsage>();
         let on = a.first().and_then(Value::as_bool).unwrap_or(false);
         let mut w = u.watched.lock().unwrap();
+        let needs_recover = {
+            let d = u.data.lock().unwrap();
+            let c = d.get("claude");
+            c.is_some_and(|v| v["note"] == "expired" || v["rows"].as_array().is_none_or(Vec::is_empty))
+        };
+        if on && needs_recover {
+            let mut last_cli = u.last_cli_refresh.lock().unwrap();
+            if last_cli.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
+                *last_cli = None;
+            }
+            u.kick.store(true, Ordering::SeqCst);
+        }
         // (the tab just opened: read now)
         if on && w.is_none_or(|t| t.elapsed() > WATCH) {
             u.kick.store(true, Ordering::SeqCst);
@@ -193,17 +396,19 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     reg.add("aiusage.status", Box::new(move |_, _| {
         let u = h.state::<AiUsage>();
         // (without reading the secret: macOS asks for that, so it's only read once Claude is on)
-        let item = security(&["find-generic-password", "-s", ITEM]).is_ok_and(|o| o.status.success());
+        let item = claude_keychain_exists();
         let file = std::fs::read_to_string(claude_file()).ok().and_then(|t| services::aiusage::claude_oauth(&t));
         let codex = !codex_logs().is_empty();
         let (asked, denied) = (u.asked.load(Ordering::SeqCst), u.denied.load(Ordering::SeqCst));
         let d = u.data.lock().unwrap();
         let c = d.get("claude").cloned().unwrap_or(Value::Null);
+        let has_live_rows = c["rows"].as_array().is_some_and(|r| !r.is_empty()) && c["note"].is_null();
         let plan = c["plan"].as_str().map(String::from).or_else(|| file.as_ref().map(|f| f.plan.clone())).filter(|p| !p.is_empty());
+        let found = has_live_rows || (!denied && (file.is_some() || (item && asked)));
         Ok(json!({
             // found: readable (a Keychain item not read yet, or refused, isn't: Settings says why)
-            "claude": {"found": file.is_some() || (item && asked && !denied), "asked": asked, "denied": denied,
-                "expired": c["note"] == "expired", "plan": plan},
+            "claude": {"found": found, "asked": asked, "denied": denied,
+                "expired": !has_live_rows && c["note"] == "expired", "plan": plan},
             "codex": {"found": codex},
         }))
     }));
@@ -233,10 +438,12 @@ pub fn start(app: &AppHandle) {
                     last[i] = None;
                     if k == "claude" {
                         *u.oauth.lock().unwrap() = None;
+                        *u.last_cli_refresh.lock().unwrap() = None;
                     }
                 } else if !was_on[i] && k == "claude" {
-                    // (turned on again: the Keychain may be asked again)
+                    // (turned on again: the Keychain and CLI refresh may be tried again immediately)
                     u.denied.store(false, Ordering::SeqCst);
+                    *u.last_cli_refresh.lock().unwrap() = None;
                 }
                 was_on[i] = on;
                 let every = Duration::from_secs(if watched { 60 } else { every });
