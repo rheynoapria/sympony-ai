@@ -269,6 +269,37 @@ mod tests {
         assert!(matches!(fit(&p, 4).2, Cow::Borrowed(_)));
     }
 
+    /// Text drawn off screen (no window), read back: `cargo test -p platform vision -- --ignored` (needs an OCR
+    /// language in Windows, as English has).
+    #[test]
+    #[ignore]
+    fn reads_text_drawn_off_screen() {
+        use windows_sys::Win32::Graphics::Gdi::{CreateFontW, PatBlt, SetBkMode, SetTextColor, TextOutW, TRANSPARENT, WHITENESS};
+        let (w, h) = (900, 160);
+        let words: Vec<u16> = "Hello Sympony 2026".encode_utf16().collect();
+        let face: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
+        // SAFETY: GDI drawing into our own bitmap
+        let px = unsafe {
+            bitmap(w, h, |dc, _| {
+                PatBlt(dc, 0, 0, w, h, WHITENESS);
+                let font = CreateFontW(64, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, face.as_ptr());
+                SelectObject(dc, font);
+                SetBkMode(dc, TRANSPARENT as i32);
+                SetTextColor(dc, 0);
+                TextOutW(dc, 40, 40, words.as_ptr(), words.len() as i32) != 0
+            })
+        }
+        .expect("drawn");
+        let p = cut(&px, (w as u32, h as u32), (0, 0, w as u32, h as u32));
+        let jpeg = jpeg(&p, 1280).expect("jpeg");
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "a JPEG");
+        let lines = text(&p).expect("text");
+        let (t, x, y, bw, bh) = lines.iter().find(|l| l.0.contains("Sympony")).cloned().unwrap_or_else(|| panic!("read {lines:?}"));
+        assert!(t.contains("Hello") && t.contains("2026"), "{t}");
+        // (the line starts near 40 px of 900 and sits in the top half, so its box's bottom-left origin y is above 0.3)
+        assert!(x > 0.02 && x < 0.08 && bw > 0.3 && y > 0.3 && y + bh <= 1.0, "{x} {y} {bw} {bh}");
+    }
+
     #[test]
     fn boxes_land_where_vision_puts_them() {
         // an 800 × 593 picture 7 px into an 814 × 600 window, read at half size
