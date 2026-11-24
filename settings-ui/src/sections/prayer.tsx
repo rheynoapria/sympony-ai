@@ -9,12 +9,13 @@ import { showKemenag } from "./parts/logic";
 import { PrayerCityPart } from "./parts/PrayerCity";
 import { PrayerTodayPart } from "./parts/PrayerToday";
 
-function PrayerLocatePart({ settings }: CustomPartProps) {
+function PrayerLocatePart({ settings, os }: CustomPartProps) {
   const own = settings.prayerLocation as { lat?: number; lon?: number } | null | undefined;
   return (
     <LocatePart
       which="prayer"
       cur={own && own.lat != null && own.lon != null ? { lat: own.lat, lon: own.lon } : null}
+      os={os}
     />
   );
 }

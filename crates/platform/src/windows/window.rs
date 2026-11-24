@@ -161,3 +161,147 @@ pub unsafe fn bring_front(handle: *mut c_void) {
         SetForegroundWindow(h);
     }
 }
+
+/// What the app in front does on the display Sympony's window `handle` is on: "full" (a window over that whole
+/// display: a game, a video, a presentation), "max" (a maximised window there) or "normal" (anything else, Sympony's
+/// own windows and Windows' own over the display included: the desktop, the taskbar, Start, Search, the emoji panel…).
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null reads as "normal".
+pub unsafe fn foreground_state(handle: *mut c_void) -> &'static str {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsZoomed};
+    let notch = handle as HWND;
+    if notch.is_null() {
+        return "normal";
+    }
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.is_null() {
+            return "normal";
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(front, &mut pid);
+        if pid == GetCurrentProcessId() {
+            return "normal";
+        }
+        let mut class = [0u16; 64];
+        let n = GetClassNameW(front, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+        let class = String::from_utf16_lossy(&class[..n]);
+        let monitor = MonitorFromWindow(front, MONITOR_DEFAULTTONEAREST);
+        if monitor != MonitorFromWindow(notch, MONITOR_DEFAULTTONEAREST) {
+            return "normal";
+        }
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetMonitorInfoW(monitor, &mut info) == 0 || GetWindowRect(front, &mut r) == 0 {
+            return "normal";
+        }
+        let program = super::apps::exe_path(pid).and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned())).unwrap_or_default();
+        state_of(&class, &program, IsZoomed(front) != 0, r, info.rcMonitor)
+    }
+}
+
+/// Windows' own windows that cover the display without being an app on it: the desktop and the taskbars, Alt+Tab
+/// and Task view (by class), and (by program) Start, Search, the notification center, and the emoji panel, Win+V's
+/// clipboard history and the touch keyboard (TextInputHost, a transparent window as big as the display).
+const SHELL_CLASSES: [&str; 6] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow", "MultitaskingViewFrame"];
+const SHELL_PROGRAMS: [&str; 6] = ["textinputhost.exe", "startmenuexperiencehost.exe", "searchhost.exe", "searchapp.exe", "shellexperiencehost.exe", "shellhost.exe"];
+
+/// `foreground_state` for the window in front: its class and program (file name), whether it's maximised, its
+/// rectangle and its display's.
+fn state_of(class: &str, program: &str, zoomed: bool, r: windows_sys::Win32::Foundation::RECT, display: windows_sys::Win32::Foundation::RECT) -> &'static str {
+    if SHELL_CLASSES.contains(&class) || SHELL_PROGRAMS.contains(&program.to_ascii_lowercase().as_str()) {
+        return "normal";
+    }
+    if zoomed {
+        return "max";
+    }
+    let s = display;
+    if r.left <= s.left && r.top <= s.top && r.right >= s.right && r.bottom >= s.bottom { "full" } else { "normal" }
+}
+
+/// Takes the window out of sight (DWM's cloak: not drawn, not clicked) or brings it back, while Tauri keeps it as
+/// shown. Hiding it through Tauri and showing it from here left Tauri thinking it hidden, and Tauri's next change to
+/// the window (a hover's click-through) hid it again: the notch vanished under the mouse.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn set_cloaked(handle: *mut c_void, cloaked: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+    let h = handle as HWND;
+    if h.is_null() {
+        return;
+    }
+    let on = i32::from(cloaked);
+    // SAFETY: a 4-byte BOOL for the window's own attribute
+    unsafe { DwmSetWindowAttribute(h, DWMWA_CLOAK as u32, (&raw const on).cast(), 4) };
+}
+
+/// Keeps maximised windows below a strip `height` points tall across the top of the display Sympony's window
+/// `handle` is on (Settings → General → Keep windows below Sympony: `appbar.rs`); 0 gives the space back.
+///
+/// # Safety
+/// `handle` must be a live HWND of this process, or null when `height` is 0.
+pub unsafe fn reserve_top(handle: *mut c_void, height: f64) {
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    let h = handle as HWND;
+    if height <= 0.0 || h.is_null() {
+        super::appbar::set(None);
+        return;
+    }
+    unsafe {
+        let monitor = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return;
+        }
+        let (mut dpi, mut unused) = (96u32, 0u32);
+        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut unused);
+        let px = (height * dpi.max(96) as f64 / 96.0).round() as i32;
+        let r = info.rcMonitor;
+        super::appbar::set(Some((r.left, r.top, r.right, px)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::state_of;
+    use windows_sys::Win32::Foundation::RECT;
+
+    const DISPLAY: RECT = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+
+    #[test]
+    fn an_app_over_the_whole_display_is_fullscreen() {
+        assert_eq!(state_of("Chrome_WidgetWin_1", "chrome.exe", false, DISPLAY, DISPLAY), "full");
+        assert_eq!(state_of("UnityWndClass", "game.exe", false, RECT { left: -1, top: -1, right: 1921, bottom: 1081 }, DISPLAY), "full");
+    }
+
+    #[test]
+    fn maximised_and_smaller_windows_are_not() {
+        assert_eq!(state_of("Chrome_WidgetWin_1", "chrome.exe", true, RECT { left: -9, top: -9, right: 1929, bottom: 1029 }, DISPLAY), "max");
+        assert_eq!(state_of("Notepad", "notepad.exe", false, RECT { left: 100, top: 100, right: 900, bottom: 700 }, DISPLAY), "normal");
+    }
+
+    #[test]
+    fn windows_own_overlays_over_the_display_are_no_app() {
+        // (the emoji panel, Win+V's clipboard history and the touch keyboard; Start; Search; Alt+Tab and Task view)
+        for (class, program) in [
+            ("Windows.UI.Core.CoreWindow", "TextInputHost.exe"),
+            ("Windows.UI.Core.CoreWindow", "StartMenuExperienceHost.exe"),
+            ("Windows.UI.Core.CoreWindow", "SearchHost.exe"),
+            ("Windows.UI.Core.CoreWindow", "ShellExperienceHost.exe"),
+            ("XamlExplorerHostIslandWindow", "explorer.exe"),
+            ("MultitaskingViewFrame", "explorer.exe"),
+            ("WorkerW", "explorer.exe"),
+            ("Shell_TrayWnd", "explorer.exe"),
+        ] {
+            assert_eq!(state_of(class, program, false, DISPLAY, DISPLAY), "normal", "{class} of {program}");
+        }
+    }
+}

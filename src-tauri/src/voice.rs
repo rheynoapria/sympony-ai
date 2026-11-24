@@ -82,7 +82,12 @@ fn total_ram_bytes() -> u64 {
         }
         mem
     }
-    #[cfg(not(target_os = "macos"))]
+    // the memory installed (16 GB reads 16 GB, as hw.memsize does), so the light model and 1.7b are offered alike
+    #[cfg(target_os = "windows")]
+    {
+        platform::os::system::installed_memory().unwrap_or(8 * 1024 * 1024 * 1024)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         8 * 1024 * 1024 * 1024
     }

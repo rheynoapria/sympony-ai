@@ -87,19 +87,5 @@ unsafe fn value(e: &IUIAutomationElement) -> Option<String> {
 
 /// The file name of process `pid`'s program (`chrome.exe`).
 fn program(pid: u32) -> Option<String> {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
-    // SAFETY: the handle is checked, used for this one query and closed; the buffer outlives the call
-    unsafe {
-        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h.is_null() {
-            return None;
-        }
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) != 0;
-        CloseHandle(h);
-        let path = String::from_utf16_lossy(&buf[..len as usize]);
-        ok.then(|| path.rsplit('\\').next().unwrap_or("").to_string())
-    }
+    super::apps::exe_path(pid).and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
 }

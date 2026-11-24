@@ -26,7 +26,7 @@ export const VOICE_ROWS: readonly Row[] = [
     t: "toggle",
     k: "voiceEnabled",
     label: "Voice dictation",
-    sub: "Speak Indonesian anywhere on your Mac, completely on-device",
+    sub: "Speak Indonesian anywhere on your PC, completely on-device",
     words: "voice suara dikte dictation stt",
   },
   {

@@ -135,6 +135,18 @@ fn memory_history_never_touches_disk() {
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
+#[test]
+fn held_back_during_do_not_disturb_stays_marked() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = History::memory(dir.path());
+    let mut held = note(1, DAY);
+    held["dnd"] = json!(true);
+    h.add(held, DAY, 3, 200);
+    h.add(note(2, DAY), DAY, 3, 200);
+    let items = h.view()["items"].as_array().unwrap().clone();
+    assert_eq!((items[0]["dnd"].clone(), items[1]["dnd"].clone()), (json!(false), json!(true)));
+}
+
 use services::notif::{banner_app, Recent};
 
 #[test]

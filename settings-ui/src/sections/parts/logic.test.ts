@@ -6,6 +6,7 @@ import {
   keptHow,
   locateMessage,
   locateSub,
+  locationSettingsUrl,
   moveTile,
   nextIndex,
   placeName,
@@ -63,6 +64,23 @@ test("locateMessage maps detect results and locateSub reflects busy/current city
     locateSub({ busy: "weather", msg: {} }, "weather", null),
     "Finding your location…"
   );
+});
+
+test("locateMessage and locateSub speak of Windows on Windows", () => {
+  assert.ok(
+    locateMessage({ reason: "denied" }, "windows").text.startsWith(
+      "Windows doesn’t let Sympony use your location."
+    )
+  );
+  assert.ok(locateMessage({ reason: "off" }, "windows").text.startsWith("Location services is off on this PC."));
+  assert.equal(locateMessage({ reason: "off" }, "windows").settings, true);
+  assert.equal(
+    locateMessage(null, "windows").text,
+    "This PC couldn’t find its location right now. Try again in a moment, or search for your city."
+  );
+  assert.ok(locateSub({ busy: "", msg: {} }, "weather", null, "windows").startsWith("Uses Windows’ location service"));
+  assert.equal(locationSettingsUrl("windows"), "ms-settings:privacy-location");
+  assert.ok(locationSettingsUrl("macos").startsWith("x-apple.systempreferences:"));
 });
 
 test("keptHow returns per-OS secret storage hint", () => {

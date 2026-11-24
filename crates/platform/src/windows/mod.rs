@@ -5,9 +5,11 @@
 //! rather than pretending to work. Real Win32 / UI Automation / WinRT code replaces them module by module; keep each
 //! signature as `macos` has it, so the app needs no `cfg` of its own.
 pub mod apps;
+mod appbar;
 mod audio;
 pub mod automation;
 mod brightness;
+mod image;
 pub mod displays;
 pub mod keychain;
 pub mod location;
@@ -18,14 +20,17 @@ pub mod banners;
 mod bluetooth;
 pub mod ax;
 pub mod radios;
+mod readings;
 pub mod calendar;
 pub mod files;
 pub mod media;
 pub mod browser;
 pub mod player;
 mod picker;
+mod privacy;
 pub mod shell;
 pub mod voice;
+pub mod vision;
 mod wifi;
 
 /// Stands for objc2's `MainThreadMarker` (AppKit wants proof of the main thread; the Win32 calls here don't), so the

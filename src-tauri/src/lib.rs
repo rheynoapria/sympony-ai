@@ -43,6 +43,7 @@ mod todosync;
 mod updater;
 mod voice;
 mod watchers;
+mod wm;
 mod youtube;
 
 use commands::App;
@@ -163,6 +164,7 @@ pub fn run() {
             app.manage(ob);
             notch::create(app.handle())?;
             hover::start(app.handle());
+            wm::start(app.handle());
             shell::setup(app.handle())?;
             colorpick::sync_shortcut(app.handle());
             let force_ob = std::env::var("SYMPONY_ONBOARDING").as_deref() == Ok("1");
@@ -194,6 +196,24 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(all_commands!())
-        .run(tauri::generate_context!())
-        .expect("error while running Sympony");
+        .build(tauri::generate_context!())
+        .expect("error while running Sympony")
+        .run(|app, event| {
+            // (the space Keep windows below Sympony took goes back to the other windows, and the notification
+            // pop-ups Sympony turned off come back; the log says how far quitting got)
+            let log = |s: &str| {
+                if let Some(a) = app.try_state::<App>() {
+                    a.log.line(s);
+                }
+            };
+            match event {
+                tauri::RunEvent::ExitRequested { code, .. } => log(&format!("quitting (code {code:?})")),
+                tauri::RunEvent::Exit => {
+                    wm::release();
+                    notif::release(app);
+                    log("quit: the strip's space and the notification pop-ups given back");
+                }
+                _ => {}
+            }
+        });
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/knowns/button";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { t } from "@/lib/i18n";
+import { onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import type { CustomPartProps } from "@/rows/types";
 
@@ -64,7 +65,7 @@ export function ServerBrain({ settings, set }: Pick<CustomPartProps, "settings" 
           label={t("API key")}
           description={
             hasKey
-              ? t("Saved on this Mac, encrypted")
+              ? onMac() ? t("Saved on this Mac, encrypted") : t("Saved on this PC, encrypted")
               : local
                 ? t("Optional for local servers (Ollama, LM Studio)")
                 : t("The key your server gave you")

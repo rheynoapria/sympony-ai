@@ -234,7 +234,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             }
             "floating_chat" => crate::floating_chat::toggle(app),
             "settings" => crate::settings_window::open(app, None),
-            "quit" => app.exit(0),
+            "quit" => {
+                app.state::<App>().log.line("tray: Quit");
+                app.exit(0);
+            }
             _ => {}
         })
         .build(app)?;

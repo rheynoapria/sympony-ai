@@ -132,7 +132,7 @@
     }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
-    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') };
+    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
   }
 
   // ---- what the assistant knows about your day: sent along with each message (Settings → AI can turn it
@@ -1505,7 +1505,7 @@
     const ico = ponyAva(38);
     const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant' && !m.error);
     const bubbleText = (lastAsst && lastAsst.content ? lastAsst.content.replace(/\s+/g, ' ').trim() : '') || _t('Ask anything about your day, tasks, or notes.');
-    el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">${ico}<span style="font-size:9.5px;color:var(--mute);font-weight:700">⌘K</span></div>`
+    el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">${ico}<span style="font-size:9.5px;color:var(--mute);font-weight:700">${N.MAC ? '⌘K' : 'Ctrl K'}</span></div>`
       + `<div style="flex:1;min-width:0;display:flex;flex-direction:column">`
       + `<div class="t1" style="align-self:flex-start;max-width:100%;padding:6px 10px;border-radius:12px 12px 12px 4px;background:var(--pill-hi);font-size:12px" dir="auto">${esc(bubbleText)}</div>`
       + `<div class="row" style="margin-top:auto;height:30px;padding:0 4px 0 11px;border-radius:15px;background:var(--pill);color:var(--mute);font-size:12px">`
@@ -1562,7 +1562,7 @@
         + `<div class="ch-bar"><span class="ch-who" title="${esc(((st.settings && st.settings.ponyName) || 'Pony') + (prov.label ? ' · ' + prov.label : ''))}"><canvas class="ch-pony-canvas" id="chPony" width="34" height="58"></canvas></span>`
         + `<input id="chIn" type="text" placeholder="${esc(_t('Ask anything…'))}" spellcheck="false">`
         + `<button type="button" id="chAutoUi" class="ch-autoui" hidden aria-pressed="false" title="${esc(_t('Auto UI'))}">${fa('wand-magic-sparkles')}<span>${esc(_t('Auto UI'))}</span></button>`
-        + `<button type="button" id="chClip" class="ch-clip" title="${esc(_t('Attach a picture or a file (⌘V pastes a screenshot)'))}">${fa('paperclip')}</button>`
+        + `<button type="button" id="chClip" class="ch-clip" title="${esc(N.MAC ? _t('Attach a picture or a file (⌘V pastes a screenshot)') : _t('Attach a picture or a file (Ctrl+V pastes a screenshot)'))}">${fa('paperclip')}</button>`
         + `<input id="chPick" type="file" multiple hidden accept="image/*,.txt,.md,.csv,.tsv,.json,.log,.xml,.yaml,.yml,.toml,.ini,.html,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.php,.sh,.sql,.pdf">`
         + `<button type="button" id="chSend" class="mini-btn w" style="width:28px;height:28px" title="${esc(_t('Send'))}">${N.ic('up', 'width:12px;height:12px;stroke-width:3')}</button></div>`
         + `</div></div>`;

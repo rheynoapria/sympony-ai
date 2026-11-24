@@ -1,5 +1,5 @@
-//! macOS notifications: a usernoted record → a note, and the history (newest first, read/unseen, pruned by days and
-//! count), kept encrypted in notif-history.json (AES-256-GCM, the key in the Keychain).
+//! Other apps' notifications: a macOS usernoted record or a Windows toast → a note, and the history (newest first,
+//! read/unseen, pruned by days and count), kept encrypted in notif-history.json (AES-256-GCM).
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
@@ -15,6 +15,8 @@ pub struct Note {
     pub subtitle: String,
     pub body: String,
     pub at: i64, // Unix ms
+    /// what the app asked to be given back when it's clicked (a Windows toast's `launch`; none on macOS)
+    pub launch: String,
 }
 
 /// A `record.data` binary plist `{app, date, req: {titl, subt, body}}`; `app_id` from the `app` table wins.
@@ -31,7 +33,73 @@ pub fn parse_record(data: &[u8], app_id: &str) -> Option<Note> {
     let app = if app_id.is_empty() { d.get("app").and_then(|a| a.as_string()).unwrap_or("").to_string() } else { app_id.to_string() };
     // (no date, or none that makes sense: it came now)
     let at = date.filter(|d| *d > 0.0).map(|d| (d as i64 + COCOA_EPOCH) * 1000).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-    Some(Note { app_id: app, title: text("titl"), subtitle: text("subt"), body: text("body"), at })
+    Some(Note { app_id: app, title: text("titl"), subtitle: text("subt"), body: text("body"), at, launch: String::new() })
+}
+
+/// A Windows toast's XML (the payload in Windows' notification database): the first binding's texts, the first one
+/// the title and the rest the body (a line each), an attribution text (`placement="attribution"`, a browser's site)
+/// as the subtitle, and the toast's `launch`, handed back to its app when it's clicked. None when it isn't a toast.
+pub fn parse_toast(xml: &[u8], app_id: &str, at: i64) -> Option<Note> {
+    use quick_xml::events::{BytesStart, Event};
+    use quick_xml::XmlVersion;
+    let attr = |e: &BytesStart, name: &str| -> String {
+        e.try_get_attribute(name).ok().flatten().and_then(|a| a.normalized_value(XmlVersion::Implicit1_0).ok().map(|v| v.into_owned())).unwrap_or_default()
+    };
+    let mut r = quick_xml::Reader::from_str(std::str::from_utf8(xml).ok()?);
+    let (mut toast, mut launch, mut bindings) = (false, String::new(), 0);
+    let (mut texts, mut attribution) = (Vec::<String>::new(), String::new());
+    // inside a text: whether it's the attribution, and what it says so far
+    let mut text: Option<(bool, String)> = None;
+    loop {
+        match r.read_event().ok()? {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "toast" => {
+                toast = true;
+                launch = attr(&e, "launch");
+            }
+            Event::Start(e) if e.name().as_ref() == "binding" => bindings += 1,
+            Event::Start(e) if e.name().as_ref() == "text" && bindings == 1 => text = Some((attr(&e, "placement") == "attribution", String::new())),
+            Event::Text(t) => {
+                if let Some((_, s)) = text.as_mut() {
+                    s.push_str(&t.xml10_content());
+                }
+            }
+            Event::GeneralRef(g) => {
+                if let Some((_, s)) = text.as_mut() {
+                    let name = g.xml10_content();
+                    match g.resolve_char_ref().ok().flatten() {
+                        Some(c) => s.push(c),
+                        None => s.push_str(match name.as_ref() {
+                            "amp" => "&",
+                            "lt" => "<",
+                            "gt" => ">",
+                            "quot" => "\"",
+                            "apos" => "'",
+                            _ => "",
+                        }),
+                    }
+                }
+            }
+            Event::End(e) if e.name().as_ref() == "text" => {
+                if let Some((is_attribution, s)) = text.take() {
+                    let s = s.trim().to_string();
+                    if is_attribution {
+                        attribution = s;
+                    } else if !s.is_empty() {
+                        texts.push(s);
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if !toast {
+        return None;
+    }
+    let mut texts = texts.into_iter();
+    let title = texts.next().unwrap_or_default();
+    let body = texts.collect::<Vec<_>>().join("\n");
+    Some(Note { app_id: app_id.to_string(), title, subtitle: attribution, body, at, launch })
 }
 
 pub struct History {
@@ -91,10 +159,11 @@ impl History {
         let _ = crate::paths::write_private(&path, text.as_bytes());
     }
 
-    /// A shown notification (`{id, aumid, app, title, body, at}`), unread, on top; older than `days` or past `max` go.
+    /// A shown notification (`{id, aumid, app, title, body, at}`, `dnd: true` when Do not disturb held it back),
+    /// unread, on top; older than `days` or past `max` go.
     pub fn add(&mut self, mut n: Value, now: i64, days: i64, max: usize) {
         n["read"] = json!(false);
-        n["dnd"] = json!(false);
+        n["dnd"] = json!(n["dnd"] == true);
         self.items.insert(0, n);
         self.unseen += 1;
         let cutoff = now - days.clamp(1, 90) * DAY_MS;

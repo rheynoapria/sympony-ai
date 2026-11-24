@@ -68,7 +68,11 @@ pub fn call_rich(app: &AppHandle, session: &str, args: &Value) -> Result<ReadRes
         let mut found = ax::find_running_app(req, me);
         let mut win = found.as_ref().and_then(|(p, _, _)| ax::window(*p));
         if found.is_none() || win.is_none() {
+            #[cfg(target_os = "macos")]
             let _ = std::process::Command::new("/usr/bin/open").args(["-a", req]).status();
+            // (Windows has no "open -a": a program by its file name, as Sympony or App Paths know it)
+            #[cfg(target_os = "windows")]
+            ax::open_with(&format!("{}.exe", low.replace(' ', "")), &[]);
             for _ in 0..20 {
                 std::thread::sleep(std::time::Duration::from_millis(120));
                 if let Some(f) = ax::find_running_app(req, me) {
@@ -248,9 +252,19 @@ fn capture_jpeg(app: &AppHandle, pid: i32, win: &ax::El) -> Result<(String, Stri
     Ok((mime, base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
-#[cfg(not(target_os = "macos"))]
+/// A picture of `win` as a JPEG (<= 1280 px), made in memory on Windows (`platform::os::vision`): `("image/jpeg", base64)`.
+#[cfg(target_os = "windows")]
+fn capture_jpeg(_app: &AppHandle, pid: i32, win: &ax::El) -> Result<(String, String), String> {
+    use base64::Engine;
+    let id = ax::window_id_matching(pid, win.frame()).ok_or("The window isn't on screen")?;
+    let picture = platform::os::vision::window(id)?;
+    let jpeg = platform::os::vision::jpeg(&picture, 1280)?;
+    Ok(("image/jpeg".to_string(), base64::engine::general_purpose::STANDARD.encode(jpeg)))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn capture_jpeg(_app: &AppHandle, _pid: i32, _win: &ax::El) -> Result<(String, String), String> {
-    Err("Vision screenshot capture is currently available on macOS only".into())
+    Err("Vision screenshot capture is currently available on macOS and Windows only".into())
 }
 
 /// The text in a picture of `pid`'s window, read on this Mac by Vision (`helper/ocr.js`). The picture is a private
@@ -312,7 +326,16 @@ fn ocr(app: &AppHandle, pid: i32, win: &ax::El) -> Result<Vec<Value>, String> {
     Ok(v.as_array().cloned().unwrap_or_default())
 }
 
-#[cfg(not(target_os = "macos"))]
+/// The text in a picture of `pid`'s window, read on this PC by Windows' text recognition (`platform::os::vision`).
+/// The picture stays in memory and never leaves the PC.
+#[cfg(target_os = "windows")]
+fn ocr(_app: &AppHandle, pid: i32, win: &ax::El) -> Result<Vec<Value>, String> {
+    let id = ax::window_id_matching(pid, win.frame()).ok_or("The window isn't on screen")?;
+    let picture = platform::os::vision::window(id)?;
+    Ok(platform::os::vision::text(&picture)?.into_iter().map(|(t, x, y, w, h)| json!([t, x, y, w, h])).collect())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn ocr(_app: &AppHandle, _pid: i32, _win: &ax::El) -> Result<Vec<Value>, String> {
-    Err("Screen OCR is currently available on macOS only".into())
+    Err("Screen OCR is currently available on macOS and Windows only".into())
 }

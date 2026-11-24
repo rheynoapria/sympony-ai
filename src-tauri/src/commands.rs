@@ -66,10 +66,11 @@ pub fn notch_arrows(want: bool) {
     let _ = want;
 }
 
-/// A HUD while Sympony is out of sight for a fullscreen app: a Mac's notch never hides itself, so it shows anyway.
+/// A HUD while Sympony is out of sight for a fullscreen app: `wm` brings it in for that long (a Mac's notch never
+/// hides itself, so there it shows anyway).
 #[tauri::command]
-pub fn notch_hud(ms: f64) {
-    let _ = ms;
+pub fn notch_hud(handle: tauri::AppHandle, ms: f64) {
+    crate::wm::hud(&handle, ms);
 }
 
 #[tauri::command]
