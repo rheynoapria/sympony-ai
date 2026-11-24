@@ -39,6 +39,50 @@ pub fn default_model(id: &str) -> Option<&'static str> {
     }
 }
 
+/// Low-tier fast model pinned for lightweight non-chat tasks (Feed summaries, Translate, Lyrics) when
+/// running through a local CLI agent without an explicit `model_override`.
+pub fn fast_default_model(id: &str) -> Option<&'static str> {
+    match id {
+        "claude" => Some("haiku"),
+        _ => None,
+    }
+}
+
+/// Command-line arguments for lightweight fast CLI runs (`feed.summarize`, `translate`, `lyrics`):
+/// - Claude Code: pins `--model haiku` (unless `model_override` is given), `--effort low`, and `--max-budget-usd 0.05`
+///   placed safely BEFORE trailing variadic `--tools ""`.
+/// - Codex: adds `-c model_reasoning_effort="low"` before the trailing prompt.
+pub fn fast_args(id: &str, prompt: &str, system: &str, model_override: Option<&str>) -> Vec<String> {
+    let model = model_override
+        .map(str::trim)
+        .filter(|m| !m.is_empty() && !m.starts_with('-'))
+        .or_else(|| fast_default_model(id));
+    let mut a = args(id, prompt, system, model, false);
+    match id {
+        "claude" => {
+            let insert_at = a.iter().position(|x| x == "--tools").unwrap_or(a.len());
+            a.splice(
+                insert_at..insert_at,
+                [
+                    "--effort".to_string(),
+                    "low".into(),
+                    "--max-budget-usd".into(),
+                    "0.05".into(),
+                ],
+            );
+        }
+        "codex" => {
+            let insert_at = a.len().saturating_sub(1);
+            a.splice(
+                insert_at..insert_at,
+                ["-c".to_string(), "model_reasoning_effort=\"low\"".into()],
+            );
+        }
+        _ => {}
+    }
+    a
+}
+
 /// The command line (after the executable) for one answer, read-only. `system` goes in an option where the agent has
 /// one, else at the top of the prompt; the prompt is always the last word and never reads as an option.
 pub fn args(id: &str, prompt: &str, system: &str, model: Option<&str>, web: bool) -> Vec<String> {

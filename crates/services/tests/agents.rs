@@ -271,3 +271,29 @@ fn exec_mcp_tools_shape() {
         assert_eq!(t["inputSchema"]["type"], "object");
     }
 }
+
+#[test]
+fn fast_args_pins_claude_haiku_low_effort_and_low_budget_before_tools() {
+    use services::agents::{fast_args, fast_default_model, with_stream};
+
+    assert_eq!(fast_default_model("claude"), Some("haiku"));
+    let claude = fast_args("claude", "Summarize this", "SYS", None);
+    assert!(claude.windows(2).any(|w| w == ["--model", "haiku"]));
+    assert!(claude.windows(2).any(|w| w == ["--effort", "low"]));
+    assert!(claude.windows(2).any(|w| w == ["--max-budget-usd", "0.05"]));
+    // Variadic `--tools ""` must remain at the very end so it never swallows `--effort` or `--max-budget-usd`
+    assert_eq!(&claude[claude.len() - 2..], ["--tools", ""]);
+
+    // Explicit `feedSummaryModel` override is respected while keeping low effort & low budget
+    let overridden = with_stream("claude", fast_args("claude", "Summarize", "SYS", Some("sonnet")), false);
+    assert!(overridden.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(overridden.windows(2).any(|w| w == ["--effort", "low"]));
+    assert!(overridden.windows(2).any(|w| w == ["--max-budget-usd", "0.05"]));
+    assert!(overridden.windows(2).any(|w| w == ["--output-format", "stream-json"]));
+    assert_eq!(&overridden[overridden.len() - 2..], ["--tools", ""]);
+
+    // Codex fast args sets low reasoning effort before the trailing prompt
+    let codex = fast_args("codex", "Summarize", "SYS", None);
+    assert!(codex.windows(2).any(|w| w == ["-c", "model_reasoning_effort=\"low\""]));
+    assert!(codex.last().unwrap().ends_with("Summarize"));
+}

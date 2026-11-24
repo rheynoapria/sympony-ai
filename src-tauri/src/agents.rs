@@ -2,9 +2,9 @@
 //! in read-only mode from an empty folder, killed after 3 minutes. AI Chat, Translate and the lyrics' extras.
 use serde_json::{json, Value};
 use services::agents::{
-    answer, args, chat_rules_with_caps, claude_user_message, env, lines_answer, lines_prompt,
-    needs_update, prompt, signed_in, supported, tools_for, translate_prompt, with_stream,
-    with_tools, ClaudeEvent, ClaudeStream, AGENTS,
+    answer, args, chat_rules_with_caps, claude_user_message, env, fast_args, fast_default_model,
+    lines_answer, lines_prompt, needs_update, prompt, signed_in, supported, tools_for,
+    translate_prompt, with_stream, with_tools, ClaudeEvent, ClaudeStream, AGENTS,
 };
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -346,14 +346,28 @@ pub(crate) fn ask(app: &AppHandle, key: &str, prompt_text: &str, system: &str, w
 }
 
 /// Fast single-turn, tool-free streaming inference for summaries, translations, and lightweight helpers:
-/// - Own engine (`sympony` / `api`): uses `brain::ask_fast_stream` (`reasoning_effort: "low"` + SSE streaming).
-/// - CLI agent (`claude`, `codex`, etc.): runs read-only without MCP overhead, streaming live tokens when supported (`claude`).
+/// - Own engine (`sympony` / `api`): uses `brain::ask_fast_stream` (`reasoning_effort: "none"` -> `"minimal"` -> `"low"` + SSE streaming).
+/// - Local Claude Code (`claude`): pins low-tier `haiku` (unless `model_override` is explicitly set), `--effort low`,
+///   and `--max-budget-usd 0.05` with live `stream-json` token deltas (falling back automatically if an older `claude` binary
+///   rejects `--effort`/`--max-budget-usd`).
 pub(crate) fn ask_fast(
     app: &AppHandle,
     key: &str,
     prompt_text: &str,
     system: &str,
     model_override: Option<&str>,
+    on_delta: &mut dyn FnMut(&str),
+) -> Result<String, String> {
+    ask_fast_in(app, key, prompt_text, system, model_override, None, on_delta)
+}
+
+fn ask_fast_in(
+    app: &AppHandle,
+    key: &str,
+    prompt_text: &str,
+    system: &str,
+    model_override: Option<&str>,
+    slot: Option<&Mutex<Option<u32>>>,
     on_delta: &mut dyn FnMut(&str),
 ) -> Result<String, String> {
     if crate::brain::on(app) {
@@ -363,76 +377,114 @@ pub(crate) fn ask_fast(
     let id = a["id"].as_str().unwrap_or("");
     let name = a["name"].as_str().unwrap_or(id).to_string();
     let s = app.state::<App>().settings.get();
-    let model = model_override
+    // Explicit override wins; otherwise agents with a dedicated fast low-tier model (`claude` -> `haiku`)
+    // always use that low-tier model rather than inheriting a heavy `opus`/`sonnet` chat model!
+    let effective_model = model_override
         .map(str::trim)
         .filter(|m| !m.is_empty() && !m.starts_with('-'))
         .map(String::from)
+        .or_else(|| fast_default_model(id).map(String::from))
         .or_else(|| s["agentModels"][id].as_str().filter(|m| !m.starts_with('-')).map(String::from));
     let dir = app.state::<App>().data_dir.join("agent");
     let _ = std::fs::create_dir_all(&dir);
-    let mut argv = args(id, prompt_text, system, model.as_deref(), false);
     let envs = env(id);
-    let stream_claude = id == "claude";
-    if stream_claude {
-        argv = with_stream(id, argv, false);
+    let started = Instant::now();
+    let fast_limit = Duration::from_secs(75);
+    let model_tag = effective_model.as_deref().unwrap_or("default");
+    let log = |m: &str| {
+        if id == "claude" {
+            app.state::<App>().log.line(&format!(
+                "ai: fast {id} [model={model_tag}, effort=low, budget=$0.05]: {m} ({:.1} s)",
+                started.elapsed().as_secs_f32()
+            ));
+        } else {
+            app.state::<App>().log.line(&format!(
+                "ai: fast {id} [model={model_tag}]: {m} ({:.1} s)",
+                started.elapsed().as_secs_f32()
+            ));
+        }
+    };
+
+    if id == "claude" {
+        for legacy_fallback in [false, true] {
+            let base_argv = if legacy_fallback {
+                args(id, prompt_text, system, effective_model.as_deref(), false)
+            } else {
+                fast_args(id, prompt_text, system, effective_model.as_deref())
+            };
+            let argv = with_stream(id, base_argv, false);
+            let mut cmd = Command::new(a["path"].as_str().unwrap_or(""));
+            cmd.args(argv).current_dir(&dir).env("PATH", path()).env("NO_COLOR", "1");
+            for (k, v) in &envs {
+                cmd.env(k, v);
+            }
+            platform::process::own_group(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()));
+            let mut child = cmd.spawn().map_err(|e| format!("Couldn’t start {name}: {e}"))?;
+            let pid = child.id();
+            if let Some(sl) = slot {
+                *sl.lock().unwrap() = Some(pid);
+            }
+            let mut err_r = child.stderr.take().unwrap();
+            let stderr_rx = {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let mut buf = vec![];
+                    let _ = (&mut err_r).take(512 << 10).read_to_end(&mut buf);
+                    let _ = tx.send(String::from_utf8_lossy(&buf).to_string());
+                });
+                rx
+            };
+            let r = child.stdout.take().unwrap();
+            let mut parser = ClaudeStream::default();
+            let mut shown: Option<Instant> = None;
+            for line in BufReader::new(r).lines().map_while(Result::ok) {
+                let cancelled = slot.is_some_and(|sl| *sl.lock().unwrap() != Some(pid));
+                if cancelled || started.elapsed() > fast_limit {
+                    platform::process::kill_group(pid);
+                    let _ = child.wait();
+                    if cancelled {
+                        return Err("stopped".into());
+                    }
+                    log("no answer in time");
+                    return Err(format!("{name} didn’t answer in time"));
+                }
+                for ev in parser.feed(&line) {
+                    if let ClaudeEvent::Delta { text, .. } = ev {
+                        if shown.is_none_or(|t| t.elapsed() >= Duration::from_millis(35)) {
+                            shown = Some(Instant::now());
+                            on_delta(&text);
+                        }
+                    }
+                }
+            }
+            let status = child.wait().map_err(|e| e.to_string())?;
+            let err_out = stderr_rx.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
+            platform::process::kill_group(pid);
+            if !legacy_fallback && !status.success() && err_out.to_ascii_lowercase().contains("unknown option") {
+                continue;
+            }
+            return match parser.finish(&err_out, status.success()) {
+                Ok(t) => {
+                    on_delta(&t);
+                    log("answered");
+                    Ok(t)
+                }
+                Err(e) => {
+                    log(&format!("failed: {e}"));
+                    Err(format!("{name}: {e}"))
+                }
+            };
+        }
     }
+
+    let argv = fast_args(id, prompt_text, system, effective_model.as_deref());
     let mut cmd = Command::new(a["path"].as_str().unwrap_or(""));
     cmd.args(argv).current_dir(&dir).env("PATH", path()).env("NO_COLOR", "1");
     for (k, v) in envs {
         cmd.env(k, v);
     }
-    let started = Instant::now();
-    let fast_limit = Duration::from_secs(75);
-    let log = |m: &str| app.state::<App>().log.line(&format!("ai: fast {id}: {m} ({:.1} s)", started.elapsed().as_secs_f32()));
-    if stream_claude {
-        platform::process::own_group(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()));
-        let mut child = cmd.spawn().map_err(|e| format!("Couldn’t start {name}: {e}"))?;
-        let pid = child.id();
-        let mut err_r = child.stderr.take().unwrap();
-        let stderr_rx = {
-            let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let mut buf = vec![];
-                let _ = (&mut err_r).take(512 << 10).read_to_end(&mut buf);
-                let _ = tx.send(String::from_utf8_lossy(&buf).to_string());
-            });
-            rx
-        };
-        let r = child.stdout.take().unwrap();
-        let mut parser = ClaudeStream::default();
-        let mut shown = Instant::now() - Duration::from_secs(1);
-        for line in BufReader::new(r).lines().map_while(Result::ok) {
-            if started.elapsed() > fast_limit {
-                platform::process::kill_group(pid);
-                let _ = child.wait();
-                log("no answer in time");
-                return Err(format!("{name} didn’t answer in time"));
-            }
-            for ev in parser.feed(&line) {
-                if let ClaudeEvent::Delta { text, .. } = ev {
-                    if shown.elapsed() >= Duration::from_millis(50) {
-                        shown = Instant::now();
-                        on_delta(&text);
-                    }
-                }
-            }
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        let err_out = stderr_rx.recv_timeout(Duration::from_secs(1)).unwrap_or_default();
-        platform::process::kill_group(pid);
-        return match parser.finish(&err_out, status.success()) {
-            Ok(t) => {
-                on_delta(&t);
-                log("answered");
-                Ok(t)
-            }
-            Err(e) => {
-                log(&format!("failed: {e}"));
-                Err(format!("{name}: {e}"))
-            }
-        };
-    }
-    match run_capture_in(&mut cmd, fast_limit, None) {
+    match run_capture_in(&mut cmd, fast_limit, slot) {
+        Err(e) if e == "stopped" => Err(e),
         Err(e) if e == "timeout" => {
             log("no answer in time");
             Err(format!("{name} didn’t answer in time"))
@@ -823,11 +875,7 @@ fn lyric_lines(app: &AppHandle, kind: &str, lines: &[String], what: &str) -> Opt
     *slot.lock().unwrap() = None; // (stops the run of this kind going on: it isn't the song playing now)
     let sys = "You transform song lyrics line by line and reply with JSON only.";
     let prompt_str = lines_prompt(lines, what);
-    let t = if crate::brain::on(app) {
-        crate::brain::ask_fast_stream(app, None, sys, &prompt_str, 60, &mut |_| {}).ok()?
-    } else {
-        ask_in(app, "translateAgent", &prompt_str, &[], sys, false, Some(slot), None, false).ok()?.0
-    };
+    let t = ask_fast_in(app, "translateAgent", &prompt_str, sys, None, Some(slot), &mut |_| {}).ok()?;
     let v = Value::from(lines_answer(&t, lines.len())?);
     let mut cache = st.lyrics.lock().unwrap();
     if cache.len() > 500 {
