@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows installer:** The installer and the uninstaller show Sympony's icon rather than NSIS's default one, and `release/build.sh` builds on a PC where `python3` is only the Microsoft Store's alias (it takes the first Python that runs).
+
 ## [0.2.0] - 2026-11-24
 
 ### Added
