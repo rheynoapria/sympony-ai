@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.6] - 2026-11-24
+
+### Added
+- **Google Calendar & Google Tasks OAuth Sync:** Added bidirectional Google Calendar sync (`crates/services/src/gcal.rs`, `src-tauri/src/gcal.rs`, *Settings → Calendar → Google Calendar*) alongside Google Tasks OAuth, letting Sympony display, create, update, and remove Google Calendar events directly from the Calendar module and Pony chat (`#29`).
+- **Pony Tool-Execution Guard:** Added an automatic safety nudge in `services::brain` and agent rules so Pony cannot claim it created, edited, completed, or removed a calendar event or task without actually executing the matching tool in that turn.
+
+### Fixed
+- **Horizontal Trackpad / Wheel Double-Scroll (`#62`):** Replaced the fixed 450 ms wheel cooldown in `frontend/carousel.js` with a momentum-safe single-step recognizer (`NotchKit.createWheelPager`) that locks out the full macOS/Windows trackpad inertial glide tail, ignores diagonal vertical scroll wobbles, and respects `e.defaultPrevented` from inner module controls (Control sliders, AI Usage).
+- **Claude Code AI Usage Auto-Refresh & Keychain Reliability (`#61`):** Automatically refreshes expired, `401/403`, or Keychain-denied Claude Code OAuth tokens via zero-LLM-token `claude -p /usage --no-session-persistence --tools "" --max-turns 1` (5-minute cooldown, full cross-platform PATH resolution), decodes hex-encoded `security -w` Keychain output, probes `CLAUDE_CONFIG_DIR` hashed service names, picks the freshest credential across Keychain and `.credentials.json` without masking Keychain denials, falls back to CLI usage output when Keychain is blocked, and restores `"on this Mac"` wording in *Settings → AI Usage*.
+- **Pony Peek Below Closed Notch (`#60`):** Decoupled Pony's clickable `peekHit` region (`HitMsg::clickable`) from `notch:hover` (`HitMsg::contains`) so approaching or hovering Pony lets it peek calmly without immediately triggering `openOnHover`, upgraded `#ponyPeek` (`84×62`) with `shadow: false`, notch-rim `grip` paws, cheerful `wave` on hover/done, smooth 180 ms leave grace, and removed click-through `pointerleave` flicker.
+- **Windows CI HTTP Test Stability:** Drained request body and sent graceful write-shutdown in `crates/services/tests/http.rs` so loopback redirect tests never hit Windows TCP `RST` (`os error 10053`).
+
 ## [0.2.0-beta.5] - 2026-11-24
 
 ### Added
@@ -119,7 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Voice V1:** On-device Indonesian-first hybrid STT (`Zipformer2-id` live partials + `Qwen3-ASR` Metal final pass) with deterministic KBBI/phonetic post-processing and custom user dictionary.
 - **Security Hardening:** Per-turn taint tracking (including YOLO mode), home-anchored secret & shell-profile protection, `0600`/`0700` data permissions, Hardened Runtime, backup disarming, SSRF-safe redirects, and scrubbed stdio MCP environments.
 
-[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.5...HEAD
+[Unreleased]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.6...HEAD
+[0.2.0-beta.6]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.5...v0.2.0-beta.6
 [0.2.0-beta.5]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.4...v0.2.0-beta.5
 [0.2.0-beta.4]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.3...v0.2.0-beta.4
 [0.2.0-beta.3]: https://github.com/rheynoapria/sympony-ai/compare/v0.2.0-beta.2...v0.2.0-beta.3
