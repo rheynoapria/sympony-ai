@@ -15,6 +15,21 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pony AI (Brain / Eyes / Hands / Auto UI / Skills / MCP)
+        - Voice (Dictation / Voice Command)
+        - Notch UI / Floating Chat / Settings
+        - Modules (Media / Calendar / Todo / Prayer / etc.)
+        - Platform / Updater / Packaging
+        - Security / Privacy
+        - Portal & Docs
+    validations:
+      required: true
+
   - type: textarea
     id: problem
     attributes:

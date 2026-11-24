@@ -10,6 +10,7 @@
 
 <p>
   <a href="https://sympony.enlabs.my.id"><img src="https://img.shields.io/badge/Portal-sympony.enlabs.my.id-7c5dfa?style=for-the-badge" alt="Sympony Portal" /></a>
+  <a href="https://github.com/rheynoapria/sympony-ai/projects"><img src="https://img.shields.io/badge/Roadmap-Live%20Board-9333ea?style=for-the-badge" alt="Sympony Public Roadmap" /></a>
   <a href="https://github.com/rheynoapria/sympony-ai/releases"><img src="https://img.shields.io/github/v/release/rheynoapria/sympony-ai?include_prereleases&label=Release&style=for-the-badge&color=4361ff" alt="Latest Release" /></a>
   <a href="https://github.com/rheynoapria/sympony-ai/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rheynoapria/sympony-ai/ci.yml?branch=beta&label=CI&style=for-the-badge" alt="CI Status" /></a>
   <img src="https://img.shields.io/badge/macOS-Signed%20%26%20Notarized-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Signed & Notarized" />
@@ -24,6 +25,7 @@
   <a href="#-voice-v1--on-device-indonesian-first-dictation">Offline Voice</a> •
   <a href="#-24-oled-notch-modules">Notch Modules</a> •
   <a href="#-platform-support">Platforms</a> •
+  <a href="https://github.com/rheynoapria/sympony-ai/projects">Roadmap</a> •
   <a href="#-security--privacy-by-design">Security</a> •
   <a href="#-getting-started">Build from Source</a>
 </p>

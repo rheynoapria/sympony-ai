@@ -36,6 +36,13 @@ bun run --cwd settings-ui build
 bun test ./frontend/tests
 ```
 
+## Public Roadmap & AI Agent Workflow
+
+All planned features, active work, and release milestones are tracked transparently on the **[Sympony Roadmap](https://github.com/users/rheynoapria/projects/1)** (linked in the repository's **Projects** tab).
+
+- **Using an AI coding agent (Claude Code, Codex, Paseo, Antigravity, Cursor, etc.)?** Read [AGENTS.md](AGENTS.md) first — it defines our GitHub Project board workflow (`Status`, `Area`, `Platform`, `Priority`), `gh project` CLI commands, and macOS ↔ Windows parity rules.
+- **Collaborators managing the board via CLI:** run `gh auth refresh -s project,read:project` once so you (and your coding agent) can list, add, and update items on Project `#1`.
+
 ## Guidelines
 
 - **Branch targeting**: Open feature and bugfix pull requests against **`beta`** (active integration branch). Reserve **`main`** for Stable releases graduated from `beta` and urgent production hotfixes. See [docs/RELEASING.md](docs/RELEASING.md) for our full branching and SemVer standard.

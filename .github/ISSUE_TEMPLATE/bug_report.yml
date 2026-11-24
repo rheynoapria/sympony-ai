@@ -16,8 +16,8 @@ body:
       options:
         - macOS (Apple Silicon)
         - macOS (Intel)
-        - Windows (dev / roadmap)
-        - Linux (dev / roadmap)
+        - Windows 10/11 (x64 Beta)
+        - Linux (roadmap / source build)
     validations:
       required: true
 
@@ -34,13 +34,14 @@ body:
     attributes:
       label: Affected Area
       options:
-        - Notch UI / Modules
-        - Pony AI Assistant (Brain / Skills / Memory / MCP)
-        - Pony Eyes & Hands / Ask AI
-        - Voice Dictation (STT / Dictionary / Trigger)
-        - Notifications / Media / YouTube Mode
-        - Settings & Onboarding
-        - Security / Permissions / Build
+        - Pony AI (Brain / Skills / Memory / MCP / Paseo Bridge)
+        - Pony Eyes, Hands & Auto UI
+        - Voice (Dictation / Voice Command / Auto UI)
+        - Notch UI / Floating Chat / Settings
+        - Modules (Media / YouTube / Calendar / Todo / Prayer / etc.)
+        - Platform / Updater / Release Build
+        - Security / Permissions / Privacy
+        - Web Portal / Docs
         - Other
     validations:
       required: true
