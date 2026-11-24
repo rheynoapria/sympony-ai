@@ -80,7 +80,7 @@ fn version_string(path: &Path, key: &str) -> Option<String> {
 }
 
 /// (id, name) for a program, remembered for later.
-fn named(path: &Path) -> (String, String) {
+pub(crate) fn named(path: &Path) -> (String, String) {
     let id = id_of(path);
     let mut seen = SEEN.lock().unwrap();
     let seen = seen.get_or_insert_with(Seen::default);
@@ -94,7 +94,7 @@ fn named(path: &Path) -> (String, String) {
     (id, name)
 }
 
-fn class_of(w: HWND) -> String {
+pub(crate) fn class_of(w: HWND) -> String {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
     let mut buf = [0u16; 64];
     // SAFETY: the buffer and its length
@@ -110,7 +110,7 @@ fn pid_of_window(w: HWND) -> u32 {
 }
 
 /// The process of the app a top-level window shows: a Store app's own, inside ApplicationFrameHost's frame.
-fn app_pid(w: HWND) -> u32 {
+pub(crate) fn app_pid(w: HWND) -> u32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::EnumChildWindows;
     let frame = pid_of_window(w);
     if class_of(w) != "ApplicationFrameWindow" {
@@ -138,7 +138,7 @@ fn app_pid(w: HWND) -> u32 {
 
 /// The windows the taskbar shows, frontmost first: visible, on this desktop (not cloaked), not owned by another
 /// window, not a tool window, with a title.
-fn app_windows() -> Vec<HWND> {
+pub(crate) fn app_windows() -> Vec<HWND> {
     use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindow, GetWindowLongW, GetWindowTextLengthW, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW};
     unsafe extern "system" fn each(h: HWND, out: LPARAM) -> BOOL {
@@ -236,7 +236,7 @@ fn app_path(id: &str) -> Option<PathBuf> {
 
 /// Where a program id's file is: the one last seen in front or open, else the one registered under App Paths (the
 /// installed app of that name), else one running now.
-fn exe_for(id: &str) -> Option<PathBuf> {
+pub(crate) fn exe_for(id: &str) -> Option<PathBuf> {
     let id = id.to_lowercase();
     if id == OWN_ID {
         return std::env::current_exe().ok();
@@ -330,4 +330,26 @@ pub fn open_apps() -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// The apps with a window on the taskbar, frontmost first: (pid, id, name), each once (its frontmost window's). Not
+/// Sympony itself.
+pub(crate) fn app_list() -> Vec<(i32, String, String)> {
+    let mine = std::process::id();
+    let mut out: Vec<(i32, String, String)> = Vec::new();
+    for w in app_windows() {
+        let pid = app_pid(w);
+        if pid == mine || out.iter().any(|(p, _, _)| *p == pid as i32) {
+            continue;
+        }
+        if let Some((id, name)) = exe_path(pid).map(|p| named(&p)) {
+            out.push((pid as i32, id, name));
+        }
+    }
+    out
+}
+
+/// A program's version (its ProductVersion), by id.
+pub(crate) fn version(id: &str) -> Option<String> {
+    version_string(&exe_for(id)?, "ProductVersion")
 }
