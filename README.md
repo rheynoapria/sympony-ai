@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="brand/banner.png" alt="Sympony — Your Desktop Notch, Reimagined with Local AI & Voice" width="100%" />
+<img src="brand/banner.png" alt="Sympony, the Desktop AI Companion: all your apps, in symphony, right in your notch" width="100%" />
 
 <br />
 
