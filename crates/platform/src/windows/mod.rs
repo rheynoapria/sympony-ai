@@ -30,6 +30,7 @@ mod picker;
 mod privacy;
 pub mod shell;
 pub mod voice;
+pub mod vision;
 mod wifi;
 
 /// Stands for objc2's `MainThreadMarker` (AppKit wants proof of the main thread; the Win32 calls here don't), so the
