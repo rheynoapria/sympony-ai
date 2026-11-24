@@ -397,6 +397,25 @@ fn refresh(app: &AppHandle) -> Value {
 
     let merged = merge_and_dedupe(all_items, MAX_ITEMS_TOTAL);
 
+    // Emit & persist feed items immediately so the UI is snappy (~2s), then warm missing publisher
+    // favicons in the background and re-emit when authentic icons arrive.
+    let v = {
+        let mut cache = feed_state.cache.lock().unwrap();
+        if !merged.is_empty() || errors.is_empty() {
+            cache.items = merged.clone();
+        }
+        cache.errors = errors;
+        cache.updated_at = now_ms;
+        save_cache(app, &cache);
+        payload_from(&cache)
+    };
+    app.state::<App>().log.line(&format!(
+        "feed: refreshed {} items ({} errors)",
+        v["items"].as_array().map(|a| a.len()).unwrap_or(0),
+        v["errors"].as_object().map(|m| m.len()).unwrap_or(0)
+    ));
+    let _ = app.emit("feed", &v);
+
     // Collect authentic favicon hosts we still need (Indonesian news portals, custom RSS, & Google News publishers)
     let mut needed_hosts: Vec<String> = Vec::new();
     {
@@ -427,55 +446,52 @@ fn refresh(app: &AppHandle) -> Value {
         }
     }
 
-    let fetched_icons: Vec<(String, Option<String>)> = if needed_hosts.is_empty() {
-        vec![]
-    } else {
-        std::thread::scope(|scope| {
-            let handles: Vec<_> = needed_hosts
-                .into_iter()
-                .map(|host| {
-                    scope.spawn(move || {
-                        let url = format!("https://{host}");
-                        let ico = fetch_origin_favicon(&url);
-                        (host, ico)
+    if !needed_hosts.is_empty() {
+        let bg = app.clone();
+        let active_hosts: HashSet<String> = merged.iter().map(|i| i.icon_host.clone()).collect();
+        std::thread::spawn(move || {
+            let fetched_icons: Vec<(String, Option<String>)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = needed_hosts
+                    .into_iter()
+                    .map(|host| {
+                        scope.spawn(move || {
+                            let url = format!("https://{host}");
+                            let ico = fetch_origin_favicon(&url);
+                            (host, ico)
+                        })
                     })
-                })
-                .collect();
-            handles.into_iter().filter_map(|h| h.join().ok()).collect()
-        })
-    };
-
-    let v = {
-        let mut cache = feed_state.cache.lock().unwrap();
-        let mut failed = feed_state.failed_icons.lock().unwrap();
-        for (host, ico) in fetched_icons {
-            if let Some(data_uri) = ico {
-                cache.favicons.insert(host, data_uri);
-            } else {
-                failed.insert(host);
+                    .collect();
+                handles.into_iter().filter_map(|h| h.join().ok()).collect()
+            });
+            let mut added = 0usize;
+            let next_v = {
+                let st = bg.state::<Feed>();
+                let mut cache = st.cache.lock().unwrap();
+                let mut failed = st.failed_icons.lock().unwrap();
+                for (host, ico) in fetched_icons {
+                    if let Some(data_uri) = ico {
+                        cache.favicons.insert(host, data_uri);
+                        added += 1;
+                    } else {
+                        failed.insert(host);
+                    }
+                }
+                if cache.favicons.len() > MAX_FAVICONS_CACHED {
+                    cache.favicons.retain(|k, _| active_hosts.contains(k));
+                }
+                if added > 0 {
+                    save_cache(&bg, &cache);
+                    Some(payload_from(&cache))
+                } else {
+                    None
+                }
+            };
+            if let Some(payload) = next_v {
+                let _ = bg.emit("feed", &payload);
             }
-        }
-        // Keep favicon cache bounded
-        if cache.favicons.len() > MAX_FAVICONS_CACHED {
-            let active_hosts: HashSet<String> = merged.iter().map(|i| i.icon_host.clone()).collect();
-            cache.favicons.retain(|k, _| active_hosts.contains(k));
-        }
-        // Keep old items if every single source failed (e.g. temporarily offline)
-        if !merged.is_empty() || errors.is_empty() {
-            cache.items = merged;
-        }
-        cache.errors = errors;
-        cache.updated_at = now_ms;
-        save_cache(app, &cache);
-        payload_from(&cache)
-    };
+        });
+    }
 
-    app.state::<App>().log.line(&format!(
-        "feed: refreshed {} items ({} errors)",
-        v["items"].as_array().map(|a| a.len()).unwrap_or(0),
-        v["errors"].as_object().map(|m| m.len()).unwrap_or(0)
-    ));
-    let _ = app.emit("feed", &v);
     v
 }
 
@@ -519,6 +535,10 @@ fn test_feed_url(url: &str) -> Value {
 
 fn effective_summary_lang(app: &AppHandle) -> String {
     let s = app.state::<App>().settings.get();
+    let feed_pref = s["feedSummaryLang"].as_str().unwrap_or("auto").trim();
+    if !feed_pref.is_empty() && feed_pref != "auto" {
+        return feed_pref.to_string();
+    }
     let pref = s["language"].as_str().unwrap_or("auto");
     if pref != "auto" && !pref.trim().is_empty() {
         return pref.to_string();
@@ -535,7 +555,7 @@ fn effective_summary_lang(app: &AppHandle) -> String {
     }
 }
 
-/// Summarizes a feed item into 3 crisp Pony bullet points (cached locally so re-opens cost 0 tokens).
+/// Summarizes a feed item into 3 crisp Pony bullet points (cached locally per language so re-opens cost 0 tokens).
 fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
     let id = args.first().and_then(Value::as_str).unwrap_or("").trim();
     let url = args.get(1).and_then(Value::as_str).unwrap_or("").trim();
@@ -543,21 +563,33 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
     let source = args.get(3).and_then(Value::as_str).unwrap_or("Feed").trim();
     let snippet = args.get(4).and_then(Value::as_str).unwrap_or("").trim();
     let force = args.get(5).and_then(Value::as_bool).unwrap_or(false);
+    let explicit_lang = args.get(6).and_then(Value::as_str).map(str::trim).filter(|l| !l.is_empty() && *l != "auto");
 
     if title.is_empty() && url.is_empty() {
         return json!({ "ok": false, "error": "Missing article title or URL." });
     }
-    let cache_key = if !id.is_empty() {
+    let lang = explicit_lang
+        .map(String::from)
+        .unwrap_or_else(|| effective_summary_lang(app));
+    let base_id = if !id.is_empty() {
         id.to_string()
     } else {
         stable_id("sum", url, title)
     };
+    let cache_key = format!("{base_id}:{lang}");
 
     if !force {
-        if let Some(hit) = app.state::<Feed>().cache.lock().unwrap().summaries.get(&cache_key).cloned() {
+        let hit = {
+            let feed_state = app.state::<Feed>();
+            let cached = feed_state.cache.lock().unwrap().summaries.get(&cache_key).cloned();
+            cached
+        };
+        if let Some(hit) = hit {
             return json!({
                 "ok": true,
-                "id": cache_key,
+                "id": base_id,
+                "key": cache_key,
+                "lang": lang,
                 "summary": hit.summary,
                 "bullets": hit.bullets,
                 "source": hit.source,
@@ -586,7 +618,6 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
         body_text = snippet.to_string();
     }
 
-    let lang = effective_summary_lang(app);
     let (system, user_prompt) = summary_prompt(title, source, url, &body_text, &lang);
     // Run with session=None so zero tools/exec/hands are ever exposed to untrusted web article text!
     match crate::agents::ask(app, "chatAgent", &user_prompt, &system, false) {
@@ -616,7 +647,9 @@ fn summarize_item(app: &AppHandle, args: &[Value]) -> Value {
             }
             json!({
                 "ok": true,
-                "id": cache_key,
+                "id": base_id,
+                "key": cache_key,
+                "lang": lang,
                 "summary": trimmed,
                 "bullets": bullets,
                 "source": src_label,

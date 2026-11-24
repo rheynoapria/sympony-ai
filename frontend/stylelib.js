@@ -223,6 +223,32 @@
         pack: 'bento',
       },
     ],
+    feed: [
+      {
+        id: 'bento',
+        title: 'Reader + Pony',
+        sub: 'Two-column live feed stream with filter chips and Pony Summary panel',
+        height: 272,
+        surface: 'oled',
+        pack: 'bento',
+      },
+      {
+        id: 'headlines',
+        title: 'Compact Ticker',
+        sub: 'Borderless 2-column headline cards with quick inline Pony summaries',
+        height: 162,
+        surface: 'borderless',
+        pack: 'compact',
+      },
+      {
+        id: 'focus',
+        title: 'Briefing Spotlight',
+        sub: 'Hero story and 3-bullet Pony briefing left with Next Up queue right',
+        height: 192,
+        surface: 'borderless',
+        pack: 'minimal',
+      },
+    ],
   };
 
   const QUICK_PACKS = {
@@ -230,19 +256,19 @@
       title: 'Bento Studio',
       sub: 'Rich multi-card layouts (272 px)',
       cardStyle: { surface: 'oled', radius: 'rounded', density: 'balanced' },
-      styles: { prayer: 'bento', home: 'bento', weather: 'bento', calendar: 'bento', pomodoro: 'bento', control: 'bento' },
+      styles: { prayer: 'bento', home: 'bento', weather: 'bento', calendar: 'bento', pomodoro: 'bento', control: 'bento', feed: 'bento' },
     },
     compact: {
       title: 'Compact OLED',
       sub: 'Sleek borderless horizontal strips (~152 px)',
       cardStyle: { surface: 'borderless', radius: 'rounded', density: 'compact' },
-      styles: { prayer: 'timeline', home: 'strip', weather: 'horizon', calendar: 'today', pomodoro: 'digital', control: 'compact' },
+      styles: { prayer: 'timeline', home: 'strip', weather: 'horizon', calendar: 'today', pomodoro: 'digital', control: 'compact', feed: 'headlines' },
     },
     minimal: {
       title: 'Minimal Focus',
       sub: 'Big typography, low clutter (~136 px)',
       cardStyle: { surface: 'outline', radius: 'soft', density: 'balanced' },
-      styles: { prayer: 'focus', home: 'cover', weather: 'minimal', calendar: 'week', pomodoro: 'strip', control: 'minimal' },
+      styles: { prayer: 'focus', home: 'cover', weather: 'minimal', calendar: 'week', pomodoro: 'strip', control: 'minimal', feed: 'focus' },
     },
   };
 

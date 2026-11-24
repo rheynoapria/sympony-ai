@@ -7,6 +7,7 @@ export const FEED_KEYS = [
   "feedCustomUrls",
   "feedRefreshMinutes",
   "feedPonySummary",
+  "feedSummaryLang",
 ] as const;
 
 export const FEED_ROWS: readonly Row[] = [
@@ -58,5 +59,20 @@ export const FEED_ROWS: readonly Row[] = [
     k: "feedPonySummary",
     label: "Summarize with Pony",
     sub: "Show a one-click Pony Summary panel with 3 key takeaways for any story (cached locally so re-opening costs zero tokens)",
+  },
+  {
+    t: "select",
+    k: "feedSummaryLang",
+    label: "Summary language",
+    sub: "Choose which language Pony uses when summarizing articles",
+    words: "bahasa ringkasan language summary indonesia english",
+    options: [
+      ["auto", "Follow Sympony language"],
+      ["id", "Bahasa Indonesia"],
+      ["en", "English"],
+      ["original", "Match article language"],
+      ["ms", "Bahasa Melayu"],
+      ["ja", "Japanese (日本語)"],
+    ],
   },
 ];

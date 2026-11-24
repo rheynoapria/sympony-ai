@@ -357,6 +357,90 @@ function StyleSchematic({ modId, styleId }: { modId: string; styleId: string }) 
   }
 
   // Pomodoro
+  if (modId === "feed") {
+    const violet = "#a78bfa";
+    const orange = "#ff6600";
+    if (styleId === "headlines") {
+      return (
+        <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+          <rect width="180" height="68" rx="8" fill={bg} />
+          {[8, 30, 56, 86].map((x, idx) => (
+            <rect key={x} x={x} y="8" width={idx === 0 ? 18 : 22} height="6" rx="3" fill={idx === 0 ? fg : tile} />
+          ))}
+          <rect x="8" y="19" width="80" height="20" rx="5" fill={tile} />
+          <rect x="12" y="23" width="8" height="8" rx="2" fill={orange} />
+          <rect x="24" y="23" width="52" height="4" rx="1.5" fill={fg} />
+          <rect x="24" y="30" width="38" height="3" rx="1.5" fill={dim} />
+          <rect x="92" y="19" width="80" height="20" rx="5" fill={tile} />
+          <rect x="96" y="23" width="8" height="8" rx="2" fill={sky} />
+          <rect x="108" y="23" width="52" height="4" rx="1.5" fill={fg} />
+          <rect x="108" y="30" width="36" height="3" rx="1.5" fill={dim} />
+          <rect x="8" y="43" width="80" height="19" rx="5" fill={tile} />
+          <rect x="12" y="47" width="8" height="8" rx="2" fill={fg} opacity="0.85" />
+          <rect x="24" y="47" width="50" height="4" rx="1.5" fill={fg} />
+          <rect x="24" y="54" width="34" height="3" rx="1.5" fill={dim} />
+          <rect x="92" y="43" width="80" height="19" rx="5" fill={tile} />
+          <rect x="96" y="47" width="8" height="8" rx="2" fill={red} />
+          <rect x="108" y="47" width="48" height="4" rx="1.5" fill={fg} />
+          <rect x="108" y="54" width="32" height="3" rx="1.5" fill={violet} opacity="0.8" />
+        </svg>
+      );
+    }
+    if (styleId === "focus") {
+      return (
+        <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+          <rect width="180" height="68" rx="8" fill={bg} />
+          <rect x="8" y="8" width="9" height="9" rx="2.5" fill={orange} />
+          <rect x="21" y="10" width="46" height="4.5" rx="2" fill={violet} />
+          <rect x="8" y="21" width="96" height="7" rx="2.5" fill={fg} />
+          {[33, 41, 49].map((y, idx) => (
+            <g key={y}>
+              <circle cx="11" cy={y + 2} r="1.8" fill={violet} />
+              <rect x="16" y={y} width={idx === 2 ? 72 : 84} height="3.5" rx="1.5" fill={dim} opacity="0.95" />
+            </g>
+          ))}
+          <rect x="8" y="56" width="24" height="6" rx="3" fill={tile} />
+          <rect x="36" y="56" width="32" height="6" rx="3" fill="rgba(167,139,250,0.32)" />
+          <line x1="112" y1="10" x2="112" y2="58" stroke={dim} strokeWidth="1" opacity="0.7" />
+          {[10, 23, 36, 49].map((y, idx) => (
+            <g key={y}>
+              <rect x="118" y={y} width="54" height="10" rx="3.5" fill={idx === 0 ? "rgba(167,139,250,0.22)" : tile} />
+              <rect x="122" y={y + 3} width="40" height="3.5" rx="1.5" fill={idx === 0 ? fg : dim} />
+            </g>
+          ))}
+        </svg>
+      );
+    }
+    return (
+      <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
+        <rect width="180" height="68" rx="8" fill={bg} />
+        <rect x="6" y="6" width="98" height="56" rx="7" fill={tile} />
+        {[11, 29, 49, 71].map((x, idx) => (
+          <rect key={x} x={x} y="10" width={idx === 0 ? 14 : 16} height="5" rx="2.5" fill={idx === 0 ? fg : bg} />
+        ))}
+        {[19, 32, 45].map((y, idx) => (
+          <g key={y}>
+            <rect x="11" y={y} width="88" height="10" rx="3.5" fill={idx === 0 ? "rgba(167,139,250,0.2)" : bg} />
+            <rect x="14" y={y + 2} width="6" height="6" rx="1.5" fill={idx === 0 ? orange : idx === 1 ? sky : red} />
+            <rect x="23" y={y + 2.5} width="56" height="3" rx="1.2" fill={fg} opacity={idx === 0 ? 1 : 0.75} />
+            <rect x="23" y={y + 6.5} width="32" height="2" rx="1" fill={dim} />
+          </g>
+        ))}
+        <rect x="109" y="6" width="65" height="56" rx="7" fill="rgba(139,92,246,0.18)" stroke="rgba(167,139,250,0.35)" strokeWidth="0.8" />
+        <rect x="115" y="11" width="38" height="4" rx="1.5" fill={violet} />
+        <rect x="115" y="19" width="52" height="4.5" rx="1.5" fill={fg} />
+        {[28, 35, 42].map((y) => (
+          <g key={y}>
+            <circle cx="117" cy={y + 1.5} r="1.5" fill={violet} />
+            <rect x="121" y={y} width="45" height="3" rx="1.2" fill={dim} />
+          </g>
+        ))}
+        <rect x="115" y="51" width="24" height="7" rx="3" fill={violet} opacity="0.45" />
+        <rect x="143" y="51" width="24" height="7" rx="3" fill={tile} />
+      </svg>
+    );
+  }
+
   if (styleId === "digital") {
     return (
       <svg viewBox="0 0 180 68" className="h-16 w-full rounded-[8px]" aria-hidden="true">
