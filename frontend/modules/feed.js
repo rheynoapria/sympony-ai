@@ -8,6 +8,12 @@
   let selectedId = '';
   let tickerPreviewOpen = false;
   let refreshing = false;
+  let savedListScroll = 0;
+  let savedGridScroll = 0;
+  let savedQueueScroll = 0;
+  let savedChipsScroll = 0;
+  let lastScrollFilter = 'all';
+  let hoverPrefetchTimer = null;
   const summarizing = new Set();
   const sumErrors = {};
   const sumStreams = {};
@@ -86,7 +92,43 @@
     if (!it || !it.id || !it.url || prefetchedIds.has(it.id)) return;
     if (cachedSummaryFor(feedData().summaries, it.id)) return;
     prefetchedIds.add(it.id);
-    api.svc('feed', 'prefetch', it.id, it.url).catch(() => {});
+    api.svc('feed', 'prefetch', it.id, it.url, it.title || '').catch(() => {});
+  }
+
+  function captureScrollState() {
+    if (!page) return;
+    const listEl = $('.fd-list', page);
+    if (listEl) savedListScroll = listEl.scrollTop;
+    const gridEl = $('.fd-ticker-grid', page);
+    if (gridEl) savedGridScroll = gridEl.scrollTop;
+    const qEl = $('.fd-spot-q', page);
+    if (qEl) savedQueueScroll = qEl.scrollTop;
+    const chipsEl = $('.fd-chips', page);
+    if (chipsEl) savedChipsScroll = chipsEl.scrollLeft;
+  }
+
+  function restoreScrollState() {
+    if (!page) return;
+    const listEl = $('.fd-list', page);
+    if (listEl) {
+      listEl.scrollTop = savedListScroll;
+      listEl.onscroll = () => { savedListScroll = listEl.scrollTop; };
+    }
+    const gridEl = $('.fd-ticker-grid', page);
+    if (gridEl) {
+      gridEl.scrollTop = savedGridScroll;
+      gridEl.onscroll = () => { savedGridScroll = gridEl.scrollTop; };
+    }
+    const qEl = $('.fd-spot-q', page);
+    if (qEl) {
+      qEl.scrollTop = savedQueueScroll;
+      qEl.onscroll = () => { savedQueueScroll = qEl.scrollTop; };
+    }
+    const chipsEl = $('.fd-chips', page);
+    if (chipsEl) {
+      chipsEl.scrollLeft = savedChipsScroll;
+      chipsEl.onscroll = () => { savedChipsScroll = chipsEl.scrollLeft; };
+    }
   }
 
   function storyThumb(item, images, favicons, cls = '', icoSize = 15) {
@@ -211,7 +253,7 @@
     delete sumErrors[busyKey];
     delete sumStreams[busyKey];
     summarizing.add(busyKey);
-    render();
+    if (!updateBentoRightInPlace()) render();
     try {
       const res = await api.svc('feed', 'summarize', it.id, it.url, it.title, it.publisher || it.sourceName, it.snippet || '', !!force, lang);
       if (res && res.ok) {
@@ -227,7 +269,7 @@
     } finally {
       delete sumStreams[busyKey];
       summarizing.delete(busyKey);
-      render();
+      if (!updateBentoRightInPlace()) render();
     }
   }
 
@@ -331,8 +373,86 @@
       + `</div></div>`;
   }
 
+  function bentoRightHtml(sel, favicons, summaries, ponyOn) {
+    if (!sel) {
+      return `<div class="fd-sum-empty">${SPARKLE_SVG}<span>${esc(_t('Select any story to read or summarize with Pony'))}</span></div>`;
+    }
+    const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
+    const sumTag = cachedSum
+      ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
+      : '';
+    return `<div class="fd-sum-head">`
+      + `<span class="fd-sum-lbl">${SPARKLE_SVG}<span>${esc(ponyOn ? _t('Pony Summary') : _t('Preview'))}</span></span>`
+      + `<span class="fd-sum-src t1">${esc(sel.publisher || sel.sourceName)}</span>`
+      + `${ponyOn ? langPillHtml() : ''}${sumTag}</div>`
+      + `<div class="fd-sum-title-row">${sourceIcon(sel, favicons, 16)}<div class="fd-sum-title">${esc(sel.title)}</div></div>`
+      + `<div class="fd-sum-body">${bodyHtml}</div>`
+      + `<div class="fd-sum-foot">`
+      + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
+      + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
+      + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
+      + `</div>`;
+  }
+
+  function bindDetailActions(sel, ponyOn) {
+    if (!page) return;
+    const langBtn = $('#fdSumLang', page);
+    if (langBtn) langBtn.onclick = cycleSummaryLang;
+    if (!sel) return;
+    if (ponyOn) prefetchStory(sel);
+    const runBtn = $('#fdRunSum', page);
+    if (runBtn) runBtn.onclick = () => triggerSummarize(sel, false);
+    const retryBtn = $('#fdRetrySum', page);
+    if (retryBtn) retryBtn.onclick = () => triggerSummarize(sel, true);
+    const regenBtn = $('#fdRegenSum', page);
+    if (regenBtn) regenBtn.onclick = () => triggerSummarize(sel, true);
+    const aiSetBtn = $('#fdAiSet', page);
+    if (aiSetBtn) aiSetBtn.onclick = () => api.openSettings('ai');
+    const bmBtn = $('#fdSaveBm', page);
+    if (bmBtn) bmBtn.onclick = () => saveToBookmarks(sel);
+    const askBtn = $('#fdAskPony', page);
+    if (askBtn) askBtn.onclick = () => askPonyAbout(sel);
+    const openBtn = $('#fdOpenUrl', page);
+    if (openBtn) openBtn.onclick = () => { api.openExternal(sel.url); N.closeNotch(); };
+  }
+
+  // Updates ONLY `.fd-right` + row selection/button badges in Bento mode so `.fd-list` DOM & scroll position never jump!
+  function updateBentoRightInPlace() {
+    if (!page || page.dataset.style !== 'bento') return false;
+    const rightEl = $('.fd-right', page);
+    const listEl = $('.fd-list', page);
+    if (!rightEl || !listEl) return false;
+    const d = feedData();
+    const allItems = Array.isArray(d.items) ? d.items : [];
+    const items = filteredItems(allItems);
+    const favicons = d.favicons || {};
+    const summaries = d.summaries || {};
+    const ponyOn = !st.settings || st.settings.feedPonySummary !== false;
+    const sel = items.find((i) => i.id === selectedId) || items[0] || null;
+    if (sel) selectedId = sel.id;
+    const curLang = effectiveSummaryLang();
+
+    $$('.fd-row', listEl).forEach((row) => {
+      const id = row.dataset.id || '';
+      row.classList.toggle('on', !!sel && id === sel.id);
+      const sumBtn = $('[data-sum]', row);
+      if (sumBtn) {
+        const hasSum = !!cachedSummaryFor(summaries, id);
+        const isBusy = summarizing.has(`${id}:${curLang}`);
+        sumBtn.classList.toggle('has', hasSum);
+        sumBtn.classList.toggle('busy', isBusy);
+        sumBtn.innerHTML = isBusy ? SPINNER_SVG : SPARKLE_SVG;
+      }
+    });
+
+    rightEl.innerHTML = bentoRightHtml(sel, favicons, summaries, ponyOn);
+    bindDetailActions(sel, ponyOn);
+    return true;
+  }
+
   function render() {
     if (!page) return;
+    captureScrollState();
     const style = window.StyleLib ? StyleLib.styleIdFor(st.settings, 'feed') : 'bento';
     page.dataset.style = style;
 
@@ -345,6 +465,12 @@
 
     const defs = filterDefs(allItems);
     if (!defs.some((f) => f.id === activeFilter)) activeFilter = 'all';
+    if (activeFilter !== lastScrollFilter) {
+      savedListScroll = 0;
+      savedGridScroll = 0;
+      savedQueueScroll = 0;
+      lastScrollFilter = activeFilter;
+    }
     const items = filteredItems(allItems);
 
     if (!selectedId || !items.some((i) => i.id === selectedId)) {
@@ -453,31 +579,13 @@
         }).join('') + `</div>`;
       }
 
-      let rightHtml = '';
-      if (!sel) {
-        rightHtml = `<div class="fd-sum-empty">${SPARKLE_SVG}<span>${esc(_t('Select any story to read or summarize with Pony'))}</span></div>`;
-      } else {
-        const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
-        const sumTag = cachedSum
-          ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
-          : '';
-        rightHtml = `<div class="fd-sum-head">`
-          + `<span class="fd-sum-lbl">${SPARKLE_SVG}<span>${esc(ponyOn ? _t('Pony Summary') : _t('Preview'))}</span></span>`
-          + `<span class="fd-sum-src t1">${esc(sel.publisher || sel.sourceName)}</span>`
-          + `${ponyOn ? langPillHtml() : ''}${sumTag}</div>`
-          + `<div class="fd-sum-title-row">${sourceIcon(sel, favicons, 16)}<div class="fd-sum-title">${esc(sel.title)}</div></div>`
-          + `<div class="fd-sum-body">${bodyHtml}</div>`
-          + `<div class="fd-sum-foot">`
-          + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
-          + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
-          + `</div>`;
-      }
-
+      const rightHtml = bentoRightHtml(sel, favicons, summaries, ponyOn);
       page.innerHTML = `<div class="fd-grid">`
         + `<div class="c fd-left">${barHtml}${listHtml}</div>`
         + `<div class="c fd-right">${rightHtml}</div></div>`;
     }
+
+    restoreScrollState();
 
     // ---- Shared event wiring across all 3 styles
     bindThumbFallbacks(page);
@@ -492,8 +600,6 @@
     if (emptyRef) emptyRef.onclick = doRefresh;
     const emptySet = $('#fdEmptySet', page);
     if (emptySet) emptySet.onclick = () => api.openSettings('feed');
-    const langBtn = $('#fdSumLang', page);
-    if (langBtn) langBtn.onclick = cycleSummaryLang;
     const closeSheet = $('#fdCloseSheet', page);
     if (closeSheet) closeSheet.onclick = () => { tickerPreviewOpen = false; render(); };
 
@@ -509,11 +615,21 @@
     $$('.fd-row, .fd-tcard', page).forEach((row) => {
       const it = items.find((x) => x.id === row.dataset.id);
       if (!it) return;
+      if (ponyOn) {
+        row.onmouseenter = () => {
+          clearTimeout(hoverPrefetchTimer);
+          hoverPrefetchTimer = setTimeout(() => prefetchStory(it), 120);
+        };
+      }
       row.onclick = (e) => {
         if (e.target.closest('button')) return;
         selectedId = it.id;
-        if (style === 'headlines') tickerPreviewOpen = true;
-        render();
+        if (style === 'headlines') {
+          tickerPreviewOpen = true;
+          render();
+          return;
+        }
+        if (!updateBentoRightInPlace()) render();
       };
       row.ondblclick = () => {
         api.openExternal(it.url);
@@ -521,6 +637,13 @@
       };
     });
     $$('.fd-qrow', page).forEach((row) => {
+      const it = items.find((x) => x.id === row.dataset.id);
+      if (ponyOn && it) {
+        row.onmouseenter = () => {
+          clearTimeout(hoverPrefetchTimer);
+          hoverPrefetchTimer = setTimeout(() => prefetchStory(it), 120);
+        };
+      }
       row.onclick = () => { selectedId = row.dataset.id || ''; render(); };
     });
     $$('[data-sum]', page).forEach((b) => {
@@ -532,23 +655,7 @@
       b.onclick = (e) => { e.stopPropagation(); if (it) saveToBookmarks(it); };
     });
 
-    if (sel) {
-      if (ponyOn) prefetchStory(sel);
-      const runBtn = $('#fdRunSum', page);
-      if (runBtn) runBtn.onclick = () => triggerSummarize(sel, false);
-      const retryBtn = $('#fdRetrySum', page);
-      if (retryBtn) retryBtn.onclick = () => triggerSummarize(sel, true);
-      const regenBtn = $('#fdRegenSum', page);
-      if (regenBtn) regenBtn.onclick = () => triggerSummarize(sel, true);
-      const aiSetBtn = $('#fdAiSet', page);
-      if (aiSetBtn) aiSetBtn.onclick = () => api.openSettings('ai');
-      const bmBtn = $('#fdSaveBm', page);
-      if (bmBtn) bmBtn.onclick = () => saveToBookmarks(sel);
-      const askBtn = $('#fdAskPony', page);
-      if (askBtn) askBtn.onclick = () => askPonyAbout(sel);
-      const openBtn = $('#fdOpenUrl', page);
-      if (openBtn) openBtn.onclick = () => { api.openExternal(sel.url); N.closeNotch(); };
-    }
+    bindDetailActions(sel, ponyOn);
   }
 
   // ---- 2×1 Dashboard card

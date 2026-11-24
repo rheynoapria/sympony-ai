@@ -612,21 +612,21 @@ fn refresh(app: &AppHandle) -> Value {
 
     // Pre-warm article text for top 2 newest stories in RAM so first interactive click starts streaming at 0 ms HTTP wait
     {
-        let top_two: Vec<(String, String)> = {
+        let top_two: Vec<(String, String, String)> = {
             let st = app.state::<Feed>();
             let cache = st.cache.lock().unwrap();
             cache
                 .items
                 .iter()
                 .take(2)
-                .map(|i| (i.id.clone(), i.url.clone()))
+                .map(|i| (i.id.clone(), i.url.clone(), i.title.clone()))
                 .collect()
         };
         if !top_two.is_empty() {
             let bg = app.clone();
             std::thread::spawn(move || {
-                for (id, url) in top_two {
-                    let _ = fetch_or_get_article_text(&bg, &id, &url);
+                for (id, url, title) in top_two {
+                    let _ = fetch_or_get_article_text(&bg, &id, &url, &title);
                 }
             });
         }
@@ -857,10 +857,10 @@ fn fetch_hn_discussion_context(hn_id: u64) -> String {
     parts.join("\n\n")
 }
 
-/// Fetches & extracts clean lead article text (or GitHub raw README) with a bounded `3.8s` timeout and
-/// caches it in RAM (`prefetched_texts`) so selecting a story makes subsequent summarization instant.
-fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str) -> (String, bool) {
-    if url.is_empty() {
+/// Fetches & extracts clean lead article text (or GitHub raw README / Google News fallback) with a bounded timeout
+/// and caches it in RAM (`prefetched_texts`) so selecting/hovering a story makes subsequent summarization start at 0 ms wait.
+fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str, title: &str) -> (String, bool) {
+    if url.is_empty() && title.is_empty() {
         return (String::new(), false);
     }
     if !base_id.is_empty() {
@@ -882,9 +882,9 @@ fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str) -> (Stri
     if let Some((owner, repo)) = github_repo_slug(url) {
         for readme_name in ["README.md", "readme.md", "README.rst"] {
             let raw_url = format!("https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{readme_name}");
-            if let Ok((200, _, bytes)) = services::http::get_public_bytes_timeout(&raw_url, 160 << 10, Duration::from_millis(2800)) {
+            if let Ok((200, _, bytes)) = services::http::get_public_bytes_timeout(&raw_url, 128 << 10, Duration::from_millis(2600)) {
                 let md = String::from_utf8_lossy(&bytes);
-                let trimmed_md: String = md.chars().take(2800).collect();
+                let trimmed_md: String = md.chars().take(1900).collect();
                 if trimmed_md.chars().count() >= 60 {
                     out_text = format!("Repository {owner}/{repo} README:\n{trimmed_md}");
                     from_article = true;
@@ -894,7 +894,7 @@ fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str) -> (Stri
         }
     }
 
-    if out_text.is_empty() && services::http::is_public_url(url) && host_of(url) != "news.google.com" {
+    if out_text.is_empty() && !url.is_empty() && services::http::is_public_url(url) && host_of(url) != "news.google.com" {
         if let Ok((200, ct, bytes)) = services::http::get_public_bytes_timeout(url, ARTICLE_FETCH_MAX_BYTES, ARTICLE_FETCH_TIMEOUT) {
             let low_ct = ct.to_ascii_lowercase();
             if low_ct.contains("text/") || low_ct.contains("html") || low_ct.contains("xml") || low_ct.is_empty() {
@@ -913,12 +913,24 @@ fn fetch_or_get_article_text(app: &AppHandle, base_id: &str, url: &str) -> (Stri
                         }
                     }
                 }
-                let extracted = extract_article_text(&html, 2900);
+                let extracted = extract_article_text(&html, 1900);
                 if extracted.chars().count() >= 45 {
                     out_text = extracted;
                     from_article = true;
                 }
             }
+        }
+    }
+
+    if out_text.chars().count() < 120 && !base_id.starts_with("hn-") {
+        if let Some(web_extra) = crate::brain::fetch_article_fallback(app, url, title) {
+            let trimmed: String = web_extra.chars().take(1800).collect();
+            out_text = if out_text.is_empty() {
+                trimmed
+            } else {
+                format!("{out_text}\n\n{trimmed}")
+            };
+            from_article = true;
         }
     }
 
@@ -1024,7 +1036,7 @@ fn summarize_item(app: &AppHandle, args: &[Value], interactive: bool) -> Value {
     // Fetch article/README text (0 ms if prefetched!) AND Hacker News discussion IN PARALLEL (capped <= 3.8s total!)
     let hn_num = base_id.strip_prefix("hn-").and_then(|n| n.parse::<u64>().ok());
     let ((article_text, mut from_article), hn_ctx) = std::thread::scope(|scope| {
-        let art_job = scope.spawn(|| fetch_or_get_article_text(app, &base_id, url));
+        let art_job = scope.spawn(|| fetch_or_get_article_text(app, &base_id, url, title));
         let hn_job = scope.spawn(move || hn_num.map(fetch_hn_discussion_context).unwrap_or_default());
         (
             art_job.join().unwrap_or_else(|_| (String::new(), false)),
@@ -1037,10 +1049,10 @@ fn summarize_item(app: &AppHandle, args: &[Value], interactive: bool) -> Value {
         sections.push(article_text);
     }
 
-    // Sympony AI `/v1/fetch` or `/v1/search` enrichment when direct HTTP text is thin (e.g. Google News / JS SPA)
-    if sections.iter().map(|s| s.chars().count()).sum::<usize>() < 160 && hn_ctx.chars().count() < 160 {
+    // Sympony AI `/v1/fetch` or `/v1/search` enrichment for HN stories whose target page & comments were both thin
+    if sections.iter().map(|s| s.chars().count()).sum::<usize>() < 120 && hn_ctx.chars().count() < 120 && hn_num.is_some() {
         if let Some(web_extra) = crate::brain::fetch_article_fallback(app, url, title) {
-            sections.push(web_extra);
+            sections.push(web_extra.chars().take(1800).collect());
             from_article = true;
         }
     }
@@ -1165,7 +1177,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     reg.add("feed.prefetch", Box::new(move |_, a| {
         let id = a.first().and_then(Value::as_str).unwrap_or("").trim().to_string();
         let url = a.get(1).and_then(Value::as_str).unwrap_or("").trim().to_string();
-        if !id.is_empty() && !url.is_empty() {
+        let title = a.get(2).and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if !id.is_empty() && (!url.is_empty() || !title.is_empty()) {
             let already = {
                 let st = h.state::<Feed>();
                 let lang = effective_summary_lang(&h);
@@ -1176,7 +1189,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             if !already {
                 let bg = h.clone();
                 std::thread::spawn(move || {
-                    let _ = fetch_or_get_article_text(&bg, &id, &url);
+                    let _ = fetch_or_get_article_text(&bg, &id, &url, &title);
                 });
             }
         }

@@ -41,8 +41,8 @@ pub struct Brain {
     learned: std::sync::Mutex<std::collections::HashMap<String, usize>>,
     /// the chat each run belongs to (recall leaves it out)
     chat_of: std::sync::Mutex<std::collections::HashMap<String, String>>,
-    /// `(base|model)` endpoints that rejected `"reasoning_effort"` with HTTP 400/422 so we never resend it twice
-    no_reasoning_effort: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Fastest accepted `reasoning_effort` tier per `(base|model)` (`0="none"`, `1="minimal"`, `2="low"`, `3=omit`)
+    fast_effort_level: std::sync::Mutex<std::collections::HashMap<String, u8>>,
 }
 
 /// The chat a run (session) belongs to, "" when unknown.
@@ -654,10 +654,10 @@ pub fn upkeep(app: &AppHandle, chat: &str, all: Vec<Value>) {
 }
 
 /// Low-latency single-turn streaming call WITHOUT tools (`feed.summarize`, `translate`, `lyrics`, chat `small` notes):
-/// - Requests `"reasoning_effort": "low"` so reasoning/thinking models don't spend 25–40s generating 1,500 hidden CoT
-///   tokens for a 3-bullet summary or translation. If a strict custom endpoint rejects `"reasoning_effort"` (HTTP 400/422),
-///   remembers `(base|model)` in `no_reasoning_effort` and immediately retries cleanly without it.
-/// - Streams SSE deltas live via `on_delta` (~20 Hz) so the UI renders partial output in `< 1s` TTFT.
+/// - Cascades `reasoning_effort` from `"none"` (0 thinking tokens) -> `"minimal"` -> `"low"` -> omitted on HTTP 400/422,
+///   caching the fastest supported tier per `(base|model)` in `fast_effort_level` so reasoning models don't burn 10–40s
+///   generating hidden CoT tokens before emitting visible bullets.
+/// - Streams SSE deltas live via `on_delta` (instant on first token, ~28 Hz thereafter).
 pub fn ask_fast_stream(
     app: &AppHandle,
     model_override: Option<&str>,
@@ -673,12 +673,23 @@ pub fn ask_fast_stream(
     };
     let (base, key_name, key) = key(app)?;
     let effort_key = format!("{base}|{chosen_model}");
-    let mut use_effort = !app
+    let mut level = app
         .state::<Brain>()
-        .no_reasoning_effort
+        .fast_effort_level
         .lock()
         .unwrap()
-        .contains(&effort_key);
+        .get(&effort_key)
+        .copied()
+        .unwrap_or(0);
+
+    let effort_for = |lvl: u8| -> Option<&'static str> {
+        match lvl {
+            0 => Some("none"),
+            1 => Some("minimal"),
+            2 => Some("low"),
+            _ => None,
+        }
+    };
 
     let messages = json!([
         { "role": "system", "content": system },
@@ -686,36 +697,47 @@ pub fn ask_fast_stream(
     ]);
 
     let mut retries = 0u32;
+    let mut ttft_secs: Option<f32> = None;
+    let mut was_sse = false;
+
     let reply = retrying(app, None, &mut retries, &mut || {
         loop {
+            let eff = effort_for(level);
             let mut b = json!({
                 "model": chosen_model,
                 "messages": messages,
                 "stream": true,
             });
-            if use_effort {
-                b["reasoning_effort"] = json!("low");
+            if let Some(e_val) = eff {
+                b["reasoning_effort"] = json!(e_val);
             }
-            if use_effort && !services::brain::is_local_url(&base) {
+            if level < 3 && !services::brain::is_local_url(&base) {
                 b["stream_options"] = json!({ "include_usage": true });
             }
             let mut st = services::brain::Stream::default();
-            let mut shown = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            let mut shown: Option<std::time::Instant> = None;
+            let call_t0 = std::time::Instant::now();
             let r = services::http::bearer_stream(
                 &format!("{base}/v1/chat/completions"),
                 &key,
                 &b,
                 secs,
                 &mut |d| {
-                    if st.feed(d) && shown.elapsed() >= std::time::Duration::from_millis(50) {
-                        shown = std::time::Instant::now();
-                        on_delta(&st.text);
+                    if st.feed(d) {
+                        if ttft_secs.is_none() {
+                            ttft_secs = Some(call_t0.elapsed().as_secs_f32());
+                        }
+                        if shown.is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(35)) {
+                            shown = Some(std::time::Instant::now());
+                            on_delta(&st.text);
+                        }
                     }
                     true
                 },
             );
             match r {
                 Ok((s, text)) if (200..300).contains(&s) && text.is_empty() => {
+                    was_sse = true;
                     if !st.text.is_empty() {
                         on_delta(&st.text);
                     }
@@ -727,18 +749,20 @@ pub fn ask_fast_stream(
                 Ok((s, text)) => {
                     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
                     if (200..300).contains(&s) {
+                        was_sse = false;
                         if let Some(full) = v["choices"][0]["message"]["content"].as_str().filter(|t| !t.is_empty()) {
+                            ttft_secs = Some(call_t0.elapsed().as_secs_f32());
                             on_delta(full);
                         }
                         return Ok(v);
                     }
-                    if use_effort && matches!(s, 400 | 422) {
+                    if level < 3 && matches!(s, 400 | 422) {
+                        level += 1;
                         app.state::<Brain>()
-                            .no_reasoning_effort
+                            .fast_effort_level
                             .lock()
                             .unwrap()
-                            .insert(effort_key.clone());
-                        use_effort = false;
+                            .insert(effort_key.clone(), level);
                         continue;
                     }
                     return Err(failed(app, key_name, s, &v));
@@ -748,6 +772,7 @@ pub fn ask_fast_stream(
         }
     });
 
+    let eff_label = effort_for(level).unwrap_or("off");
     let _ = tauri::Emitter::emit(app, "brain:used", ());
     match reply {
         Ok(v) => {
@@ -758,8 +783,9 @@ pub fn ask_fast_stream(
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let ttft_str = ttft_secs.map(|t| format!("{t:.2}s")).unwrap_or_else(|| "-".into());
             app.state::<App>().log.line(&format!(
-                "ai: fast {chosen_model}: {} ({retries} retries, {tok_in} tokens in, {tok_out} out, {:.1} s)",
+                "ai: fast {chosen_model} [effort={eff_label}, sse={was_sse}, ttft={ttft_str}]: {} ({retries} retries, {tok_in} tokens in, {tok_out} out, {:.1} s)",
                 if text.is_empty() { "empty" } else { "answered" },
                 started.elapsed().as_secs_f32()
             ));
@@ -771,7 +797,7 @@ pub fn ask_fast_stream(
         }
         Err(e) => {
             app.state::<App>().log.line(&format!(
-                "ai: fast {chosen_model}: failed: {e} ({:.1} s)",
+                "ai: fast {chosen_model} [effort={eff_label}]: failed: {e} ({:.1} s)",
                 started.elapsed().as_secs_f32()
             ));
             Err(e)
