@@ -196,10 +196,12 @@ pub fn run() {
         .invoke_handler(all_commands!())
         .build(tauri::generate_context!())
         .expect("error while running Sympony")
-        .run(|_, event| {
-            // (the space Keep windows below Sympony took goes back to the other windows)
+        .run(|app, event| {
+            // (the space Keep windows below Sympony took goes back to the other windows, and the notification
+            // pop-ups Sympony turned off come back)
             if let tauri::RunEvent::Exit = event {
                 wm::release();
+                notif::release(app);
             }
         });
 }

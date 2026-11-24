@@ -1,10 +1,17 @@
-//! macOS notifications under the notch: banners read the moment they appear (Accessibility, every 250 ms) and,
-//! with "Don't show them twice" (`notifHideBanners`), closed so they show only in Sympony; usernoted's database read
-//! every second for silent/missed notifications, while rows for already-shown banners only populate app metadata. Each new one is sent as `notif` and kept in the history.
+//! Other apps' notifications under the notch. macOS: banners read the moment they appear (Accessibility, every
+//! 250 ms) and, with "Don't show them twice" (`notifHideBanners`), closed so they show only in Sympony; usernoted's
+//! database read every second for silent/missed notifications, while rows for already-shown banners only populate app
+//! metadata. Windows: its notification database read every second (each toast once), and with Follow Do not disturb
+//! (`notifFollowDnd`) the ones that come during it are held back: into the history only, a quiet pop-up with
+//! "Quiet pop-ups during Do not disturb" (`notif:quiet`), and how many when it ends (`notif:dndSummary`); with "Don't
+//! show them twice" each app whose notification Sympony shows has Windows' own pop-up turned off (its "Show
+//! notification banners"), given back as it was when that's turned off, notifications are, or Sympony quits (kept in
+//! `notif-banners.json`, so a crash gives them back at the next start). Each new one is sent as `notif` and kept in the
+//! history.
 use base64::Engine;
 use platform::os::{apps, notifications};
 use serde_json::{json, Value};
-use services::notif::{banner_app, parse_record, History, Recent};
+use services::notif::{banner_app, History, Recent};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -18,6 +25,78 @@ pub struct Notifs {
     access: Mutex<Value>,
     apps: Mutex<HashMap<String, (String, Value)>>, // bundle id → (name, icon data URL or null)
     recent: Mutex<Recent>,                          // banners shown, until their database row comes
+    /// Windows: the apps whose own pop-ups Sympony turned off, with what they were (None: never set)
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    banners_off: Mutex<Option<Vec<(String, Option<u32>)>>>,
+}
+
+/// Windows' own pop-ups (Don't show them twice): turned off for an app, and all given back.
+#[cfg(target_os = "windows")]
+mod banners_off {
+    use super::Notifs;
+    use crate::commands::App;
+    use tauri::{AppHandle, Manager};
+
+    fn file(app: &AppHandle) -> std::path::PathBuf {
+        app.state::<App>().data_dir.join("notif-banners.json")
+    }
+
+    fn with<T>(app: &AppHandle, f: impl FnOnce(&mut Vec<(String, Option<u32>)>) -> T) -> T {
+        let n = app.state::<Notifs>();
+        let mut list = n.banners_off.lock().unwrap();
+        let list = list.get_or_insert_with(|| std::fs::read(file(app)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default());
+        f(list)
+    }
+
+    fn save(app: &AppHandle, list: &[(String, Option<u32>)]) {
+        if list.is_empty() {
+            let _ = std::fs::remove_file(file(app));
+        } else if let Ok(b) = serde_json::to_vec(list) {
+            let _ = std::fs::write(file(app), b);
+        }
+    }
+
+    /// Off for this app, unless it already is (by Sympony, or by the user).
+    pub fn hide(app: &AppHandle, aumid: &str) {
+        use platform::os::notifications::{banner_setting, set_banner_setting};
+        if aumid.is_empty() {
+            return;
+        }
+        with(app, |list| {
+            if list.iter().any(|(a, _)| a == aumid) {
+                return;
+            }
+            let was = banner_setting(aumid);
+            if was == Some(0) || !set_banner_setting(aumid, Some(0)) {
+                return;
+            }
+            list.push((aumid.to_string(), was));
+            save(app, list);
+        });
+    }
+
+    /// Each one back as it was.
+    pub fn restore(app: &AppHandle) {
+        with(app, |list| {
+            if list.is_empty() {
+                return;
+            }
+            for (aumid, was) in list.drain(..) {
+                platform::os::notifications::set_banner_setting(&aumid, was);
+            }
+            save(app, list);
+        });
+    }
+}
+
+/// Sympony quitting: Windows' own pop-ups come back.
+pub fn release(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    if app.try_state::<Notifs>().is_some() {
+        banners_off::restore(app);
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = app;
 }
 
 /// The history's key, in `notif-history.key` (readable by this account only), made the first time. Not in the
@@ -96,9 +175,10 @@ fn app_info(app: &AppHandle, id: &str) -> (String, Value) {
     }).clone()
 }
 
-/// One new notification: under the notch (`popup`) and into the history.
+/// One new notification: under the notch (`popup`) and into the history (`dnd`: held back by Do not disturb).
+/// `launch`: what its app asked to be given back when it's clicked (Windows).
 #[allow(clippy::too_many_arguments)]
-fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: Value, title: &str, subtitle: &str, body: &str, at: i64, popup: bool) {
+fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: Value, title: &str, subtitle: &str, body: &str, at: i64, popup: bool, launch: &str, dnd: bool) {
     let title: String = match (title.is_empty(), subtitle.is_empty()) {
         (_, true) => title.to_string(),
         (true, false) => subtitle.to_string(),
@@ -108,13 +188,19 @@ fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: 
     let body: String = body.chars().take(500).collect();
     if popup {
         let msg = json!({ "id": id, "hid": id, "app": name, "title": title, "body": body, "icon": icon, "at": at,
-            "aumid": aumid, "launch": "", "activation": "" });
+            "aumid": aumid, "launch": launch, "activation": "" });
         let _ = app.emit("notif", &msg);
     }
     if s["notifHistory"] != false {
         let days = s["notifHistoryDays"].as_i64().unwrap_or(3);
         let max = s["notifHistoryMax"].as_u64().unwrap_or(200) as usize;
-        let item = json!({ "id": id, "aumid": aumid, "app": name, "title": title, "body": body, "at": at });
+        let mut item = json!({ "id": id, "aumid": aumid, "app": name, "title": title, "body": body, "at": at });
+        if !launch.is_empty() {
+            item["launch"] = json!(launch);
+        }
+        if dnd {
+            item["dnd"] = json!(true);
+        }
         with_history(app, |h| h.add(item, chrono::Utc::now().timestamp_millis(), days, max));
         changed(app);
     }
@@ -156,7 +242,7 @@ fn watch_banners(app: AppHandle) {
                 if s["notifHideBanners"] != false {
                     banners::close(&b);
                 }
-                deliver(&app, &s, &id, &aumid, &name, icon, &b.title, &b.subtitle, &b.body, now, true);
+                deliver(&app, &s, &id, &aumid, &name, icon, &b.title, &b.subtitle, &b.body, now, true, "", false);
             }
         }
     });
@@ -169,16 +255,32 @@ pub fn start(app: &AppHandle) {
     std::thread::spawn(move || {
         let mut last: Option<i64> = None;
         let mut reader = notifications::Reader::new();
+        // (held back during Do not disturb since it began: said when it ends)
+        let mut held = 0u64;
         loop {
             std::thread::sleep(Duration::from_secs(1));
             let s = app.state::<App>().settings.snapshot();
             if s["notifHistory"] == false && drop_history(&app) {
                 let _ = app.emit("notif:history", json!({ "unseen": 0, "rev": chrono::Utc::now().timestamp_millis() }));
             }
+            // (Don't show them twice off, or notifications: Windows' own pop-ups come back)
+            #[cfg(target_os = "windows")]
+            let hide_banners = s["notifEnabled"] == true && s["notifHideBanners"] != false;
+            #[cfg(target_os = "windows")]
+            if !hide_banners {
+                banners_off::restore(&app);
+            }
             if s["notifEnabled"] != true {
                 reader.close();
                 last = None;
+                held = 0;
                 continue;
+            }
+            // Windows: Do not disturb on, and Sympony follows it
+            let hold = cfg!(target_os = "windows") && s["notifFollowDnd"] != false && platform::os::system::focus_on();
+            if !hold && held > 0 {
+                let _ = app.emit("notif:dndSummary", json!({ "count": held }));
+                held = 0;
             }
             let rows = match last {
                 None => reader.max_rowid().map(|m| {
@@ -209,7 +311,10 @@ pub fn start(app: &AppHandle) {
             let shown_from = rows.len().saturating_sub(5); // a pile after sleep: the newest five pop up, all are kept
             for (i, r) in rows.iter().enumerate() {
                 last = Some(r.id);
-                let Some(n) = parse_record(&r.data, &r.app) else { continue };
+                #[cfg(target_os = "windows")]
+                let Some(n) = services::notif::parse_toast(&r.data, &r.app, r.at) else { continue };
+                #[cfg(not(target_os = "windows"))]
+                let Some(n) = services::notif::parse_record(&r.data, &r.app) else { continue };
                 if n.title.is_empty() && n.body.is_empty() && n.subtitle.is_empty() {
                     continue;
                 }
@@ -223,10 +328,32 @@ pub fn start(app: &AppHandle) {
                     continue;
                 }
                 let (name, icon) = app_info(&app, &n.app_id);
-                deliver(&app, &s, &r.id.to_string(), &n.app_id, &name, icon, &n.title, &n.subtitle, &n.body, n.at, i >= shown_from);
+                if hold {
+                    held += 1;
+                    if s["notifDndPeek"] == true {
+                        let _ = app.emit("notif:quiet", json!({ "icon": icon }));
+                    }
+                }
+                deliver(&app, &s, &r.id.to_string(), &n.app_id, &name, icon, &n.title, &n.subtitle, &n.body, n.at, i >= shown_from && !hold, &n.launch, hold);
+                #[cfg(target_os = "windows")]
+                if hide_banners {
+                    banners_off::hide(&app, &n.app_id);
+                }
             }
         }
     });
+}
+
+/// The permission's page: macOS' System Settings pane; on Windows nothing needs granting, its Notifications settings
+/// open instead.
+fn open_settings(mac_pane: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = mac_pane;
+        platform::os::shell::open("ms-settings:notifications");
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = std::process::Command::new("/usr/bin/open").arg(mac_pane).status();
 }
 
 /// The `notif` service (Windows' Do not disturb methods are excluded on a Mac).
@@ -240,7 +367,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     }));
     reg.add("notif.grantBanners", Box::new(|_, _| {
         if !platform::os::banners::trusted(true) {
-            let _ = std::process::Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility").status();
+            open_settings("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
         }
         Ok(Value::Null)
     }));
@@ -258,12 +385,16 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         }
     }
     reg.add("notif.grant", Box::new(|_, _| {
-        let _ = std::process::Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").status();
+        open_settings("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles");
         Ok(Value::Null)
     }));
+    // a click: its app, given what it asked for (`launch`, Windows) as Windows' own click does
     reg.add("notif.open", Box::new(move |_, args| {
         let bundle = id(&args);
         if !bundle.is_empty() {
+            #[cfg(target_os = "windows")]
+            notifications::activate(&bundle, args.get(1).and_then(Value::as_str).unwrap_or(""));
+            #[cfg(not(target_os = "windows"))]
             let _ = std::process::Command::new("/usr/bin/open").args(["-b", &bundle]).status();
         }
         Ok(Value::Null)
@@ -312,11 +443,23 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         changed(&a);
         Ok(Value::Null)
     }));
-    // Settings → Notifications → Send a test: a macOS notification of Sympony's own (osascript posts it)
-    reg.add("notif.test", Box::new(|_, _| {
-        let _ = std::process::Command::new("/usr/bin/osascript")
-            .args(["-e", "display notification \"Notifications from your apps show under the notch like this.\" with title \"Sympony test\""])
-            .status();
+    // Settings → Notifications → Send a test: a notification of Sympony's own (macOS: osascript posts it; Windows: a
+    // toast as Sympony, with its icon)
+    let _a = app.clone();
+    reg.add("notif.test", Box::new(move |_, _| {
+        const TEXT: &str = "Notifications from your apps show under the notch like this.";
+        #[cfg(target_os = "windows")]
+        {
+            let icon = _a.state::<App>().data_dir.join("sympony-toast.png");
+            if !icon.exists() {
+                if let Some(png) = apps::icon_png("app.sympony", 256.0) {
+                    let _ = std::fs::write(&icon, png);
+                }
+            }
+            notifications::post("app.sympony", "Sympony", icon.exists().then_some(icon.as_path()), "Sympony test", TEXT);
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = std::process::Command::new("/usr/bin/osascript").args(["-e", &format!("display notification \"{TEXT}\" with title \"Sympony test\"")]).status();
         Ok(Value::Null)
     }));
     // (Telegram on a Mac posts macOS notifications: nothing to hint)

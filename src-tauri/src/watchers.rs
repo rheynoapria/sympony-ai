@@ -236,7 +236,11 @@ pub fn register_system(reg: &mut services::Registry, app: &AppHandle) {
         Ok(json!({ "ok": ok }))
     }));
     // the Control tab's Focus tile where an app may switch Do not disturb (Windows; on a Mac it opens Focus' settings)
-    reg.add("notif.dnd", Box::new(|_, _| Ok(json!({ "on": system::focus_on() }))));
+    // (known: it could be read; mode: how strict, as the notification history shows it)
+    reg.add("notif.dnd", Box::new(|_, _| {
+        let on = system::focus_on();
+        Ok(json!({ "known": true, "on": on, "mode": if on { "priority" } else { "off" } }))
+    }));
     reg.add("notif.setDnd", Box::new(|_, a| Ok(json!({ "ok": system::set_focus(a.first().and_then(Value::as_bool).unwrap_or(false)) }))));
     let h = app.clone();
     reg.add("system.toggle", Box::new(move |ctx, a| {
