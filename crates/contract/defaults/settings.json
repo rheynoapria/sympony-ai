@@ -99,6 +99,8 @@
  "expandedHeight": 196,
  "expandedHeightTall": 268,
  "expandedWidth": 660,
+ "feedAutoSummary": false,
+ "feedAutoSummaryBatch": 5,
  "feedCustomUrls": [],
  "feedEnabled": true,
  "feedGoogleTopics": [

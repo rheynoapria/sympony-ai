@@ -26,6 +26,10 @@
     rss: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5.5" fill="#F59E0B"/><circle cx="7.5" cy="16.5" r="2" fill="#fff"/><path d="M5.5 10.5a8 8 0 0 1 8 8M5.5 5.8a12.7 12.7 0 0 1 12.7 12.7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>',
   };
 
+  // Clean modern 4-point AI sparkle & smooth ring spinner (replaces spinning magic wand)
+  const SPARKLE_SVG = '<svg class="fd-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5c.3 4.3 1.7 5.7 6 6-4.3.3-5.7 1.7-6 6-.3-4.3-1.7-5.7-6-6 4.3-.3 5.7-1.7 6-6zm7.3 11.2c.18 2.1.85 2.75 2.9 2.9-2.05.18-2.72.85-2.9 2.9-.18-2.05-.85-2.72-2.9-2.9 2.05-.15 2.72-.8 2.9-2.9z"/></svg>';
+  const SPINNER_SVG = '<svg class="fd-ring-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-opacity="0.22" stroke-width="2.4"/><path d="M20.5 12a8.5 8.5 0 0 0-8.5-8.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+
   const LANG_CYCLE = ['auto', 'id', 'en', 'original'];
   const LANG_SHORT = {
     auto: () => _t('Auto'),
@@ -219,7 +223,7 @@
     let bodyHtml = '';
     if (busy) {
       bodyHtml = `<div class="fd-sum-load"><div class="fd-shimmer"></div><div class="fd-shimmer w85"></div><div class="fd-shimmer w70"></div>`
-        + `<span class="sub">${fa('wand-magic-sparkles')} ${esc(_t('Pony is reading and summarizing…'))}</span></div>`;
+        + `<span class="fd-sum-status"><span class="fd-spark-pulse">${SPARKLE_SVG}</span><span>${esc(_t('Pony is reading and summarizing…'))}</span></span></div>`;
     } else if (ponyOn && cachedSum && Array.isArray(cachedSum.bullets) && cachedSum.bullets.length) {
       bodyHtml = `<ul class="fd-bullets sc-y">${cachedSum.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>`;
     } else if (ponyOn && cachedSum && cachedSum.summary) {
@@ -233,7 +237,7 @@
         ? `<div class="fd-snip sc-y">${esc(sel.snippet)}</div>`
         : `<div class="fd-snip sub">${esc(_t('Tap Summarize with Pony for 3 key takeaways, or open the original article.'))}</div>`;
       const cta = ponyOn
-        ? `<button type="button" class="fd-pony-cta" id="fdRunSum">${fa('wand-magic-sparkles')}<span>${esc(_t('Summarize with Pony'))}</span></button>`
+        ? `<button type="button" class="fd-pony-cta" id="fdRunSum">${SPARKLE_SVG}<span>${esc(_t('Summarize with Pony'))}</span></button>`
         : '';
       bodyHtml = `${snip}${cta}`;
     }
@@ -309,7 +313,7 @@
             + `<div class="fd-sum-body">${bodyHtml}</div>`
             + `<div class="fd-sum-foot">`
             + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-            + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${fa('wand-magic-sparkles')}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
+            + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
             + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
             + `</div></div>`;
         } else {
@@ -320,7 +324,7 @@
               + sourceIcon(it, favicons, 16)
               + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
               + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
-              + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${fa('wand-magic-sparkles')}</button>` : '')
+              + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${isBusy ? SPINNER_SVG : SPARKLE_SVG}</button>` : '')
               + `</div>`;
           }).join('') + `</div>`;
         }
@@ -353,7 +357,7 @@
           + `<div class="fd-sum-body">${bodyHtml}</div>`
           + `<div class="fd-sum-foot">`
           + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${fa('wand-magic-sparkles')}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
+          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
           + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
           + `</div></div>`
           + `<div class="fd-spot-side">`
@@ -375,7 +379,7 @@
             + `<div class="fd-row-body"><div class="fd-row-title">${esc(it.title)}</div>`
             + `<div class="fd-row-meta t1">${esc(itemMeta(it))}</div></div>`
             + `<div class="fd-row-acts">`
-            + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${fa('wand-magic-sparkles')}</button>` : '')
+            + (ponyOn ? `<button type="button" class="fd-mini${hasSum ? ' has' : ''}${isBusy ? ' busy' : ''}" data-sum="${esc(it.id)}" title="${esc(_t('Summarize with Pony'))}">${isBusy ? SPINNER_SVG : SPARKLE_SVG}</button>` : '')
             + `<button type="button" class="fd-mini" data-bm="${esc(it.id)}" title="${esc(_t('Save to Bookmarks'))}">${fa('bookmark', 'regular')}</button>`
             + `</div></div>`;
         }).join('') + `</div>`;
@@ -383,21 +387,21 @@
 
       let rightHtml = '';
       if (!sel) {
-        rightHtml = `<div class="fd-sum-empty">${fa('wand-magic-sparkles')}<span>${esc(_t('Select any story to read or summarize with Pony'))}</span></div>`;
+        rightHtml = `<div class="fd-sum-empty">${SPARKLE_SVG}<span>${esc(_t('Select any story to read or summarize with Pony'))}</span></div>`;
       } else {
         const { bodyHtml, cachedSum } = buildSummaryBody(sel, summaries, ponyOn);
         const sumTag = cachedSum
           ? `<button type="button" class="fd-regen" id="fdRegenSum" title="${esc(_t('Regenerate summary'))}">${fa('arrows-rotate')}</button>`
           : '';
         rightHtml = `<div class="fd-sum-head">`
-          + `<span class="fd-sum-lbl">${fa('wand-magic-sparkles')}<span>${esc(ponyOn ? _t('Pony Summary') : _t('Preview'))}</span></span>`
+          + `<span class="fd-sum-lbl">${SPARKLE_SVG}<span>${esc(ponyOn ? _t('Pony Summary') : _t('Preview'))}</span></span>`
           + `<span class="fd-sum-src t1">${esc(sel.publisher || sel.sourceName)}</span>`
           + `${ponyOn ? langPillHtml() : ''}${sumTag}</div>`
           + `<div class="fd-sum-title-row">${sourceIcon(sel, favicons, 16)}<div class="fd-sum-title">${esc(sel.title)}</div></div>`
           + `<div class="fd-sum-body">${bodyHtml}</div>`
           + `<div class="fd-sum-foot">`
           + `<button type="button" class="fd-act" id="fdSaveBm">${fa('bookmark', 'regular')}<span>${esc(_t('Save'))}</span></button>`
-          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${fa('wand-magic-sparkles')}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
+          + (ponyOn ? `<button type="button" class="fd-act p" id="fdAskPony">${SPARKLE_SVG}<span>${esc(_t('Ask Pony'))}</span></button>` : '')
           + `<button type="button" class="fd-act" id="fdOpenUrl"><span>${esc(_t('Open'))}</span>${fa('arrow-up-right-from-square')}</button>`
           + `</div>`;
       }

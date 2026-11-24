@@ -12,6 +12,7 @@ use services::feed::{
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -55,12 +56,25 @@ pub struct Feed {
     cache: Mutex<FeedCache>,
     failed_icons: Mutex<HashSet<String>>,
     refreshing: Mutex<()>,
+    auto_summarizing: AtomicBool,
     kick: Mutex<Sender<()>>,
 }
 
 pub fn kick(app: &AppHandle) {
     if let Some(f) = app.try_state::<Feed>() {
         let _ = f.kick.lock().unwrap().send(());
+    }
+}
+
+/// Reacts to Feed settings changes: source/schedule edits refresh feeds, while turning on
+/// background auto-summary (or switching summary language/batch size) immediately pre-summarizes
+/// already-cached stories without forcing a full RSS re-fetch.
+pub fn on_settings_changed(app: &AppHandle, patch: &Value) {
+    let has = |keys: &[&str]| keys.iter().any(|k| patch.get(k).is_some());
+    if has(&["feedEnabled", "feedSources", "feedGoogleTopics", "feedCustomUrls", "feedRefreshMinutes", "modules"]) {
+        kick(app);
+    } else if has(&["feedAutoSummary", "feedAutoSummaryBatch", "feedSummaryLang", "feedPonySummary"]) {
+        spawn_background_batch(app);
     }
 }
 
@@ -492,7 +506,115 @@ fn refresh(app: &AppHandle) -> Value {
         });
     }
 
+    // Optional opt-in background batch auto-summarization for newest unsummarized stories
+    spawn_background_batch(app);
+
     v
+}
+
+/// Pre-summarizes up to `feedAutoSummaryBatch` newest unsummarized items in the background when
+/// `feedAutoSummary` is enabled, emitting incremental `feed` updates so cached badges light up live.
+fn spawn_background_batch(app: &AppHandle) {
+    let Some(feed_state) = app.try_state::<Feed>() else {
+        return;
+    };
+    let s = app.state::<App>().settings.get();
+    if !feed_module_enabled(&s) || s["feedPonySummary"] == false || s["feedAutoSummary"] != true {
+        return;
+    }
+    if feed_state
+        .auto_summarizing
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    let bg = app.clone();
+    std::thread::spawn(move || {
+        struct Reset(AppHandle);
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                if let Some(f) = self.0.try_state::<Feed>() {
+                    f.auto_summarizing.store(false, Ordering::SeqCst);
+                }
+            }
+        }
+        let _reset = Reset(bg.clone());
+
+        let lang = effective_summary_lang(&bg);
+        let batch_size = bg.state::<App>().settings.get()["feedAutoSummaryBatch"]
+            .as_u64()
+            .unwrap_or(5)
+            .clamp(1, 15) as usize;
+
+        let targets: Vec<FeedItem> = {
+            let st = bg.state::<Feed>();
+            let cache = st.cache.lock().unwrap();
+            cache
+                .items
+                .iter()
+                .filter(|it| {
+                    let key = format!("{}:{lang}", it.id);
+                    !cache.summaries.contains_key(&key)
+                })
+                .take(batch_size)
+                .cloned()
+                .collect()
+        };
+
+        if targets.is_empty() {
+            return;
+        }
+        bg.state::<App>().log.line(&format!(
+            "feed: background auto-summary starting ({} stories, lang={lang})",
+            targets.len()
+        ));
+
+        let mut done = 0usize;
+        for it in targets {
+            let cur_s = bg.state::<App>().settings.get();
+            if !feed_module_enabled(&cur_s) || cur_s["feedPonySummary"] == false || cur_s["feedAutoSummary"] != true {
+                break;
+            }
+            let cur_lang = effective_summary_lang(&bg);
+            let source = if !it.publisher.is_empty() {
+                it.publisher.as_str()
+            } else {
+                it.source_name.as_str()
+            };
+            let args = vec![
+                json!(it.id),
+                json!(it.url),
+                json!(it.title),
+                json!(source),
+                json!(it.snippet),
+                json!(false),
+                json!(cur_lang),
+            ];
+            let res = summarize_item(&bg, &args);
+            if res["ok"] == true {
+                done += 1;
+                let payload = {
+                    let st = bg.state::<Feed>();
+                    let p = payload_from(&st.cache.lock().unwrap());
+                    p
+                };
+                let _ = bg.emit("feed", &payload);
+            } else {
+                // Stop batch early if AI provider isn't configured, signed out, or rate-limited
+                bg.state::<App>().log.line(&format!(
+                    "feed: background auto-summary stopped early: {}",
+                    res["error"].as_str().unwrap_or("error")
+                ));
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(350));
+        }
+
+        if done > 0 {
+            bg.state::<App>().log.line(&format!("feed: background auto-summary cached {done} stories"));
+        }
+    });
 }
 
 /// Validates and previews a user-supplied custom RSS/Atom URL (plus fetches its real site favicon).
@@ -666,6 +788,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         cache: Mutex::new(FeedCache::default()),
         failed_icons: Mutex::new(HashSet::new()),
         refreshing: Mutex::new(()),
+        auto_summarizing: AtomicBool::new(false),
         kick: Mutex::new(tx),
     });
 
@@ -718,6 +841,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         }
         if stale {
             refresh(&h);
+        } else {
+            spawn_background_batch(&h);
         }
         loop {
             let mins = h.state::<App>().settings.get()["feedRefreshMinutes"].as_u64().unwrap_or(30);

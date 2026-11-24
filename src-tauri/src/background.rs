@@ -75,9 +75,7 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
     if has(&["githubEnabled", "githubIncludeMine", "has_githubToken"]) {
         crate::github::kick(app);
     }
-    if has(&["feedEnabled", "feedSources", "feedGoogleTopics", "feedCustomUrls", "feedRefreshMinutes", "modules"]) {
-        crate::feed::kick(app);
-    }
+    crate::feed::on_settings_changed(app, patch);
     if has(&["icsFeeds", "localEvents", "calendarEnabled"]) {
         crate::calendar::kick(app, patch.get("icsFeeds").is_some());
     }

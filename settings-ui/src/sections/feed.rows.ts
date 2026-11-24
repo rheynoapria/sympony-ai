@@ -8,6 +8,8 @@ export const FEED_KEYS = [
   "feedRefreshMinutes",
   "feedPonySummary",
   "feedSummaryLang",
+  "feedAutoSummary",
+  "feedAutoSummaryBatch",
 ] as const;
 
 export const FEED_ROWS: readonly Row[] = [
@@ -73,6 +75,26 @@ export const FEED_ROWS: readonly Row[] = [
       ["original", "Match article language"],
       ["ms", "Bahasa Melayu"],
       ["ja", "Japanese (日本語)"],
+    ],
+  },
+  {
+    t: "toggle",
+    k: "feedAutoSummary",
+    label: "Auto-summarize in background",
+    sub: "Automatically pre-summarize the newest stories in batches right after feeds refresh so summaries open instantly",
+    words: "auto summary background batch otomatis ringkas latar belakang",
+  },
+  {
+    t: "select",
+    k: "feedAutoSummaryBatch",
+    label: "Background batch size",
+    sub: "How many new stories Pony pre-summarizes per refresh cycle when auto-summarize is on",
+    words: "batch size jumlah berita ringkas otomatis",
+    options: [
+      [3, "3 stories per refresh"],
+      [5, "5 stories per refresh"],
+      [8, "8 stories per refresh"],
+      [12, "12 stories per refresh"],
     ],
   },
 ];
