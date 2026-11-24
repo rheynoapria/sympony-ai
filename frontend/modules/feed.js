@@ -14,6 +14,7 @@
   let savedChipsScroll = 0;
   let lastScrollFilter = 'all';
   let hoverPrefetchTimer = null;
+  let interactiveJob = null;
   const summarizing = new Set();
   const sumErrors = {};
   const sumStreams = {};
@@ -252,8 +253,33 @@
     tickerPreviewOpen = true;
     delete sumErrors[busyKey];
     delete sumStreams[busyKey];
+    const hasCached = !force && !!cachedSummaryFor(feedData().summaries, it.id);
+    const job = {
+      id: it.id,
+      lang,
+      title: it.title || '',
+      source: it.publisher || it.sourceName || 'Feed',
+      since: Date.now(),
+    };
+    if (!hasCached) {
+      interactiveJob = job;
+      if (N.setFeedSum) {
+        N.setFeedSum({
+          active: true,
+          id: job.id,
+          title: job.title,
+          source: job.source,
+          since: job.since,
+          phase: 'reading',
+          preview: '',
+          chars: 0,
+        });
+      }
+    }
     summarizing.add(busyKey);
     if (!updateBentoRightInPlace()) render();
+    let didFinishLive = false;
+    let errMsg = '';
     try {
       const res = await api.svc('feed', 'summarize', it.id, it.url, it.title, it.publisher || it.sourceName, it.snippet || '', !!force, lang);
       if (res && res.ok) {
@@ -261,15 +287,34 @@
         const key = res.key || `${SUMMARY_VER}:${busyKey}`;
         const nextSums = { ...(cur.summaries || {}), [key]: { summary: res.summary, bullets: res.bullets || [], source: res.source || 'article', at: Date.now() } };
         N.setData('feed', { ...cur, summaries: nextSums });
+        didFinishLive = !hasCached && (!res.cached || !st.open);
       } else {
-        sumErrors[busyKey] = (res && res.error) || _t('Couldn’t summarize this article');
+        errMsg = (res && res.error) || _t('Couldn’t summarize this article');
+        sumErrors[busyKey] = errMsg;
       }
     } catch (e) {
-      sumErrors[busyKey] = String(e || _t('Couldn’t summarize this article'));
+      errMsg = String(e || _t('Couldn’t summarize this article'));
+      sumErrors[busyKey] = errMsg;
     } finally {
       delete sumStreams[busyKey];
       summarizing.delete(busyKey);
+      const isLatestJob = interactiveJob === job;
+      if (isLatestJob) interactiveJob = null;
+      if (didFinishLive) {
+        selectedId = it.id;
+        tickerPreviewOpen = true;
+      }
       if (!updateBentoRightInPlace()) render();
+      if (isLatestJob) {
+        if (didFinishLive && N.revealFeedSummary) {
+          N.revealFeedSummary(it.title);
+        } else {
+          if (N.setFeedSum) N.setFeedSum(null);
+          if (errMsg && !st.open && N.toast) {
+            N.toast(fa('circle-exclamation'), errMsg, { ms: 5500, color: 'var(--red)', side: 220, tab: 'feed' });
+          }
+        }
+      }
     }
   }
 
@@ -704,6 +749,21 @@
           if (!d || !d.id || !d.text) return;
           const lang = d.lang || effectiveSummaryLang();
           sumStreams[`${d.id}:${lang}`] = d.text;
+          if (interactiveJob && interactiveJob.id === d.id && N.setFeedSum) {
+            const liveB = parseLiveBullets(d.text);
+            const lastB = liveB.length ? liveB[liveB.length - 1] : d.text;
+            const cleanPrev = String(lastB || '').replace(/\*\*/g, '').replace(/`/g, '').trim();
+            N.setFeedSum({
+              active: true,
+              id: interactiveJob.id,
+              title: interactiveJob.title,
+              source: interactiveJob.source,
+              since: interactiveJob.since,
+              phase: 'writing',
+              preview: cleanPrev,
+              chars: d.text.length,
+            });
+          }
           if (!page || selectedId !== d.id) return;
           const bodyEl = $('.fd-sum-body', page);
           if (bodyEl) {

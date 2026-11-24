@@ -267,7 +267,7 @@ function fgStateOf() {
 function hasShellAlert() {
   if (st.open) return false;
   const now = Date.now();
-  return !!(voiceActive() || st.hudOnly || notifShowing() || claudeShowing() || st.adhan || teleStrip()
+  return !!(voiceActive() || feedSumActive() || st.hudOnly || notifShowing() || claudeShowing() || st.adhan || teleStrip()
     || (st.below && st.below.extra > 0)
     || (st.activity && st.activity.until > now)
     || now < st.peekUntil || now < (st.islandUntil || 0));
@@ -612,7 +612,7 @@ function autoHidden() {
   if (!s || !autoHideOn() || st.open || st.hover || st.dragging || st.moving || st.snap || st.standby || st.adhan || st.hudOnly || st.typing || teleStrip()) return false;
   const now = Date.now();
   // stays down for a moment after the mouse leaves, and while an alert or a song title shows
-  return now >= (st.hoverUntil || 0) && !(st.activity && st.activity.until > now) && now >= st.peekUntil && now >= (st.islandUntil || 0) && !claudeShowing();
+  return now >= (st.hoverUntil || 0) && !feedSumActive() && !(st.activity && st.activity.until > now) && now >= st.peekUntil && now >= (st.islandUntil || 0) && !claudeShowing();
 }
 
 // Settings → General → Step aside, the other way round from Auto-hide: Sympony stays down with the time, and when the
@@ -710,6 +710,7 @@ function sideWidth(act) {
     case 'brief': return 100;
     case 'tele': return teleSide();
     case 'voice': return 110;
+    case 'feed-sum': return 118;
     default: return 60;
   }
 }
@@ -867,7 +868,7 @@ api.onHover((inside) => {
     // paused pill: a click on that one brings the strip back)
     const overBubble = !!(bubbleEl && bubbleEl.matches(':hover'));
     const belowInteractive = !!$('#below.show button');
-    if (!overBubble && !belowInteractive && !notifShowing() && !claudeShowing() && !st.adhan && !tickShowing() && !teleMode() && !st.open && !st.typing && st.settings.openOnHover && !st.moving && !st.tucked) later('open', Math.max(st.settings.hoverDelay, 60), () => { if (!st.moving && !st.typing && !(bubbleEl && bubbleEl.matches(':hover'))) openNotch(); });
+    if (!overBubble && !belowInteractive && !notifShowing() && !claudeShowing() && !st.adhan && !tickShowing() && !teleMode() && !st.open && !st.typing && st.settings.openOnHover && !st.moving && !st.tucked) later('open', Math.max(st.settings.hoverDelay, 60), () => { if (!st.moving && !st.typing && !(bubbleEl && bubbleEl.matches(':hover'))) openNotch(feedSumActive() ? 'feed' : undefined); });
     if (!st.open) { renderClosed(); layout(); }
   } else {
     cancel('open');
@@ -924,6 +925,7 @@ notchEl.addEventListener('mousedown', (e) => {
       }
       const act = currentActivity();
       if (act && act.kind === 'tele') { N.tele.resume(); return; }
+      if (act && act.kind === 'feed-sum') { openNotch('feed'); return; }
       if (act && act.kind === 'brief') { st.activity = null; openNotch('chat'); return; }
       if (act && act.kind === 'toast' && act.data && act.data.onboard) {
         st.activity = null; renderClosed(true); layout();
@@ -2390,6 +2392,44 @@ function voiceActive() {
   return !!(st.voice && st.voice.state && st.voice.state !== 'idle');
 }
 
+st.feedSum = null;
+function feedSumActive() {
+  return !!(st.feedSum && st.feedSum.active);
+}
+function setFeedSum(next) {
+  st.feedSum = next && next.active ? { ...next } : null;
+  renderClosed(true);
+  layout();
+}
+function revealFeedSummary(title) {
+  st.feedSum = null;
+  st.ponyDoneUntil = Date.now() + 2800;
+  if (st.hudOnly) { renderClosed(true); layout(); return; }
+  if (!st.open) {
+    if (st.tucked) st.tucked = false;
+    openNotch('feed');
+    st.openedByShortcut = true;
+    bump();
+    later('close', 18000, () => {
+      if (st.openedByShortcut && !st.hover && !st.typing) closeNotch();
+    });
+    return;
+  }
+  const activeMod = window.N && N.carousel && N.carousel.activeModule ? N.carousel.activeModule() : st.page;
+  if (activeMod !== 'feed') {
+    if (st.typing) {
+      toast(fa('wand-magic-sparkles'), _t('Summary ready: {title}', { title: String(title || '').slice(0, 42) }), {
+        ms: 6500, color: '#c084fc', side: 235, tab: 'feed',
+      });
+    } else {
+      openNotch('feed');
+      bump();
+    }
+  } else {
+    syncPonyMood();
+  }
+}
+
 function voiceFmtTime(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(s / 60);
@@ -2650,12 +2690,15 @@ function currentActivity() {
   if (st.hudOnly) return st.hudLast || null;
   if (voiceActive()) return { kind: 'voice', data: st.voice };
   const now = Date.now();
+  if (feedSumActive() && !(st.activity && st.activity.until > now && st.activity.kind.startsWith('hud'))) {
+    return { kind: 'feed-sum', data: st.feedSum };
+  }
   if (st.activity && st.activity.until > now) return st.activity;
   return activitySplit().main;
 }
 
 function bubbleActivity() {
-  if (st.open || st.hudOnly || teleStrip() || voiceActive()) return null;
+  if (st.open || st.hudOnly || teleStrip() || voiceActive() || feedSumActive()) return null;
   if (st.activity && st.activity.until > Date.now()) return null;
   if (st.settings && st.settings.shellForm === 'drawer') return null;
   return activitySplit().bubble;
@@ -2739,7 +2782,7 @@ setInterval(() => {
   if (st.open || !st.settings) return;
   const act = currentActivity();
   const bb = bubbleActivity();
-  if ((act && ['pomodoro', 'stopwatch', 'timer', 'sys', 'fps', 'event-soon', 'todo-due', 'todo-sum', 'prayer-soon'].includes(act.kind))
+  if ((act && ['pomodoro', 'stopwatch', 'timer', 'sys', 'fps', 'event-soon', 'todo-due', 'todo-sum', 'prayer-soon', 'feed-sum'].includes(act.kind))
     || (bb && ['pomodoro', 'timer', 'stopwatch'].includes(bb.kind))) renderClosed();
   // a countdown whose time came (the prayer's, an event's) leaves the list: what shows instead is drawn now, rather
   // than the countdown staying at 0:00 until something else draws the closed notch (GitHub #60)
@@ -2770,7 +2813,7 @@ function currentPonyMood() {
     asking: !!(st.ponyAsking || (st.claude && st.claude.some((c) => c.source === 'pony'))),
     cardWaiting: !!(st.claude && st.claude.length > 0),
     listening: !!(st.voice && st.voice.state === 'listening'),
-    thinking: !!((st.voice && st.voice.state === 'transcribing') || (window.N && N.chat && N.chat.pending && N.chat.pending())),
+    thinking: !!((st.voice && st.voice.state === 'transcribing') || feedSumActive() || (window.N && N.chat && N.chat.pending && N.chat.pending())),
     doneUntil: Math.max(st.ponyDoneUntil || 0, voiceDone),
     now,
     playing: !!(st.media && st.media.playing),
@@ -3183,6 +3226,32 @@ function renderClosed(animate) {
         L = `<div class="act-icon" style="color:var(--orange)">${fa('scroll')}</div><span class="act-text">${_t('Teleprompter')}</span>`;
         R = `<span class="act-text act-dim">${teleLeftText()}</span><div class="act-icon tele-go">${fa('play')}</div>`;
         break;
+      case 'feed-sum': {
+        const fs = act.data || {};
+        const elapsed = Math.max(0, (Date.now() - (fs.since || Date.now())) / 1000);
+        const pct = fs.phase === 'writing'
+          ? Math.max(76, Math.min(96, 74 + Math.round((fs.chars || 0) / 18)))
+          : Math.round(14 + 62 * (1 - Math.exp(-elapsed / 7.5)));
+        const statusLbl = fs.phase === 'writing' ? _t('Writing…') : _t('Summarizing…');
+        const leftCore = `<span class="fd-cs-spin" aria-hidden="true"></span><span class="v-status-lbl fd-cs-lbl">${esc(statusLbl)}</span>`;
+        const rCore = `<span class="v-time clk" style="color:#d8b4fe">${esc(voiceFmtTime(elapsed * 1000))}</span>${ring(pct, '#c084fc', 16, 13)}`;
+        if (cam) {
+          const eye = ponyEyeHtml('think', 1);
+          L = `<span class="pony-side"><span class="pony-outer">${leftCore}</span>${eye}</span>`;
+          R = `<span class="pony-side">${eye}<span class="pony-outer">${rCore}</span></span>`;
+        } else {
+          L = leftCore;
+          M = ponyEyeHtml('think', 2);
+          R = rCore;
+        }
+        const subTxt = fs.preview ? fs.preview : (fs.title || _t('Pony Summary'));
+        B = `<div class="fd-cs-below">`
+          + `<div class="fd-cs-top"><span class="fd-cs-src">${esc(fs.source || 'Pony')}</span><span class="fd-cs-txt t1" dir="auto">${esc(subTxt)}</span><span class="fd-cs-pct n">${pct}%</span></div>`
+          + `<div class="fd-cs-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>`
+          + `</div>`;
+        belowMeta = { extra: 40, wide: 396 };
+        break;
+      }
       case 'voice': {
         const v = st.voice;
         const showLive = !st.settings || st.settings.voiceLive !== false;
@@ -3294,7 +3363,7 @@ function renderClosed(animate) {
   const key = closedStateKeyOf(act);
   syncPonyMood();
   // a brief alert or HUD shows at full strength even if the closed notch is set to be see-through
-  notchEl.classList.toggle('alerting', st.hudOnly || !!(st.activity && st.activity.until > Date.now()));
+  notchEl.classList.toggle('alerting', st.hudOnly || feedSumActive() || !!(st.activity && st.activity.until > Date.now()));
   const closed = $('#closed');
   if (animate && key && key !== lastActKey) {
     closed.classList.remove('swap');
@@ -7488,7 +7557,7 @@ window.N = {
   MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, effectiveSizes, chime: (kind) => chime(kind, true),
   openEvent, startOfDay, DAY, cmd, mediaPosition, appLabel, progressRing, fa, prayerTimes, nextPrayer,
   meter, meterLevel, ring, appIconImg, agentIconUrl, mountHitlCard, refreshHitlCards, renderHitlSection,
-  ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk,
+  ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk, setFeedSum, revealFeedSummary,
   pony: {
     mood: currentPonyMood,
     sync: () => { renderClosed(); layout(); },
