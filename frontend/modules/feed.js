@@ -71,12 +71,19 @@
   }
 
   function storyThumb(item, images, favicons, cls = '', icoSize = 15) {
-    const thumbUrl = (item && item.image) || (images && item && images[item.id]) || '';
+    let thumbUrl = (item && item.image) || (images && item && images[item.id]) || '';
+    if (thumbUrl.includes('opengraph.githubassets.com/')) {
+      const parts = thumbUrl.split('opengraph.githubassets.com/')[1]?.split('/').filter(Boolean) || [];
+      thumbUrl = parts[1] ? `https://github.com/${parts[1]}.png?size=128` : '';
+    }
+    const isGhAvatar = (item && (item.sourceId === 'github_trending' || item.iconHost === 'github.com'))
+      || thumbUrl.includes('avatars.githubusercontent.com')
+      || /^https:\/\/github\.com\/[^/]+\.png/i.test(thumbUrl);
     const tint = (item && item.color) || '#8b5cf6';
     const imgHtml = thumbUrl
       ? `<img class="fd-thumb-img" src="${esc(thumbUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
       : '';
-    return `<span class="fd-thumb${cls ? ' ' + cls : ''}${thumbUrl ? '' : ' empty'}" style="--thumb-tint:${esc(tint)}">`
+    return `<span class="fd-thumb${cls ? ' ' + cls : ''}${isGhAvatar ? ' avatar' : ''}${thumbUrl ? '' : ' empty'}" style="--thumb-tint:${esc(tint)}">`
       + `<span class="fd-thumb-ph">${sourceIcon(item, favicons, icoSize)}</span>`
       + `${imgHtml}</span>`;
   }

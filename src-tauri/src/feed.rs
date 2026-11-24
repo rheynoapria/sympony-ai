@@ -93,12 +93,39 @@ fn cache_path(app: &AppHandle) -> PathBuf {
     app.state::<App>().data_dir.join("feed-cache.json")
 }
 
+fn rewrite_github_og_to_avatar(img_url: &str, item_url: &str) -> Option<String> {
+    if !img_url.contains("opengraph.githubassets.com") {
+        return None;
+    }
+    if let Some((owner, _)) = github_repo_slug(item_url) {
+        return Some(format!("https://github.com/{owner}.png?size=128"));
+    }
+    // `https://opengraph.githubassets.com/<hash>/<owner>/<repo>`
+    let after = img_url.split("opengraph.githubassets.com/").nth(1)?;
+    let mut segs = after.split('/').filter(|s| !s.is_empty());
+    let _hash = segs.next()?;
+    let owner = segs.next()?;
+    (!owner.is_empty()).then(|| format!("https://github.com/{owner}.png?size=128"))
+}
+
 fn load_cache(app: &AppHandle) -> FeedCache {
     let p = cache_path(app);
-    std::fs::read(&p)
+    let mut cache: FeedCache = std::fs::read(&p)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Migrate any previously cached GitHub OpenGraph card thumbnails to clean owner profile avatars
+    for it in &mut cache.items {
+        if let Some(av) = rewrite_github_og_to_avatar(&it.image, &it.url) {
+            it.image = av;
+        }
+    }
+    for img in cache.images.values_mut() {
+        if let Some(av) = rewrite_github_og_to_avatar(img, "") {
+            *img = av;
+        }
+    }
+    cache
 }
 
 fn save_cache(app: &AppHandle, cache: &FeedCache) {

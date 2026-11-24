@@ -1160,28 +1160,30 @@ document.addEventListener('keydown', (e) => {
   }
   if (!st.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
   if (isEditableFocused(e.target) || arrowsBusy()) return;
-  // YouTube video mode: let ←/→ (5s), J/L (10s), Space/K control playback instead of sliding the notch (Shift+←/→ still slides).
+  // YouTube video mode: Shift+←/→ (or Shift+,/. `<`/`>`) seeks ±5s, J/L seeks ±10s, Space/K toggles playback,
+  // while plain ←/→ always slides between notch modules/pages.
   if (isYtActive()) {
-    if (!e.shiftKey && (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L')) {
+    if (
+      (e.shiftKey && (e.key === 'ArrowRight' || e.code === 'Period'))
+      || e.key === '>'
+      || (!e.shiftKey && (e.key === 'l' || e.key === 'L'))
+    ) {
       e.preventDefault();
-      ytSeekBy(e.key === 'ArrowRight' ? 5 : 10);
+      ytSeekBy((e.key === 'l' || e.key === 'L') ? 10 : 5);
       return;
     }
-    if (!e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'j' || e.key === 'J')) {
+    if (
+      (e.shiftKey && (e.key === 'ArrowLeft' || e.code === 'Comma'))
+      || e.key === '<'
+      || (!e.shiftKey && (e.key === 'j' || e.key === 'J'))
+    ) {
       e.preventDefault();
-      ytSeekBy(e.key === 'ArrowLeft' ? -5 : -10);
+      ytSeekBy((e.key === 'j' || e.key === 'J') ? -10 : -5);
       return;
     }
     if (!e.shiftKey && (e.key === ' ' || e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
       cmd('toggle');
-      return;
-    }
-    if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-      if (st.settings && st.settings.moduleShortcuts !== false) {
-        e.preventDefault();
-        arrowTab(e.key === 'ArrowRight' ? 1 : -1);
-      }
       return;
     }
   }
@@ -1230,7 +1232,6 @@ function arrowTab(dir) {
 }
 api.on('notch:arrow', (dir) => {
   if (isEditableFocused(null)) return;
-  if (isYtActive()) { ytSeekBy(dir * 5); return; }
   arrowTab(dir);
 });
 
@@ -6461,16 +6462,16 @@ function ytPaint(el, m) {
   const canSeek = !!(d && m.canSeek !== false);
   const leftBadge = rate !== 1
     ? `<span class="mc-v-badge" title="${esc(_t('Playback speed'))}">${esc(Number(rate.toFixed(2)))}×</span>`
-    : `<span class="mc-v-badge" title="${esc('← / → (±5s) · Shift + ← / →')}" style="opacity:0.78">← / → 5s</span>`;
+    : `<span class="mc-v-badge" title="${esc('Shift + ← / → (±5s) · ← / → slide')}" style="opacity:0.78">⇧ ← / → 5s</span>`;
   $('.mc-v-ov', el).innerHTML = `<div class="mc-v-ttl t1" dir="auto">${esc(m.title || '')}</div><div class="mc-v-sub t1" dir="auto">${esc(m.artist || '')}</div>`
     + `<div class="row mc-m-prog"><span class="n mc-p-el" style="font-size:11px">${esc(d ? fmt(pos) : '0:00')}</span>`
     + `<div class="bar${d ? '' : ' disabled'}" data-mseek="1"><i style="transform:scaleX(${frac})"></i></div>`
     + `<span class="n mc-p-rem" style="font-size:11px">${esc(d ? '-' + fmt(Math.max(0, d - pos)) : '0:00')}</span></div>`
     + `<div class="mc-v-ctl"><div class="mc-v-left">${leftBadge}</div><div class="mc-v-mid">`
     + `<button type="button" class="mc-m-btn" data-mc="prev" ${m.canPrev === false ? 'disabled' : ''} title="${esc(_t('Previous'))}">${ic('prev', 'width:17px;height:17px')}</button>`
-    + `<button type="button" class="mc-v-skip" data-yskip="-10" ${canSeek ? '' : 'disabled'} title="-10s (← / J)">−10s</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="-10" ${canSeek ? '' : 'disabled'} title="-10s (Shift+← / J)">−10s</button>`
     + `<button type="button" class="mc-m-btn play" data-mc="toggle" title="${esc(m.playing ? _t('Pause') : _t('Play'))}">${ic(m.playing ? 'pause' : 'play', 'width:18px;height:18px')}</button>`
-    + `<button type="button" class="mc-v-skip" data-yskip="10" ${canSeek ? '' : 'disabled'} title="+10s (→ / L)">+10s</button>`
+    + `<button type="button" class="mc-v-skip" data-yskip="10" ${canSeek ? '' : 'disabled'} title="+10s (Shift+→ / L)">+10s</button>`
     + `<button type="button" class="mc-m-btn" data-mc="next" ${m.canNext === false ? 'disabled' : ''} title="${esc(_t('Next'))}">${ic('next', 'width:17px;height:17px')}</button>`
     + `</div><div class="mc-v-right">`
     + `<button type="button" class="mc-round-btn" data-mout="1" title="${esc(audioOutName || _t('Sound output'))}">${ic('pods')}</button>`

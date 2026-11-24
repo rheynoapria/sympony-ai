@@ -568,6 +568,7 @@ fn is_plausible_thumb(url: &str) -> bool {
     if low.contains("doubleclick.net")
         || low.contains("feedburner.com/~ff")
         || low.contains("feedburner.com/~r")
+        || low.contains("opengraph.githubassets.com")
         || low.contains("pixel.")
         || low.contains("/spacer")
         || low.contains("blank.gif")
@@ -687,7 +688,12 @@ pub fn extract_rss_image(block: &str, base_url: &str) -> String {
 
 /// Extracts `og:image`, `twitter:image`, or the first real content `<img>` from an article HTML page
 /// so Hacker News, IndieWeb, WordPress galleries, and plain RSS posts get real photo thumbnails.
+/// For `github.com/{owner}/...` URLs, returns the repository owner's profile avatar directly instead of
+/// white OpenGraph text cards.
 pub fn extract_og_image(html: &str, base_url: &str) -> Option<String> {
+    if let Some((owner, _)) = github_repo_slug(base_url) {
+        return Some(format!("https://github.com/{owner}.png?size=128"));
+    }
     let low = html.to_ascii_lowercase();
     let head_end = low.find("</head>").unwrap_or_else(|| {
         let mut idx = html.len().min(65_536);
@@ -1053,7 +1059,12 @@ pub fn parse_github_trending_html(html: &str, now_ms: i64, limit: usize) -> Vec<
             format!("{repo_path} — {}", truncate_chars(&desc, 110))
         };
 
-        let image = format!("https://opengraph.githubassets.com/1/{repo_path}");
+        let owner = repo_path.split('/').next().unwrap_or("");
+        let image = if !owner.is_empty() {
+            format!("https://github.com/{owner}.png?size=128")
+        } else {
+            String::new()
+        };
 
         out.push(FeedItem {
             id: stable_id("github_trending", &url, repo_path),
@@ -1100,7 +1111,18 @@ pub fn parse_github_search_fallback(v: &Value, now_ms: i64, limit: usize) -> Vec
         } else {
             format!("{full_name} — {}", truncate_chars(&desc, 110))
         };
-        let image = format!("https://opengraph.githubassets.com/1/{full_name}");
+        let owner = full_name.split('/').next().unwrap_or("");
+        let image = it["owner"]["avatar_url"]
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(String::from)
+            .unwrap_or_else(|| {
+                if !owner.is_empty() {
+                    format!("https://github.com/{owner}.png?size=128")
+                } else {
+                    String::new()
+                }
+            });
         out.push(FeedItem {
             id: stable_id("github_trending", url, full_name),
             source_id: "github_trending".into(),
@@ -1572,6 +1594,7 @@ mod tests {
         assert_eq!(items[0].language, "Rust");
         assert_eq!(items[0].points, Some(1420));
         assert_eq!(items[0].stars_today, "+218 today");
+        assert_eq!(items[0].image, "https://github.com/rheynoapria.png?size=128");
         assert!(items[0].title.contains("rheynoapria/sympony-ai"));
     }
 
