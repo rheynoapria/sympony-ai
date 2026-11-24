@@ -889,6 +889,8 @@
     'An ad is playing in the tab': 'Iklan sedang diputar di tab',
     'Waiting for the YouTube video in the tab': 'Menunggu video YouTube di tab',
     'YouTube doesn’t allow this video to play here': 'YouTube tidak mengizinkan video ini diputar di sini',
+    'This video isn’t available on YouTube': 'Video ini tidak tersedia di YouTube',
+    'YouTube couldn’t play this video here': 'YouTube tidak bisa memutar video ini di sini',
     'Fill': 'Penuhkan',
     'Fit': 'Pas',
     'Lyrics later': 'Lirik lebih lambat',

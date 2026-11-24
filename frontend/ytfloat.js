@@ -11,9 +11,10 @@
 
   let media = {};
   // as in notch.js: the player's YT state and time (t, told tAt), its speed (rate, nudge), the learned seek lead
-  // (error: what YouTube said when it refused the video, shown until another one loads)
+  // (error: what YouTube said when it couldn't play the video, shown until another one loads; retried: the video
+  // last loaded again after a passing error, once each)
   const yt = { url: null, frame: $('#frame'), ready: false, id: null, t: 0, tAt: 0, d: 0, state: -1, stateAt: 0, played: 0,
-    seekAt: 0, cmdAt: 0, rate: 1, nudge: 1, lead: 0.2, landing: false, error: '' };
+    seekAt: 0, cmdAt: 0, rate: 1, nudge: 1, lead: 0.2, landing: false, error: '', retried: null };
 
   $('#close').innerHTML = window.ICONS.x;
   $('#prev').innerHTML = window.ICONS.prev;
@@ -76,7 +77,21 @@
     } else if (d.type === 'time') {
       yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0; yt.tAt = Date.now();
     } else if (d.type === 'error') {
-      yt.error = _t('YouTube doesn’t allow this video to play here');
+      // (the code and the video id go into the log, never the title)
+      const kind = K.ytErrorKind(d.code);
+      api.log(`youtube: the floating player said ${Number(d.code)} (${kind}) for ${yt.id || 'no video'}`);
+      if (kind === 'blocked') yt.error = _t('YouTube doesn’t allow this video to play here');
+      else if (kind === 'gone') yt.error = _t('This video isn’t available on YouTube');
+      else if (yt.id && yt.retried !== yt.id) {
+        // a passing failure: the same video again in 3 s, where the tab is then (said only if that fails too)
+        const id = yt.id;
+        yt.retried = id;
+        setTimeout(() => {
+          if (yt.id !== id || !yt.ready) return;
+          post({ type: 'load', id, at: position(), playing: !!media.playing });
+          yt.cmdAt = Date.now();
+        }, 3000);
+      } else yt.error = _t('YouTube couldn’t play this video here');
     }
   });
 

@@ -265,6 +265,17 @@
     return state === 2 || state === 0 || state === 5 || state === -1 || playedMs < 2500 || (state === 3 && stateMs > 600);
   }
 
+  // what a YouTube player error (its onError code) means: 'blocked' when the video may not play outside YouTube
+  // (101 and 150: its owner doesn't allow embedding; 153: YouTube refused the page embedding it), 'gone' when it
+  // doesn't exist or is private (100), else 'retry': a passing failure (2 a request YouTube didn't take, 5 the HTML5
+  // player), worth loading the video once more
+  function ytErrorKind(code) {
+    const c = Number(code);
+    if (c === 101 || c === 150 || c === 153) return 'blocked';
+    if (c === 100) return 'gone';
+    return 'retry';
+  }
+
   // play/pause from what the player reports (state), not from the last command sent: YouTube may drop a pause sent
   // while it loads, and that must be sent again; at most once a second
   function ytCommand({ wantPlay, state, sinceCmdMs }) {
@@ -938,6 +949,7 @@
     ytSync,
     ytLead,
     ytCover,
+    ytErrorKind,
     ytCommand,
     ytGrace,
     isClockActivity,
