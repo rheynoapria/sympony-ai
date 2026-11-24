@@ -13,6 +13,8 @@ pub struct HitMsg {
     pub near: Vec<Rect>,
     /// the ~60 px approach band below the closed notch for Pony's peek body
     pub peek: Option<Rect>,
+    /// Pony's visible peek body below the closed notch: clickable (disables click-through) without firing `notch:hover`
+    pub peek_hit: Option<Rect>,
 }
 
 fn rect(v: &Value) -> Option<Rect> {
@@ -30,11 +32,17 @@ impl HitMsg {
             vis: r.get("vis").and_then(Value::as_array).map(|a| a.iter().filter_map(rect).collect()).unwrap_or_default(),
             near: ["near", "near2"].iter().filter_map(|k| r.get(*k).and_then(rect)).collect(),
             peek: r.get("peek").and_then(rect),
+            peek_hit: r.get("peekHit").and_then(rect),
         })
     }
 
     pub fn contains(&self, x: f64, y: f64) -> bool {
         self.main.contains(x, y) || self.extra.is_some_and(|r| r.contains(x, y)) || self.vis.iter().any(|r| r.contains(x, y))
+    }
+
+    /// True when the notch window should accept mouse events (over the notch itself OR over Pony's visible peek body).
+    pub fn clickable(&self, x: f64, y: f64) -> bool {
+        self.contains(x, y) || self.peek_hit.is_some_and(|r| r.contains(x, y))
     }
 }
 
@@ -42,6 +50,7 @@ impl HitMsg {
 pub struct Hover {
     area: Option<HitMsg>,
     inside: bool,
+    clickable: bool,
     near: bool,
     peek: bool,
 }
@@ -62,6 +71,15 @@ impl Hover {
         (inside != self.inside).then(|| {
             self.inside = inside;
             inside
+        })
+    }
+
+    /// Whether the window should accept cursor events (notch OR Pony peek body): `Some(clickable)` when that changed.
+    pub fn update_clickable(&mut self, (x, y): (f64, f64)) -> Option<bool> {
+        let clickable = self.area.as_ref().is_some_and(|a| a.clickable(x, y));
+        (clickable != self.clickable).then(|| {
+            self.clickable = clickable;
+            clickable
         })
     }
 

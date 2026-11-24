@@ -650,13 +650,13 @@ svg { display: block; }
 /* Pony peek canvas host tucked under the closed notch's lower edge */
 #ponyPeek {
   position: fixed;
-  width: 76px;
-  height: 58px;
-  transform: translateX(-50%) translateY(-22px) scale(0.92);
+  width: 84px;
+  height: 62px;
+  transform: translateX(-50%) translateY(-28px) scale(0.9);
   opacity: 0;
   pointer-events: none;
   z-index: 4;
-  transition: transform 0.32s var(--spring), opacity 0.2s ease;
+  transition: transform 0.34s var(--spring), opacity 0.2s ease;
 }
 #ponyPeek.show {
   opacity: 1;
@@ -665,8 +665,8 @@ svg { display: block; }
   cursor: pointer;
 }
 #ponyPeek canvas {
-  width: 76px;
-  height: 58px;
+  width: 84px;
+  height: 62px;
   display: block;
 }
 /* Pony's composer: one rounded bar, Pony sitting on its left edge (the live canvas rises a little above it),

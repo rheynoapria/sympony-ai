@@ -557,21 +557,21 @@ function layout() {
     : (shell === 'tuck' || aside || shell === 'handle') ? { x: hit.x, y: hit.y, w: hit.w, h: hit.h + 8 }
     : { x: hit.x - ear - 2, y: hit.y, w: hit.w + ear * 2 + 4, h: hit.h + 12 }];
 
-  // Pony peek host under the closed notch: included in hit & vis ONLY while shown
+  // Pony peek host under the closed notch: clickable (`peekHit`) ONLY while shown, kept separate from `hit`/`vis`
+  // so approaching or hovering Pony lets Pony peek calmly without triggering `openOnHover` on the notch.
   const peekEl = $('#ponyPeek');
-  let peekRect = null;
+  let peekHit = null;
+  const allowPeek = canPonyPeek() && formCls === 'f-top';
   if (peekEl) {
-    if (ponyPeekShown && canPonyPeek()) {
-      const pTop = gap + h - 24;
+    if (ponyPeekShown && allowPeek) {
+      const pTop = gap + h - 22;
       peekEl.style.left = left + 'px';
       peekEl.style.top = pTop + 'px';
-      peekRect = { x: left - 38, y: gap + h - 4, w: 76, h: 38 };
-      hit = { ...hit, h: Math.max(hit.h, (gap + h + 34) - hit.y) };
+      peekHit = { x: left - 42, y: gap + h, w: 84, h: 42 };
     } else if (ponyPeekShown) {
       hidePonyPeek(true);
     }
   }
-  if (peekRect) vis.push(peekRect);
   if (pillBridge) vis.push(pillBridge);
   if (pillRect) vis.push(pillRect);
   const devBar = window.SYMPONY_SHELL_DEV ? $('#shellDevBar') : null;
@@ -581,11 +581,12 @@ function layout() {
   if (outline.vis.length) vis.push(...outline.vis);
   const round = (rc) => ({ x: Math.round(rc.x), y: Math.round(rc.y), w: Math.round(rc.w), h: Math.round(rc.h) });
   const near = asideMode() ? round({ x: left - w / 2 - ear - 6, y: 0, w: w + ear * 2 + 12, h: gap + h + 12 }) : null;
-  const peekBand = canPonyPeek()
-    ? round({ x: left - w / 2 - 40, y: gap + h - 10, w: w + 80, h: 70 })
+  const peekBand = allowPeek
+    ? round({ x: left - w / 2 - 40, y: gap + h, w: w + 80, h: 68 })
     : null;
   st.hitMsg = { x: Math.round(hit.x), y: Math.round(hit.y), w: Math.round(hit.w), h: Math.round(hit.h),
-    extra: bbRect ? round(bbRect) : null, vis: vis.map(round), strip: stripTint(artOpacity(inline), w, rowH, ear, left), near, near2: null, peek: peekBand };
+    extra: bbRect ? round(bbRect) : null, vis: vis.map(round), strip: stripTint(artOpacity(inline), w, rowH, ear, left),
+    near, near2: null, peek: peekBand, peekHit: peekHit ? round(peekHit) : null };
   sendHit();
   paintProgress();
   syncArrows();
@@ -2843,9 +2844,12 @@ function ponyEyeHtml(mood, count) {
 }
 
 // Pony peek host under the closed notch
+const PONY_PEEK_GRIP_Y = 23;
 let ponyPeekShown = false;
 let ponyPeekByCursor = false;
+let ponyPeekHovering = false;
 let ponyPeekTimer = null;
+let ponyPeekLeaveTimer = null;
 let ponyPeekHandle = null;
 let lastPonyMood = 'idle';
 
@@ -2854,7 +2858,14 @@ function canPonyPeek() {
   if (!s || s.ponyPeek === false || ponyReducedMotion()) return false;
   if (st.open || st.hudOnly || claudeShowing() || notifShowing()) return false;
   if (st.shell === 'hidden' || st.shell === 'tuck' || st.shell === 'aside' || st.shell === 'handle') return false;
+  if (s.notchForm === 'island' || s.notchForm === 'drawer') return false;
   return true;
+}
+
+function syncPonyPeekHands(handle, mood) {
+  if (!handle || !handle.setHands) return;
+  if (ponyPeekHovering || mood === 'done') handle.setHands('wave');
+  else handle.setHands('grip', PONY_PEEK_GRIP_Y);
 }
 
 function ensurePonyPeekHandle() {
@@ -2862,15 +2873,28 @@ function ensurePonyPeekHandle() {
   const cv = $('#ponyPeekCanvas');
   if (!cv || !window.Pony) return null;
   const lk = ponyLook();
+  const mood = currentPonyMood();
   ponyPeekHandle = window.Pony.mount(cv, {
-    scale: 0.96,
+    scale: 0.9,
     shape: lk.shape,
     color: lk.color,
-    mood: currentPonyMood(),
-    floorFrac: 0.80,
+    mood,
+    floorFrac: 0.88,
+    shadow: false,
+    hop: 0.45,
   });
+  syncPonyPeekHands(ponyPeekHandle, mood);
   const host = $('#ponyPeek');
   if (host) {
+    host.onpointerenter = () => {
+      ponyPeekHovering = true;
+      if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
+      syncPonyPeekHands(ponyPeekHandle, currentPonyMood());
+    };
+    host.onpointerleave = () => {
+      ponyPeekHovering = false;
+      syncPonyPeekHands(ponyPeekHandle, currentPonyMood());
+    };
     host.onclick = (e) => {
       e.stopPropagation();
       if (ponyPeekHandle) ponyPeekHandle.poke();
@@ -2880,23 +2904,26 @@ function ensurePonyPeekHandle() {
   return ponyPeekHandle;
 }
 
-function showPonyPeek(ms = 3000, byCursor = false) {
+function showPonyPeek(ms = 3500, byCursor = false) {
   if (!canPonyPeek()) return false;
   const host = $('#ponyPeek');
   if (!host) return false;
+  if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
   const handle = ensurePonyPeekHandle();
   const lk = ponyLook();
+  const mood = currentPonyMood();
   if (handle) {
     if (handle.resume) handle.resume();
     handle.setLook(lk.shape, lk.color);
-    handle.setMood(currentPonyMood());
+    handle.setMood(mood);
+    syncPonyPeekHands(handle, mood);
   }
   const was = ponyPeekShown;
   ponyPeekShown = true;
   ponyPeekByCursor = !!byCursor;
   host.classList.add('show');
   host.setAttribute('aria-hidden', 'false');
-  if (ponyPeekTimer) clearTimeout(ponyPeekTimer);
+  if (ponyPeekTimer) { clearTimeout(ponyPeekTimer); ponyPeekTimer = null; }
   if (ms > 0) {
     ponyPeekTimer = setTimeout(() => {
       ponyPeekTimer = null;
@@ -2909,11 +2936,13 @@ function showPonyPeek(ms = 3000, byCursor = false) {
 
 function hidePonyPeek(skipLayout) {
   if (ponyPeekTimer) { clearTimeout(ponyPeekTimer); ponyPeekTimer = null; }
+  if (ponyPeekLeaveTimer) { clearTimeout(ponyPeekLeaveTimer); ponyPeekLeaveTimer = null; }
   if (ponyPeekHandle && ponyPeekHandle.pause) ponyPeekHandle.pause();
   const host = $('#ponyPeek');
   const was = ponyPeekShown;
   ponyPeekShown = false;
   ponyPeekByCursor = false;
+  ponyPeekHovering = false;
   if (host) {
     host.classList.remove('show');
     host.setAttribute('aria-hidden', 'true');
@@ -2930,12 +2959,13 @@ function syncPonyMood() {
   if (ponyPeekHandle) {
     ponyPeekHandle.setLook(lk.shape, lk.color);
     ponyPeekHandle.setMood(mood);
+    syncPonyPeekHands(ponyPeekHandle, mood);
   }
   if (!canPonyPeek()) {
     if (ponyPeekShown) hidePonyPeek();
   } else if (mood !== lastPonyMood) {
-    if (mood === 'done') showPonyPeek(3000, false);
-    else if (mood === 'attention' && !claudeShowing()) showPonyPeek(3000, false);
+    if (mood === 'done') showPonyPeek(3500, false);
+    else if (mood === 'attention' && !claudeShowing()) showPonyPeek(3500, false);
   }
   if (mood !== lastPonyMood) window.dispatchEvent(new CustomEvent('pony:mood', { detail: mood })); // (the composer's Pony)
   lastPonyMood = mood;
@@ -2944,9 +2974,13 @@ function syncPonyMood() {
 // Rust-side cursor polling (hover.rs) drives peek even while the window ignores mouse events outside the hit rect
 api.on('pony:near', (near) => {
   if (near) {
-    showPonyPeek(3000, true);
+    showPonyPeek(0, true);
   } else if (ponyPeekShown && ponyPeekByCursor) {
-    hidePonyPeek();
+    if (ponyPeekLeaveTimer) clearTimeout(ponyPeekLeaveTimer);
+    ponyPeekLeaveTimer = setTimeout(() => {
+      ponyPeekLeaveTimer = null;
+      if (ponyPeekShown && ponyPeekByCursor && !ponyPeekHovering) hidePonyPeek();
+    }, 180);
   }
 });
 
@@ -2955,20 +2989,22 @@ document.addEventListener('pointermove', (e) => {
     if (ponyPeekShown) hidePonyPeek();
     return;
   }
-  const nearY = e.clientY >= st.box.bottom - 10 && e.clientY <= st.box.bottom + 60;
+  if (ponyPeekShown && ponyPeekHandle) {
+    const cx = (st.box.left + st.box.right) / 2;
+    ponyPeekHandle.lookAt((e.clientX - cx) / 100, (e.clientY - (st.box.bottom + 18)) / 60);
+  }
+  // Browser preview fallback (under Tauri, Rust `hover.rs` owns `pony:near` show/hide across click-through)
+  if (api.engine === 'rust') return;
+  const nearY = e.clientY >= st.box.bottom && e.clientY <= st.box.bottom + 68;
   const nearX = e.clientX >= st.box.left - 40 && e.clientX <= st.box.right + 40;
   if (nearY && nearX) {
-    showPonyPeek(3000, true);
-    if (ponyPeekHandle) {
-      const cx = (st.box.left + st.box.right) / 2;
-      ponyPeekHandle.lookAt((e.clientX - cx) / 100, (e.clientY - (st.box.bottom + 14)) / 60);
-    }
+    showPonyPeek(0, true);
   } else if (ponyPeekShown && ponyPeekByCursor) {
     hidePonyPeek();
   }
 });
 document.addEventListener('pointerleave', () => {
-  if (ponyPeekShown && ponyPeekByCursor) hidePonyPeek();
+  if (api.engine !== 'rust' && ponyPeekShown && ponyPeekByCursor) hidePonyPeek();
 });
 
 let lastActKey = '';
