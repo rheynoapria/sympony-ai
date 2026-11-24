@@ -175,8 +175,17 @@ pub fn settings_get(app: State<App>) -> Value {
 }
 
 /// Applies a settings patch, notifies background services and all windows, and syncs shortcut/anchor.
-pub fn apply_settings_patch(handle: &tauri::AppHandle, patch: Value) -> Value {
+pub fn apply_settings_patch(handle: &tauri::AppHandle, mut patch: Value) -> Value {
     let app = handle.state::<App>();
+    // Dragging any manual size slider in Settings automatically switches Size mode from Auto to Custom.
+    if let Some(obj) = patch.as_object_mut() {
+        let touches_manual_size = ["notchWidth", "notchHeight", "expandedWidth", "expandedHeight", "expandedHeightTall"]
+            .iter()
+            .any(|k| obj.contains_key(*k));
+        if touches_manual_size && !obj.contains_key("notchSizeMode") {
+            obj.insert("notchSizeMode".into(), Value::from("custom"));
+        }
+    }
     let moved = patch.get("notchPosition").is_some();
     let out = app.settings.set(patch.clone());
     crate::background::settings_changed(handle, &patch);
@@ -257,6 +266,7 @@ pub fn helper_state(
     let mut s = serde_json::Map::new();
     // (not the frontend's helper data, but its events may come before the page listens: the boot reads them here)
     s.insert("camera".into(), notch.camera.lock().unwrap().clone().unwrap_or(Value::Null));
+    s.insert("display".into(), notch.display.lock().unwrap().clone().unwrap_or(Value::Null));
     if let Some(x) = crate::shell::anchor_from_settings(&handle) {
         s.insert("anchor".into(), serde_json::json!(x));
     }

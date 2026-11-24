@@ -66,6 +66,9 @@ static LAST_LOCATION_NOTE: std::sync::Mutex<String> = std::sync::Mutex::new(Stri
 /// After a settings change: what has to follow it.
 pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
     let has = |keys: &[&str]| keys.iter().any(|k| patch.get(k).is_some());
+    if patch.get("display").is_some() {
+        crate::notch::sync_now(app);
+    }
     if has(&["weatherLocation", "weatherUnit"]) {
         weather_soon(app);
     }

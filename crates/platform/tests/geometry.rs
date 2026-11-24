@@ -37,4 +37,14 @@ fn anchor_from_position() {
     assert_eq!(platform::geometry::anchor_px(0.5), 410.0);
     assert_eq!(platform::geometry::anchor_px(0.25), 205.0);
     assert_eq!(platform::geometry::anchor_px(7.0), 820.0); // clamped
+    assert_eq!(platform::geometry::anchor_px_for(0.5, 700.0), 350.0);
+}
+
+#[test]
+fn compact_display_clamps_window_and_reports_display_info() {
+    let small = Display { id: 3, name: "Compact".into(), frame: Rect { x: 0.0, y: 0.0, w: 760.0, h: 430.0 }, camera: None, main: true };
+    let (win, cam) = place(&small);
+    assert_eq!(win, Rect { x: 12.0, y: 0.0, w: 736.0, h: 390.0 });
+    assert_eq!(cam, None);
+    assert_eq!(platform::geometry::display_info(&small), json!({ "id": 3, "w": 760.0, "h": 430.0, "hasCamera": false }));
 }

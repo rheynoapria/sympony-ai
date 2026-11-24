@@ -334,9 +334,31 @@ describe('closed notch sizing (13-inch MacBook camera + non-camera)', () => {
 });
 
 describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid sizes)', () => {
-  test('default (auto) size keeps every notch card the exact same uniform size regardless of style height', () => {
+  test('default untouched modules keep uniform display-adapted height while explicit compact/minimal user configs keep their compact height', () => {
+    // Untouched / default Bento modules stay 100% uniform height (sejajar secara default)
+    const defaultPrayer = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled', pack: 'bento' },
+      pref: {},
+      expandedWidth: 680,
+      defaultHeight: 276,
+      maxW: 780,
+      maxH: 340,
+    });
+    const defaultControl = K.resolveModuleFrame({
+      styleDef: { id: 'bento', height: 272, surface: 'oled', pack: 'bento' },
+      pref: { style: 'bento', size: 'auto' },
+      expandedWidth: 680,
+      defaultHeight: 276,
+      maxW: 780,
+      maxH: 340,
+    });
+    expect(defaultPrayer.height).toBe(276);
+    expect(defaultControl.height).toBe(276);
+    expect(defaultControl.width).toBe(680);
+
+    // User who explicitly chose a compact or minimal style keeps their compact/minimal height automatically
     const timeline = K.resolveModuleFrame({
-      styleDef: { id: 'timeline', height: 160, surface: 'borderless' },
+      styleDef: { id: 'timeline', height: 160, surface: 'borderless', pack: 'compact' },
       pref: { style: 'timeline', size: 'auto' },
       expandedWidth: 660,
       defaultHeight: 268,
@@ -344,7 +366,7 @@ describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid siz
       maxH: 340,
     });
     const minimalCtl = K.resolveModuleFrame({
-      styleDef: { id: 'minimal', height: 140, surface: 'borderless' },
+      styleDef: { id: 'minimal', height: 140, surface: 'borderless', pack: 'minimal' },
       pref: { style: 'minimal' },
       expandedWidth: 660,
       defaultHeight: 268,
@@ -355,12 +377,12 @@ describe('Module Styling Library (resolveModuleFrame & custom Dashboard grid siz
       styleId: 'timeline',
       sizeMode: 'auto',
       width: 660,
-      height: 268,
-      stageH: 214,
+      height: 160,
+      stageH: 106,
       surface: 'borderless',
     });
-    expect(minimalCtl.width).toBe(timeline.width);
-    expect(minimalCtl.height).toBe(timeline.height);
+    expect(minimalCtl.width).toBe(660);
+    expect(minimalCtl.height).toBe(140);
   });
 
   test('fit mode, size presets, and custom W×H let users customize any module size and clamp safely', () => {
@@ -494,5 +516,71 @@ describe('renderMarkdown (GFM chat & live stream rendering)', () => {
     expect(html).not.toContain('data-href="javascript:');
     expect(html).not.toContain('<img ');
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  test('displayNotchSizes adapts closed & expanded notch dimensions to notched MacBooks, compact high-DPI laptops, and large external monitors', () => {
+    // 16" MacBook Pro (1800×1169, camera 220×38) — ignores stale manual sizes when mode is auto
+    const mbp16 = K.displayNotchSizes({
+      settings: { notchSizeMode: 'auto', notchWidth: 80, notchHeight: 32, expandedWidth: 710 },
+      displayW: 1800,
+      displayH: 1169,
+      camW: 220,
+      camH: 38,
+    });
+    expect(mbp16.mode).toBe('auto');
+    expect(mbp16.notchWidth).toBe(220);
+    expect(mbp16.notchHeight).toBe(38);
+    expect(mbp16.expandedWidth).toBe(680);
+    expect(mbp16.expandedHeightTall).toBe(276);
+
+    // 14" MacBook Pro (1512×982, camera 184×32)
+    const mbp14 = K.displayNotchSizes({
+      settings: { notchSizeMode: 'auto' },
+      displayW: 1512,
+      displayH: 982,
+      camW: 184,
+      camH: 32,
+    });
+    expect(mbp14.notchWidth).toBe(184);
+    expect(mbp14.notchHeight).toBe(32);
+    expect(mbp14.expandedWidth).toBe(634);
+
+    // Compact / 150%-DPI Windows laptop (1280×720, no camera)
+    const winCompact = K.displayNotchSizes({
+      settings: {},
+      displayW: 1280,
+      displayH: 720,
+      camW: 0,
+      camH: 0,
+    });
+    expect(winCompact.notchHeight).toBe(26);
+    expect(winCompact.expandedWidth).toBe(598);
+    expect(winCompact.expandedHeightTall).toBe(232);
+
+    // 27" 1440p external monitor (2560×1440, no camera)
+    const ext2k = K.displayNotchSizes({
+      settings: {},
+      displayW: 2560,
+      displayH: 1440,
+      camW: 0,
+      camH: 0,
+    });
+    expect(ext2k.notchHeight).toBe(36);
+    expect(ext2k.expandedWidth).toBe(740);
+    expect(ext2k.expandedHeightTall).toBe(294);
+
+    // Explicit Custom mode respects user sliders
+    const custom = K.displayNotchSizes({
+      settings: { notchSizeMode: 'custom', notchWidth: 240, notchHeight: 36, expandedWidth: 700, expandedHeight: 210, expandedHeightTall: 290 },
+      displayW: 1800,
+      displayH: 1169,
+      camW: 220,
+      camH: 38,
+    });
+    expect(custom.mode).toBe('custom');
+    expect(custom.notchWidth).toBe(240);
+    expect(custom.notchHeight).toBe(36);
+    expect(custom.expandedWidth).toBe(700);
+    expect(custom.expandedHeightTall).toBe(290);
   });
 });

@@ -344,6 +344,7 @@
  "notchLook": "black",
  "notchOpacity": 100,
  "notchPosition": 0.5,
+ "notchSizeMode": "auto",
  "notchTopGap": 0,
  "notchTopGapApps": [],
  "notchView": "modules",

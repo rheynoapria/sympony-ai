@@ -120,7 +120,11 @@ pub fn drag(app: &AppHandle, action: &str) {
         "end" => {
             shell.dragging.store(false, Ordering::SeqCst);
             if let Some(x) = *shell.anchor.lock().unwrap() {
-                let frac = (x / platform::geometry::WIN_W * 1000.0).round() / 1000.0;
+                let win_w = app
+                    .try_state::<Notch>()
+                    .and_then(|n| n.win.lock().unwrap().map(|r| r.w))
+                    .unwrap_or(platform::geometry::WIN_W);
+                let frac = (x / win_w.max(1.0) * 1000.0).round() / 1000.0;
                 let out = app.state::<App>().settings.set(serde_json::json!({ "notchPosition": frac }));
                 let _ = app.emit("settings", out);
             }
@@ -131,7 +135,13 @@ pub fn drag(app: &AppHandle, action: &str) {
 
 /// The saved position as the frontend's anchor (window points).
 pub fn anchor_from_settings(app: &AppHandle) -> Option<f64> {
-    app.state::<App>().settings.get()["notchPosition"].as_f64().map(platform::geometry::anchor_px)
+    let win_w = app
+        .try_state::<Notch>()
+        .and_then(|n| n.win.lock().unwrap().map(|r| r.w))
+        .unwrap_or(platform::geometry::WIN_W);
+    app.state::<App>().settings.get()["notchPosition"]
+        .as_f64()
+        .map(|p| platform::geometry::anchor_px_for(p, win_w))
 }
 
 /// Tells the notch where `notchPosition` puts it (after Settings changed it, or a reset).

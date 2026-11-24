@@ -184,8 +184,33 @@ function paintIcons() {
 }
 
 // ================================================================== layout / sizing
+function effectiveSizes(s = st.settings) {
+  const cfg = s || {};
+  const disp = st.display || {};
+  const cam = gapSetting() > 0 ? null : st.cam;
+  const fallbackW = (typeof screen !== 'undefined' && screen.width) ? screen.width : 1512;
+  const fallbackH = (typeof screen !== 'undefined' && screen.height) ? screen.height : 982;
+  if (window.NotchKit && typeof NotchKit.displayNotchSizes === 'function') {
+    return NotchKit.displayNotchSizes({
+      settings: cfg,
+      displayW: disp.w || fallbackW,
+      displayH: disp.h || fallbackH,
+      camW: cam ? cam.w : 0,
+      camH: cam ? cam.h : 0,
+    });
+  }
+  return {
+    mode: cfg.notchSizeMode === 'custom' ? 'custom' : 'auto',
+    notchWidth: Number(cfg.notchWidth) || 200,
+    notchHeight: Number(cfg.notchHeight) || 32,
+    expandedWidth: Number(cfg.expandedWidth) || 660,
+    expandedHeight: Number(cfg.expandedHeight) || 196,
+    expandedHeightTall: Number(cfg.expandedHeightTall) || 268,
+  };
+}
+
 function closedHeight() {
-  const h = st.settings ? st.settings.notchHeight : 32;
+  const h = effectiveSizes().notchHeight;
   const cam = camera();
   return cam ? Math.max(h, Math.ceil(cam.h)) : h;
 }
@@ -201,7 +226,11 @@ function camNear() {
   const c = st.cam;
   if (!c) return null;
   const want = st.anchor == null ? window.innerWidth / 2 : st.anchor;
-  return Math.abs(want - c.x) < c.w / 2 + (st.settings ? st.settings.notchWidth : 200) / 2 ? c : null;
+  return Math.abs(want - c.x) < c.w / 2 + effectiveSizes().notchWidth / 2 ? c : null;
+}
+function onDisplay(d) {
+  st.display = d && d.w > 0 && d.h > 0 ? d : null;
+  renderClosed(); layout();
 }
 function onCamera(c) {
   st.cam = c && c.w > 0 && c.h > 0 ? c : null;
@@ -210,6 +239,7 @@ function onCamera(c) {
   renderClosed(); layout();
 }
 api.on('notch:camera', onCamera);
+if (api.onNotchDisplay) api.onNotchDisplay(onDisplay);
 
 function isTall(page) {
   const m = modules.get(page);
@@ -321,14 +351,15 @@ function layout() {
   }) : (st.open ? 'open' : 'pill');
   st.shell = shell;
 
+  const sz = effectiveSizes(s);
   let tiny = false;
   if (shell === 'open') {
     const maxW = window.innerWidth - 40;
-    w = (window.N && N.carousel && N.carousel.width) ? N.carousel.width(maxW) : Math.min(s.expandedWidth, maxW);
+    w = (window.N && N.carousel && N.carousel.width) ? N.carousel.width(maxW) : Math.min(sz.expandedWidth, maxW);
     if (window.N && N.carousel) N.carousel.syncWidth(w);
     // (room under it for its shadow, ~50 px, and a haptic bump: wm.rs WIN_H)
     const maxH = window.innerHeight - 70 - gap;
-    h = (window.N && N.carousel) ? N.carousel.height(maxH) : Math.min(isTall(st.page) ? s.expandedHeightTall : s.expandedHeight, maxH);
+    h = (window.N && N.carousel) ? N.carousel.height(maxH) : Math.min(isTall(st.page) ? sz.expandedHeightTall : sz.expandedHeight, maxH);
     const topInset = cam ? Math.max(40, Math.ceil(cam.h) + 4) : 40;
     const botInset = h <= 148 ? 10 : 14;
     const stageH = Math.max(60, h - topInset - botInset);
@@ -374,15 +405,15 @@ function layout() {
     notchEl.style.setProperty('--strip-h', stripH + 'px');
     notchEl.style.setProperty('--peek-h', strip ? stripH + 'px' : '0px'); // the notifications go below it
     const underW = under ? lyricsWidth() : 0;
-    if (underW) w = Math.max(w, Math.min(underW, s.notchWidth + 300));
+    if (underW) w = Math.max(w, Math.min(underW, sz.notchWidth + 300));
     // inside: room for the song's widest line between the art and the visualizer, within limits; with Long
     // lines inside → scroll, only for about the notch's own width + 120 px of text (longer lines scroll)
     notchEl.style.setProperty('--lyr-side', side + 8 + 'px');
-    const textW = inline ? (s.lyricsLongLines === 'scroll' ? Math.min(inlineWidth(), s.notchWidth + 120) : inlineWidth()) : 0;
-    if (inline) w = Math.max(w, Math.min(textW + (side + 8) * 2 + 4, s.notchWidth + 340, window.innerWidth - 80));
-    if (act && act.kind.startsWith('hud') && s.hudStyle === 'panel') { h += 34; w = Math.max(w, s.notchWidth + 140); }
+    const textW = inline ? (s.lyricsLongLines === 'scroll' ? Math.min(inlineWidth(), sz.notchWidth + 120) : inlineWidth()) : 0;
+    if (inline) w = Math.max(w, Math.min(textW + (side + 8) * 2 + 4, sz.notchWidth + 340, window.innerWidth - 80));
+    if (act && act.kind.startsWith('hud') && s.hudStyle === 'panel') { h += 34; w = Math.max(w, sz.notchWidth + 140); }
     const rows = todoPanelRows();
-    if (rows) { h += rows * 20 + 8; w = Math.max(w, s.notchWidth + 220); }
+    if (rows) { h += rows * 20 + 8; w = Math.max(w, sz.notchWidth + 220); }
     notchEl.style.setProperty('--todo-panel-h', (rows ? rows * 20 + 8 : 0) + 'px'); // the track-title peek goes below it
     // Claude Code's card under that (the notifications go below it)
     const ccH = claudeHeight();
@@ -390,10 +421,10 @@ function layout() {
     if (ccH) {
       const maxClosedH = Math.max(rowH + 120, window.innerHeight - gap - 14);
       h = Math.min(maxClosedH, h + ccH + 6);
-      w = Math.max(w, 520, s.notchWidth + 280);
+      w = Math.max(w, 520, sz.notchWidth + 280);
     }
     // Windows notifications: a stack of cards under all of that
-    if (notifShowing()) { h += notifStackHeight(); w = Math.max(w, 440, s.notchWidth + 240); }
+    if (notifShowing()) { h += notifStackHeight(); w = Math.max(w, 440, sz.notchWidth + 240); }
     // the song's progress line (Settings → Media) stays right under the music: its row, or the lyrics line in the
     // strip under it; whatever stretches Sympony further down (notifications…) goes below the line
     const musicH = rowH + (strip ? (rows ? rows * 20 + 8 : 0) + stripH : 0);
@@ -1593,7 +1624,7 @@ api.on('claude', (d) => {
 })();
 // the card's height (with the gap above it), drawn first at the width it gets; 0 while there's none
 function claudeHeight() {
-  if (claudeShowing()) notchEl.style.setProperty('--cc-w', Math.max(500, Math.min(540, st.settings.notchWidth + 260)) + 'px');
+  if (claudeShowing()) notchEl.style.setProperty('--cc-w', Math.max(500, Math.min(540, effectiveSizes().notchWidth + 260)) + 'px');
   renderClaude();
   const box = $('.claude-stack', notchEl);
   return box ? box.offsetHeight + 4 : 0;
@@ -3508,16 +3539,17 @@ function clockAllowedWith(act) {
 // an empty `notchWidth` middle on top of `side * 2`.
 function closedWidthFlat(act, side) {
   const s = st.settings; const mode = s.idleClock || 'time';
+  const nw = effectiveSizes(s).notchWidth;
   const maxW = Math.max(320, window.innerWidth - 80);
-  if (st.open) return s.notchWidth;
+  if (st.open) return nw;
   if (ponyIdleOn()) {
-    const mid = Math.max(168, s.notchWidth - side * 2);
-    return Math.min(maxW, Math.max(s.notchWidth, mid + side * 2));
+    const mid = Math.max(168, nw - side * 2);
+    return Math.min(maxW, Math.max(nw, mid + side * 2));
   }
   if (act && act.kind === 'music' && !camera() && !lyricsInline() && st.media.title) {
     return window.NotchKit && NotchKit.closedWidthNoCam
-      ? NotchKit.closedWidthNoCam({ notchWidth: s.notchWidth, midNeed: 168, side, pad: 0, maxW })
-      : Math.min(maxW, Math.max(s.notchWidth, 168 + side * 2));
+      ? NotchKit.closedWidthNoCam({ notchWidth: nw, midNeed: 168, side, pad: 0, maxW })
+      : Math.min(maxW, Math.max(nw, 168 + side * 2));
   }
   const marks = !side ? Math.max(langMarkShown() ? langRoom() : 0, aiMarkRoom()) * 2 : 0;
   let midNeed = 0;
@@ -3531,8 +3563,8 @@ function closedWidthFlat(act, side) {
     midNeed = marks;
   }
   return window.NotchKit && NotchKit.closedWidthNoCam
-    ? NotchKit.closedWidthNoCam({ notchWidth: s.notchWidth, midNeed, side, pad: 28, maxW })
-    : Math.min(maxW, Math.max(s.notchWidth, midNeed + 28 + side * 2));
+    ? NotchKit.closedWidthNoCam({ notchWidth: nw, midNeed, side, pad: 28, maxW })
+    : Math.min(maxW, Math.max(nw, midNeed + 28 + side * 2));
 }
 // how wide the time (or the day and time) is in the closed notch, every digit counted as a 0
 function clockWidth(mode) {
@@ -3592,6 +3624,7 @@ function camSideWidths(act, side) {
 }
 function camLayoutFor(act, side, cam) {
   const s = st.settings;
+  const nw = effectiveSizes(s).notchWidth;
   const wantClock = camClockShown(act);
   const mode = camClockMode(act);
   const clockW = wantClock && mode !== 'off' ? clockWidth(mode) : 0;
@@ -3605,12 +3638,12 @@ function camLayoutFor(act, side, cam) {
       rightW,
       clockW,
       pad,
-      notchWidth: s.notchWidth,
+      notchWidth: nw,
       maxW,
     });
   }
   const wing = Math.max(leftW, rightW) + (clockW ? clockW + 6 : 0);
-  const width = Math.min(maxW, Math.max(s.notchWidth, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + pad) * 2)));
+  const width = Math.min(maxW, Math.max(nw, Math.ceil(cam.w + CAM_MARGIN * 2 + (wing + pad) * 2)));
   return { width, showClock: clockW > 0, clockRight: !rightW, clockL: pad, clockW };
 }
 // Settings → General → Clock size: the closed Sympony's time follows its Height. Normal is the size it always had (38 % of
@@ -4852,7 +4885,7 @@ function renderLangMark() {
 // long name next to a narrow middle (and a very long one is cut short)
 function langHudSide(text) {
   const need = Math.ceil(textWidth([text], '600 12px')) + 25 + 34 + 24; // the keyboard, the name, the code, a gap
-  return Math.max(112, Math.min(210, Math.ceil((need - st.settings.notchWidth) / 2)));
+  return Math.max(112, Math.min(210, Math.ceil((need - effectiveSizes().notchWidth) / 2)));
 }
 
 // ---- AI usage
@@ -5693,7 +5726,7 @@ function sysText(label, value, title, c) {
 let sysWide = { until: 0, side: 0 };
 function sysSide() {
   const need = $('#closedLeft').scrollWidth + $('#closedRight').scrollWidth + 28;
-  const side = Math.max(90, Math.ceil((need - st.settings.notchWidth) / 20) * 10);
+  const side = Math.max(90, Math.ceil((need - effectiveSizes().notchWidth) / 20) * 10);
   const until = st.activity ? st.activity.until : 0;
   sysWide = until === sysWide.until ? { until, side: Math.max(sysWide.side, side) } : { until, side };
   return sysWide.side;
@@ -5703,7 +5736,7 @@ function sysSide() {
 let fpsWide = { pid: 0, side: 0 };
 function fpsSide() {
   const need = $('#closedLeft').scrollWidth + $('#closedRight').scrollWidth + 28;
-  const side = Math.max(80, Math.ceil((need - st.settings.notchWidth) / 20) * 10);
+  const side = Math.max(80, Math.ceil((need - effectiveSizes().notchWidth) / 20) * 10);
   const pid = ((st.stats || {}).fps || {}).pid || 0;
   fpsWide = pid === fpsWide.pid ? { pid, side: Math.max(fpsWide.side, side) } : { pid, side };
   return fpsWide.side;
@@ -6148,7 +6181,8 @@ api.onHelper((msg) => {
 function previewSize(prev, s) {
   const tall = prev.expandedHeightTall !== s.expandedHeightTall;
   const normal = prev.expandedHeight !== s.expandedHeight;
-  if (!tall && !normal && prev.expandedWidth === s.expandedWidth) return;
+  const modeChanged = prev.notchSizeMode !== s.notchSizeMode;
+  if (!tall && !normal && !modeChanged && prev.expandedWidth === s.expandedWidth) return;
   if (st.open && !st.previewing) return;
   // the width is the same on every tab; a height belongs to either the tall tabs or the others
   const fits = (id) => (!tall && !normal) || isTall(id) === tall;
@@ -7450,7 +7484,7 @@ function dayInfo(now = Date.now()) {
 
 // Shared helpers for module files.
 window.N = {
-  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, chime: (kind) => chime(kind, true),
+  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, effectiveSizes, chime: (kind) => chime(kind, true),
   openEvent, startOfDay, DAY, cmd, mediaPosition, appLabel, progressRing, fa, prayerTimes, nextPrayer,
   meter, meterLevel, ring, appIconImg, agentIconUrl, mountHitlCard, refreshHitlCards, renderHitlSection,
   ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk,
@@ -7514,6 +7548,7 @@ window.N = {
     dropCatalog = await api.svc('actions', 'catalog');
     const state = await api.helperState();
     // the camera and the notch's place are also in it: their events can come before this page listens
+    if ('display' in state) onDisplay(state.display);
     if ('camera' in state) onCamera(state.camera);
     if (state.anchor != null) { st.anchor = state.anchor; layout(); }
     if (state.volume) onVolume({ ...state.volume, initial: true });

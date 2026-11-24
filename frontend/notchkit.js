@@ -352,25 +352,83 @@
     return width;
   }
 
+  // Computes display-adaptive closed & expanded notch dimensions when `notchSizeMode !== 'custom'`
+  // so updated installs, notched MacBooks (13"/14"/16"), external monitors, and high-DPI Windows laptops
+  // automatically get proportional notch sizes without manual slider tweaking.
+  function displayNotchSizes({ settings, displayW = 1512, displayH = 982, camW = 0, camH = 0 } = {}) {
+    const s = settings && typeof settings === 'object' ? settings : {};
+    const mode = s.notchSizeMode === 'custom' ? 'custom' : 'auto';
+    if (mode === 'custom') {
+      return {
+        mode: 'custom',
+        notchWidth: Math.max(80, Math.min(360, Number(s.notchWidth) || 200)),
+        notchHeight: Math.max(22, Math.min(48, Number(s.notchHeight) || 32)),
+        expandedWidth: Math.max(480, Math.min(780, Number(s.expandedWidth) || 660)),
+        expandedHeight: Math.max(170, Math.min(260, Number(s.expandedHeight) || 196)),
+        expandedHeightTall: Math.max(220, Math.min(340, Number(s.expandedHeightTall) || 268)),
+      };
+    }
+
+    const dw = Math.max(800, Number(displayW) || 1512);
+    const dh = Math.max(540, Number(displayH) || 982);
+    const cw = Math.max(0, Number(camW) || 0);
+    const ch = Math.max(0, Number(camH) || 0);
+    const even = (n) => Math.round(n / 2) * 2;
+
+    const notchHeight = ch > 0
+      ? Math.max(28, Math.min(46, Math.ceil(ch)))
+      : Math.max(26, Math.min(36, Math.round(dh * 0.031)));
+    const notchWidth = cw > 0
+      ? Math.max(180, Math.min(300, Math.ceil(cw)))
+      : even(Math.max(156, Math.min(228, dw * 0.115)));
+
+    const expandedWidth = even(Math.min(dw - 48, Math.max(520, Math.min(740, 400 + dw * 0.155))));
+    const camExtra = ch > 32 ? Math.ceil(ch - 32) : 0;
+    const expandedHeightTall = even(
+      Math.min(Math.floor(dh * 0.38), Math.max(224, Math.min(312, 168 + dh * 0.088 + camExtra)))
+    );
+    const expandedHeight = even(Math.max(172, Math.min(236, expandedHeightTall - 68)));
+
+    return {
+      mode: 'auto',
+      notchWidth,
+      notchHeight,
+      expandedWidth,
+      expandedHeight,
+      expandedHeightTall,
+    };
+  }
+
   // Open-notch frame dimensions for a module's chosen Style & Size override.
-  // Default ('auto') uses one uniform size across every notch card (expandedWidth × defaultHeight);
-  // 'fit' adopts the style's compact tailored height; presets & custom W×H are clamped safely.
+  // Default ('auto') keeps every untouched / Bento module at one uniform display-adapted height (expandedWidth × defaultHeight),
+  // while automatically honoring compact/minimal layouts when the user explicitly selected a compact or minimal style in their config.
   const FRAME_SIZE_HEIGHTS = { compact: 148, standard: 204, tall: 272 };
   function resolveModuleFrame({ styleDef, pref, expandedWidth = 660, defaultHeight = 268, maxW = 780, maxH = 340 }) {
-    const def = styleDef && typeof styleDef === 'object' ? styleDef : { id: 'bento', height: 272, surface: 'oled' };
+    const def = styleDef && typeof styleDef === 'object' ? styleDef : { id: 'bento', height: 272, surface: 'oled', pack: 'bento' };
     const p = pref && typeof pref === 'object' ? pref : {};
     const sizeMode = ['auto', 'fit', 'compact', 'standard', 'tall', 'custom'].includes(p.size) ? p.size : 'auto';
     const baseW = Number.isFinite(Number(expandedWidth)) ? Number(expandedWidth) : 660;
     const baseH = Number.isFinite(Number(defaultHeight)) && Number(defaultHeight) > 0 ? Number(defaultHeight) : 268;
     const styleH = Number.isFinite(Number(def.height)) ? Number(def.height) : baseH;
+    const userPickedCompactStyle = Boolean(p.style) && (
+      def.pack === 'compact'
+      || def.pack === 'minimal'
+      || (styleH < 240 && def.id !== 'bento')
+    );
 
     let wantW = baseW;
     let wantH = baseH;
     if (sizeMode === 'fit') {
       wantH = styleH;
+    } else if (sizeMode === 'auto' && userPickedCompactStyle) {
+      // Scale compact/minimal height gently with display height ratio so user-chosen compact/minimal styles fit every screen cleanly
+      const dispRatio = Math.max(0.88, Math.min(1.08, baseH / 268));
+      wantH = Math.round((styleH * dispRatio) / 2) * 2;
     } else if (sizeMode === 'custom') {
       if (Number.isFinite(Number(p.width)) && Number(p.width) > 0) wantW = Number(p.width);
       if (Number.isFinite(Number(p.height)) && Number(p.height) > 0) wantH = Number(p.height);
+    } else if (sizeMode === 'tall') {
+      wantH = Math.max(FRAME_SIZE_HEIGHTS.tall, baseH);
     } else if (sizeMode !== 'auto' && FRAME_SIZE_HEIGHTS[sizeMode]) {
       wantH = FRAME_SIZE_HEIGHTS[sizeMode];
     }
@@ -789,6 +847,7 @@
     isClockActivity,
     camClosedLayout,
     closedWidthNoCam,
+    displayNotchSizes,
     resolveModuleFrame,
     closedStateKey,
     renderMarkdown,

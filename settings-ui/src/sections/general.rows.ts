@@ -345,6 +345,16 @@ export const GENERAL_ROWS: readonly Row[] = [
   },
   { t: "h2", text: "Size" },
   {
+    t: "select",
+    k: "notchSizeMode",
+    label: "Size mode",
+    sub: "Automatically sizes the closed and open notch to match your display resolution and camera cutout. Dragging any size slider switches to Custom.",
+    options: [
+      ["auto", "Automatic (fit display)"],
+      ["custom", "Custom"],
+    ],
+  },
+  {
     t: "range",
     k: "notchWidth",
     label: "Width",

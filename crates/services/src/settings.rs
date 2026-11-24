@@ -82,6 +82,29 @@ pub fn migrate_notch(saved: &mut Map<String, Value>) {
         saved.remove("updateCheck");
         saved.insert("updaterV1".into(), Value::Bool(true));
     }
+    // Default `notchSizeMode` in `defaults/settings.json` is `"auto"`, so both new and updated installs
+    // automatically adapt closed & open notch dimensions to the active display unless the user explicitly
+    // configured a compact global height (< 240 px) before `notchSizeMode` existed.
+    if saved
+        .get("notchSizeMode")
+        .and_then(Value::as_str)
+        .is_some_and(|v| !matches!(v, "auto" | "custom"))
+    {
+        saved.remove("notchSizeMode");
+    }
+    if !saved.contains_key("notchSizeMode") {
+        let user_chose_compact_global = saved
+            .get("expandedHeightTall")
+            .and_then(Value::as_u64)
+            .is_some_and(|h| h < 240)
+            || saved
+                .get("expandedHeight")
+                .and_then(Value::as_u64)
+                .is_some_and(|h| h < 184);
+        if user_chose_compact_global {
+            saved.insert("notchSizeMode".into(), Value::from("custom"));
+        }
+    }
     // (Sympony AI is the default brain for new installs; one that already ran keeps the agent it was using)
     if !saved.is_empty() && !saved.contains_key("ponyBrain") {
         saved.insert("ponyBrain".into(), Value::from("agent"));
@@ -287,6 +310,8 @@ mod tests {
             "catHideWhenOpen": true,
             "catSkin": {"at": 1, "idle": "a.png", "sleep": "", "talk": ""},
             "catSleep": false,
+            "notchSizeAutoV1": true,
+            "notchSizeMode": "custom",
             "expandedWidth": 710
         }))
         .unwrap();
@@ -295,6 +320,43 @@ mod tests {
             assert!(!m.contains_key(*k), "expected retired key {k} to be dropped");
         }
         assert_eq!(m.get("expandedWidth"), Some(&json!(710)));
+    }
+
+    #[test]
+    fn migrate_notch_defaults_updated_installs_to_auto_while_preserving_compact_global_user_config() {
+        // Standard updated install has no `notchSizeMode` in saved -> inherits `"auto"` from defaults without polluting saved
+        let mut m: Map<String, Value> = serde_json::from_value(json!({
+            "notchWidth": 80,
+            "notchHeight": 38,
+            "expandedWidth": 710,
+            "expandedHeight": 196,
+            "expandedHeightTall": 268
+        }))
+        .unwrap();
+        migrate_notch(&mut m);
+        assert!(!m.contains_key("notchSizeMode"));
+
+        // Invalid `notchSizeMode` value is cleaned back to default (`"auto"`)
+        m.insert("notchSizeMode".into(), json!("bogus"));
+        migrate_notch(&mut m);
+        assert!(!m.contains_key("notchSizeMode"));
+
+        // Explicit `"custom"` mode stays preserved
+        m.insert("notchSizeMode".into(), json!("custom"));
+        migrate_notch(&mut m);
+        assert_eq!(m.get("notchSizeMode"), Some(&json!("custom")));
+
+        // Pre-update user who intentionally set a compact global height (< 240 px) keeps `"custom"`
+        let mut compact_user: Map<String, Value> = serde_json::from_value(json!({
+            "expandedHeightTall": 220,
+            "expandedHeight": 174,
+            "moduleStyles": { "pomodoro": { "style": "strip" } }
+        }))
+        .unwrap();
+        migrate_notch(&mut compact_user);
+        assert_eq!(compact_user.get("notchSizeMode"), Some(&json!("custom")));
+        assert_eq!(compact_user.get("expandedHeightTall"), Some(&json!(220)));
+        assert_eq!(compact_user["moduleStyles"]["pomodoro"]["style"], json!("strip"));
     }
 
     #[test]

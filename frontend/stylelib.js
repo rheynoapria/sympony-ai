@@ -175,6 +175,14 @@
     ],
     control: [
       {
+        id: 'bento',
+        title: 'Classic Control',
+        sub: 'Full toggle tiles, vertical sliders and inline sound output list',
+        height: 272,
+        surface: 'oled',
+        pack: 'bento',
+      },
+      {
         id: 'minimal',
         title: 'Minimal OLED',
         sub: 'Compact icon toggles, output switcher pill and sleek horizontal sliders',
@@ -211,14 +219,6 @@
         title: 'Studio Mixer',
         sub: 'Audio-first dual sliders with live output switcher chips and bottom toggles',
         height: 184,
-        surface: 'oled',
-        pack: 'bento',
-      },
-      {
-        id: 'bento',
-        title: 'Classic Control',
-        sub: 'Full toggle tiles, vertical sliders and inline sound output list',
-        height: 272,
         surface: 'oled',
         pack: 'bento',
       },

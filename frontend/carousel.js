@@ -377,13 +377,14 @@
   }
 
   function uniformOpenHeight(s) {
+    if (N.effectiveSizes) return Math.min(320, Math.max(116, N.effectiveSizes(s || st.settings).expandedHeightTall));
     const raw = Number((s || st.settings || {}).expandedHeightTall);
     return Number.isFinite(raw) && raw >= 116 ? Math.min(320, raw) : 268;
   }
 
   function frameForModule(modId, maxW, maxH) {
     const s = st.settings || {};
-    const expW = Number(s.expandedWidth) || 660;
+    const expW = N.effectiveSizes ? N.effectiveSizes(s).expandedWidth : (Number(s.expandedWidth) || 660);
     const defH = uniformOpenHeight(s);
     const capW = Number.isFinite(maxW) ? maxW : 780;
     const capH = Number.isFinite(maxH) ? maxH : 340;
@@ -932,7 +933,7 @@
   // Dynamic open width & height: follows the active module's Style & Size override (Dashboard grid stays 272 px).
   function width(maxW) {
     const s = st.settings || {};
-    const expW = Number(s.expandedWidth) || 660;
+    const expW = N.effectiveSizes ? N.effectiveSizes(s).expandedWidth : (Number(s.expandedWidth) || 660);
     const modId = activeStyledModule();
     if (!modId) return Math.min(expW, maxW);
     return frameForModule(modId, maxW, 340).width;
