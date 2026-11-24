@@ -29,6 +29,7 @@ pub mod player;
 mod picker;
 mod privacy;
 pub mod shell;
+pub mod startup;
 pub mod voice;
 pub mod vision;
 mod wifi;

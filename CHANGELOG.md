@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Windows installer:** The installer and the uninstaller show Sympony's icon rather than NSIS's default one, and `release/build.sh` builds on a PC where `python3` is only the Microsoft Store's alias (it takes the first Python that runs).
+- **Launch at login (Windows):** Settings → General → Launch at login, and the onboarding step that turns it on, only saved the setting: nothing started Sympony at login. On Windows it now lists Sympony where Task Manager → Startup apps and Settings → Apps → Startup read it (`HKCU\...\CurrentVersion\Run\Sympony`, the quoted path), takes it off when turned off, and follows those pages: turned off or on there, the setting says so when Sympony starts or Settings opens, and turning it on in Sympony clears Task Manager's "disabled" mark. An install that already had it on is listed at its next start; a debug build never lists itself; uninstalling removes the entry. `platform::os::startup` keeps the list (macOS: not yet, #57).
 
 ## [0.2.0] - 2026-11-24
 

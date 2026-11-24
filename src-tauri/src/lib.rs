@@ -25,6 +25,7 @@ mod hooks;
 mod extras;
 mod hover;
 mod lang;
+mod login;
 mod mcp;
 mod native;
 mod media;
@@ -179,6 +180,7 @@ pub fn run() {
                 settings_window::open(app.handle(), Some("about".into()));
             }
             background::start(app.handle());
+            login::sync(app.handle(), true);
             media::start(app.handle());
             watchers::start(app.handle());
             notif::start(app.handle());

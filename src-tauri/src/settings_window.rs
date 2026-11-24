@@ -17,6 +17,8 @@ pub fn open(app: &AppHandle, section: Option<String>) {
         crate::onboarding::defer_settings(app, section);
         return;
     }
+    // (Launch at login shows what Task Manager → Startup apps says now)
+    crate::login::sync(app, false);
     let a = app.clone();
     // (the window is made from the event loop: `native::later_on_main_thread` says why)
     crate::native::later_on_main_thread(app, move || {
