@@ -4,75 +4,21 @@
 //! on), Sympony's own answer. The place's name comes from OpenStreetMap (Nominatim: Windows has no reverse geocoding
 //! for desktop apps), its time zone from Open-Meteo (Weather's forecasts; this PC's when it can't be reached).
 use crate::location::{Fix, LocError, Locator};
-use ::windows::core::HSTRING;
 use ::windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator};
 use ::windows::Foundation::TimeSpan;
-use ::windows::Security::Authorization::AppCapabilityAccess::{AppCapability, AppCapabilityAccessStatus};
 use serde_json::{json, Value};
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// Sympony's say in Settings → Privacy & security → Location.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Consent {
-    /// Location services is off for the whole PC
-    Off,
-    /// apps, desktop apps or Sympony aren't allowed
-    Denied,
-    /// Windows will ask (its prompt) the first time Sympony looks
-    NotAsked,
-    Allowed,
-}
-
-const STORE: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location";
-
-/// A consent store's "Allow" / "Deny" (`Value` under `key`, in the machine's or the user's part of the registry).
-fn store_value(machine: bool, key: &str) -> Option<String> {
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
-    let (key, name) = (super::shell::wide(key), super::shell::wide("Value"));
-    let (mut buf, mut size) = ([0u16; 32], 64u32);
-    let root = if machine { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
-    // SAFETY: NUL-terminated names and a buffer with its size in bytes, all outliving the call
-    let read = unsafe { RegGetValueW(root, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut size) };
-    if read != 0 {
-        return None;
-    }
-    let n = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
-    Some(String::from_utf16_lossy(&buf[..n]))
-}
+use super::privacy::Consent;
 
 fn consent() -> Consent {
-    let deny = |v: Option<String>| v.is_some_and(|v| v.eq_ignore_ascii_case("Deny"));
-    if deny(store_value(true, STORE)) {
-        return Consent::Off;
-    }
-    if deny(store_value(false, STORE)) || deny(store_value(false, &format!(r"{STORE}\NonPackaged"))) {
-        return Consent::Denied;
-    }
-    // (Sympony's own answer, under its path with `#` for `\`)
-    let own = std::env::current_exe().ok().and_then(|p| store_value(false, &format!(r"{STORE}\NonPackaged\{}", p.to_string_lossy().replace('\\', "#"))));
-    match own.as_deref() {
-        Some(v) if v.eq_ignore_ascii_case("Deny") => return Consent::Denied,
-        Some(v) if v.eq_ignore_ascii_case("Allow") => return Consent::Allowed,
-        _ => {}
-    }
-    super::mta();
-    match AppCapability::Create(&HSTRING::from("location")).and_then(|c| c.CheckAccess()) {
-        Ok(AppCapabilityAccessStatus::UserPromptRequired) => Consent::NotAsked,
-        Ok(AppCapabilityAccessStatus::DeniedByUser) => Consent::Denied,
-        Ok(AppCapabilityAccessStatus::DeniedBySystem) => Consent::Off,
-        // (allowed, or a Windows that doesn't ask desktop apps: the switches above decide)
-        _ => Consent::Allowed,
-    }
+    super::privacy::consent("location")
 }
 
 /// `"granted" | "denied" | "notAsked"`, as on macOS.
 pub fn status() -> &'static str {
-    match consent() {
-        Consent::Allowed => "granted",
-        Consent::NotAsked => "notAsked",
-        Consent::Off | Consent::Denied => "denied",
-    }
+    consent().perm()
 }
 
 /// Windows' prompt, when it has one for Sympony and hasn't had an answer; doesn't wait for it.

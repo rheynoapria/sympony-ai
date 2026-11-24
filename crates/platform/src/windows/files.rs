@@ -98,11 +98,11 @@ pub enum Clip {
 
 const CF_BITMAP: u32 = 2;
 const CF_DIB: u32 = 8;
-const CF_UNICODETEXT: u32 = 13;
+pub(crate) const CF_UNICODETEXT: u32 = 13;
 const CF_HDROP: u32 = 15;
 
 /// A clipboard format apps register by name ("PNG", the privacy marks).
-fn format(name: &str) -> u32 {
+pub(crate) fn format(name: &str) -> u32 {
     let name = super::shell::wide(name);
     // SAFETY: a NUL-terminated name
     unsafe { windows_sys::Win32::System::DataExchange::RegisterClipboardFormatW(name.as_ptr()) }
@@ -110,7 +110,7 @@ fn format(name: &str) -> u32 {
 
 /// The clipboard opened for `f` (another app may hold it for a moment: a few tries), then closed again. None when it
 /// stays held.
-fn with_clipboard<T>(f: impl FnOnce() -> T) -> Option<T> {
+pub(crate) fn with_clipboard<T>(f: impl FnOnce() -> T) -> Option<T> {
     use windows_sys::Win32::System::DataExchange::{CloseClipboard, OpenClipboard};
     // SAFETY: opened here, closed below, on this thread
     let open = (0..10).any(|i| {
@@ -129,7 +129,7 @@ fn with_clipboard<T>(f: impl FnOnce() -> T) -> Option<T> {
 }
 
 /// The bytes of a clipboard item in `fmt` (the clipboard open).
-fn clip_bytes(fmt: u32) -> Option<Vec<u8>> {
+pub(crate) fn clip_bytes(fmt: u32) -> Option<Vec<u8>> {
     use windows_sys::Win32::System::DataExchange::GetClipboardData;
     use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
     // SAFETY: the clipboard is open (the caller); its memory is only read, between lock and unlock
@@ -184,7 +184,7 @@ pub fn read_clip() -> Clip {
 }
 
 /// Hands `bytes` to the clipboard as `fmt` (it's open and emptied); false when it wasn't taken.
-fn put(fmt: u32, bytes: &[u8]) -> bool {
+pub(crate) fn put(fmt: u32, bytes: &[u8]) -> bool {
     use windows_sys::Win32::Foundation::GlobalFree;
     use windows_sys::Win32::System::DataExchange::SetClipboardData;
     use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};

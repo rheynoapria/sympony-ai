@@ -39,7 +39,9 @@ interface VoiceStatus {
 
 const DEFAULT_DICT: UserDict = { version: 1, terms: [], replacements: [] };
 
-function VoiceBody({ settings, set }: CustomPartProps) {
+function VoiceBody({ settings, set, os }: CustomPartProps) {
+  // (Windows has no Accessibility permission: its step and row aren't shown there)
+  const win = os === "windows";
   const [status, setStatus] = useState<VoiceStatus | null>(null);
   const [devices, setDevices] = useState<string[]>([]);
   const [dict, setDict] = useState<UserDict>(DEFAULT_DICT);
@@ -222,7 +224,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
         <div className="px-5 py-1">
           <SettingsRow
             label={t("Voice dictation")}
-            description={t("Speak Indonesian anywhere on your Mac, completely on-device")}
+            description={win ? t("Speak Indonesian anywhere on your PC, completely on-device") : t("Speak Indonesian anywhere on your Mac, completely on-device")}
           >
             <Switch checked={enabled} onCheckedChange={handleToggleEnabled} />
           </SettingsRow>
@@ -273,6 +275,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
               )}
             </div>
 
+            {!win && (
             <div className="flex items-center justify-between gap-2 text-[12.5px]">
               <div className="flex items-center gap-2">
                 <StatusDot tone={axGranted ? "success" : "warning"} />
@@ -289,6 +292,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
                 </Button>
               )}
             </div>
+            )}
 
             {modelsReady && micGranted && axGranted && (
               <div className="flex justify-end pt-1">
@@ -319,7 +323,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
             {status?.lightSuggested && tier !== "light" && (
               <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">
                 <Info className="size-4 shrink-0" />
-                <span>{t("Light mode is suggested for this Mac to keep dictation smooth.")}</span>
+                <span>{win ? t("Light mode is suggested for this PC to keep dictation smooth.") : t("Light mode is suggested for this Mac to keep dictation smooth.")}</span>
               </div>
             )}
 
@@ -415,6 +419,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
             <KeyPicker
               value={voiceKey}
               mode="dictate"
+              os={os}
               onChange={(v) => set({ voiceKey: v })}
             />
           </SettingsRow>
@@ -432,6 +437,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
             <KeyPicker
               value={commandKey}
               mode="command"
+              os={os}
               onChange={(v) => set({ voiceCommandKey: v })}
             />
           </SettingsRow>
@@ -594,6 +600,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
               )}
             </div>
           </SettingsRow>
+          {!win && (
           <SettingsRow
             label={t("Accessibility")}
             description={
@@ -615,6 +622,7 @@ function VoiceBody({ settings, set }: CustomPartProps) {
               )}
             </div>
           </SettingsRow>
+          )}
         </div>
       </PanelCard>
     </div>
