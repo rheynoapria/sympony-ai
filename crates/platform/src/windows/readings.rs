@@ -78,6 +78,18 @@ pub fn memory_pressure() -> Option<u32> {
     })
 }
 
+/// The memory installed, in bytes, as the firmware lists it (what macOS' hw.memsize gives): a 16 GB PC reads 16 GB,
+/// where `memory`'s total is what Windows can use, a little less once hardware has its part. Falls back to that.
+pub fn installed_memory() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::GetPhysicallyInstalledSystemMemory;
+    let mut kb = 0u64;
+    // SAFETY: a u64 for Windows to fill
+    if unsafe { GetPhysicallyInstalledSystemMemory(&mut kb) } != 0 && kb > 0 {
+        return Some(kb.saturating_mul(1024));
+    }
+    status().map(|m| m.ullTotalPhys)
+}
+
 fn status() -> Option<windows_sys::Win32::System::SystemInformation::MEMORYSTATUSEX> {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut m: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
@@ -152,5 +164,16 @@ pub fn network() -> (u64, u64, bool) {
         }
         FreeMibTable(table as *const _);
         (rx, tx, wired)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn installed_memory_covers_what_windows_can_use() {
+        let installed = super::installed_memory().expect("installed memory");
+        let (usable, _) = super::memory().expect("memory");
+        assert!(installed >= usable, "installed {installed} < usable {usable}");
+        assert!(installed >= 1 << 30, "installed {installed}");
     }
 }

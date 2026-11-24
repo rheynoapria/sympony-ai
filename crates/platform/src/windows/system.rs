@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 pub use super::audio::{audio_devices, mic, set_default_device, set_volume, toggle_mic, toggle_mute, volume};
 pub use super::brightness::{brightness, set_brightness};
-pub use super::readings::{cpu_model, cpu_ticks, disk, disk_name, memory, memory_pressure, network, power};
+pub use super::readings::{cpu_model, cpu_ticks, disk, disk_name, installed_memory, memory, memory_pressure, network, power};
 
 /// Keep awake (Control tab): a power request keeps the screen on and the PC from sleeping, as macOS's `caffeinate -di`
 /// does, until it's turned off or Sympony quits (Windows drops it with the process). `powercfg /requests` lists it.
