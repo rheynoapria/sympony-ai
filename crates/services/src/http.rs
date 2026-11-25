@@ -511,6 +511,75 @@ pub fn get_public_bytes(url: &str, max: u64) -> anyhow::Result<(u16, String, Vec
     get_public_bytes_timeout(url, max, Duration::from_secs(15))
 }
 
+/// Fetches a public HTTPS endpoint for a Custom Module data source (`GET` or `POST`):
+/// - HTTPS only, no userinfo, host must match `allowed_domains` (exact case-insensitive match).
+/// - Uses `public_agent()` (`PublicOnlyResolver`, no proxy) so private/loopback/metadata IPs and DNS rebinding fail.
+/// - Follows at most 3 same-origin non-downgrade redirects (`safe_redirect_target`) so secrets in headers never leak cross-host.
+pub fn fetch_public_custom(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<&Value>,
+    allowed_domains: &[String],
+    max_bytes: u64,
+    timeout: Duration,
+) -> anyhow::Result<(u16, String, Vec<u8>)> {
+    let method_upper = method.trim().to_ascii_uppercase();
+    anyhow::ensure!(matches!(method_upper.as_str(), "GET" | "POST"), "unsupported HTTP method");
+    let mut cur_url = url.trim().to_string();
+    let lim = Some(timeout);
+    for hop in 0..=3 {
+        let uri = cur_url.parse::<ureq::http::Uri>().map_err(|_| anyhow::anyhow!("invalid URL"))?;
+        anyhow::ensure!(uri.scheme_str() == Some("https"), "custom module HTTP requires https://");
+        let auth = uri.authority().ok_or_else(|| anyhow::anyhow!("missing host"))?;
+        anyhow::ensure!(!auth.as_str().contains('@'), "userinfo is not allowed in URL");
+        let host = auth.host();
+        anyhow::ensure!(
+            allowed_domains.iter().any(|d| d.eq_ignore_ascii_case(host)),
+            "domain '{host}' is not approved for this custom module"
+        );
+        anyhow::ensure!(is_public_url(&cur_url), "refused non-public URL");
+
+        let mut resp = if method_upper == "POST" {
+            let mut req = public_agent().post(&cur_url).config().timeout_global(lim).build();
+            for (k, v) in headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            match body {
+                Some(b) => req.send_json(b.clone())?,
+                None => req.send_empty()?,
+            }
+        } else {
+            let mut req = public_agent().get(&cur_url).config().timeout_global(lim).build();
+            for (k, v) in headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            req.call()?
+        };
+
+        if hop < 3 {
+            let can_redirect = if method_upper == "POST" {
+                matches!(resp.status().as_u16(), 307 | 308)
+            } else {
+                true
+            };
+            if can_redirect {
+                if let Some(loc) = redirect_location(&resp) {
+                    let next = safe_redirect_target(&cur_url, &loc)
+                        .ok_or_else(|| anyhow::anyhow!("refused cross-host or insecure redirect"))?;
+                    cur_url = next;
+                    continue;
+                }
+            }
+        }
+        let status = resp.status().as_u16();
+        let ct = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+        let bytes = resp.body_mut().with_config().limit(max_bytes).read_to_vec()?;
+        return Ok((status, ct, bytes));
+    }
+    anyhow::bail!("too many redirects")
+}
+
 /// A stream's ICY metadata block (a short read: up to its first block). Err: the stream has no ICY titles.
 pub fn icy_block(url: &str) -> Result<Option<Vec<u8>>, ()> {
     use std::io::Read;

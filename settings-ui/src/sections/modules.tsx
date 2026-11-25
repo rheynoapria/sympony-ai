@@ -31,6 +31,7 @@ import { LeadText } from "@/rows/Rows";
 import { offTabs } from "@/rows/os";
 import type { CustomPartProps, SectionBody } from "@/rows/types";
 import { moduleMetaFor } from "./modules.meta";
+import { CustomModuleBadgeIcon, CustomModulesPanel, useCustomModules } from "./parts/CustomModules";
 
 interface ModuleEntry {
   id: string;
@@ -49,6 +50,8 @@ const STYLE_LIBRARY_NEW_KEY = "v0.2b5:item:modules:styleLibrary";
 
 function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
   useWhatsNew();
+  const { items: customItems, refresh: refreshCustom } = useCustomModules();
+  const customById = new Map(customItems.map((c) => [c.id, c]));
   const every = (Array.isArray(settings.modules) ? settings.modules : []) as ModuleEntry[];
   const hiddenIds = new Set(offTabs(os));
   const mods = os === "windows" ? every : every.filter((m) => !hiddenIds.has(m.id));
@@ -379,7 +382,12 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
           className={cn("divide-y divide-border/80", dragIdx !== null && "select-none")}
         >
           {displayed.map((m, i) => {
-            const meta = moduleMetaFor(m.id, os);
+            const cm = customById.get(m.id);
+            const meta = cm
+              ? { icon: cm.manifest.icon || "Boxes", title: cm.manifest.name, sub: cm.manifest.description }
+              : moduleMetaFor(m.id, os);
+            const isCustom = m.id.startsWith("custom:");
+            const allowedGrid = isCustom ? (["1x1", "2x1", "1x2", "2x2"] as GridSize[]) : (ALLOWED_GRID_SIZES[m.id] ?? []);
             const dragging = dragIdx === i;
             return (
               <div
@@ -399,14 +407,23 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                 >
                   <GripVertical className="size-4" aria-hidden="true" />
                 </span>
-                <div className="card-ico-well grid size-8 shrink-0 place-items-center rounded-[8px] text-foreground">
-                  <SectionIcon name={meta.icon} className="size-4" />
-                </div>
+                {isCustom ? (
+                  <CustomModuleBadgeIcon icon={cm?.manifest.icon} accent={cm?.manifest.accent} />
+                ) : (
+                  <div className="card-ico-well grid size-8 shrink-0 place-items-center rounded-[8px] text-foreground">
+                    <SectionIcon name={meta.icon} className="size-4" />
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-[13px] font-medium text-foreground">
-                      {t(meta.title)}
+                      {isCustom ? meta.title : t(meta.title)}
                     </span>
+                    {isCustom && (
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                        {t("Custom")}
+                      </span>
+                    )}
                     {isNewKeyUnseen(meta.newKey) && <NewBadge />}
                     {(() => {
                       const opt = activeStyleOption(settings, m.id);
@@ -430,20 +447,20 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                   </div>
                   {meta.sub && (
                     <div className="truncate text-[12px] text-muted-foreground">
-                      {t(meta.sub)}
+                      {isCustom ? meta.sub : t(meta.sub)}
                     </div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {notchView === "dashboard" && (ALLOWED_GRID_SIZES[m.id]?.length ?? 0) > 1 && (
+                  {notchView === "dashboard" && allowedGrid.length > 1 && (
                     <select
-                      aria-label={`${t(meta.title)} ${t("Card size")}`}
+                      aria-label={`${isCustom ? meta.title : t(meta.title)} ${t("Card size")}`}
                       title={t("Dashboard card size")}
-                      value={readModulePref(settings, m.id).gridSize ?? defaultGridSize(m.id)}
+                      value={readModulePref(settings, m.id).gridSize ?? (cm?.manifest.defaultSize as GridSize | undefined) ?? defaultGridSize(m.id)}
                       onChange={(e) => setGridSize(m.id, e.target.value as GridSize)}
                       className="me-1 h-7 rounded-[7px] border border-input bg-background px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-ring"
                     >
-                      {(ALLOWED_GRID_SIZES[m.id] ?? []).map((sz) => (
+                      {allowedGrid.map((sz) => (
                         <option key={sz} value={sz}>
                           {sz.replace("x", "×")}
                         </option>
@@ -503,6 +520,8 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
         </div>
       </PanelCard>
 
+      <CustomModulesPanel items={customItems} onChanged={refreshCustom} />
+
       <PanelCard title={t("Default")} icon={groupIcon("Default")}>
         <div className="divide-y divide-border/80">
           <div className="pb-3" data-k="defaultTab">
@@ -513,11 +532,14 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                 onChange={(e) => void set({ defaultTab: e.target.value })}
                 className="h-8 min-w-44 rounded-[var(--control-radius)] border border-input bg-background px-2.5 pe-7 text-[13px] text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
               >
-                {enabledMods.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {t(moduleMetaFor(m.id, os).title)}
-                  </option>
-                ))}
+                {enabledMods.map((m) => {
+                  const cm = customById.get(m.id);
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {cm ? cm.manifest.name : t(moduleMetaFor(m.id, os).title)}
+                    </option>
+                  );
+                })}
               </select>
             </SettingsRow>
           </div>

@@ -108,6 +108,10 @@ export function createMock(
       return { version: "0.0.0-dev", dataDir: "~/Library/Application Support/Sympony" };
     },
     async svc(name: string, method: string) {
+      if (name === "custommod") {
+        if (method === "list") return { ok: true, modules: [] };
+        return { ok: true };
+      }
       if (name === "perm" && method === "status") {
         return {
           calendars: "notAsked",

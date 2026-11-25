@@ -4,7 +4,7 @@ use services::tools::{handle, list, to_action};
 #[test]
 fn every_tool_has_a_schema() {
     let l = list();
-    assert_eq!(l.len(), 23);
+    assert_eq!(l.len(), 28);
     for t in &l {
         assert!(t["name"].as_str().is_some_and(|n| !n.is_empty()));
         assert!(t["description"].as_str().is_some_and(|d| d.len() > 10));
@@ -16,7 +16,10 @@ fn every_tool_has_a_schema() {
 fn tools_list_has_pony_tools() {
     let l = list();
     let find = |n: &str| l.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("missing tool {n}"));
-    for name in ["read_skill", "read_skill_file", "save_skill", "remember", "recall", "forget", "ask_user"] {
+    for name in [
+        "read_skill", "read_skill_file", "save_skill", "remember", "recall", "forget", "ask_user",
+        "list_custom_modules", "read_custom_module", "preview_custom_module", "save_custom_module", "delete_custom_module",
+    ] {
         find(name);
     }
     let ask = find("ask_user");
@@ -70,7 +73,7 @@ fn mcp_requests_answered() {
     assert!(init["result"]["capabilities"]["tools"].is_object());
     assert!(handle(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}), &mut run).is_none());
     let tl = handle(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}), &mut run).unwrap();
-    assert_eq!(tl["result"]["tools"].as_array().unwrap().len(), 23);
+    assert_eq!(tl["result"]["tools"].as_array().unwrap().len(), 28);
     let r = handle(&json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "add_reminder", "arguments": {"when": "15m", "what": "Stretch"}}}), &mut run).unwrap();
     assert_eq!(r["result"]["content"][0], json!({"type": "text", "text": "Reminder set for 08:15"}));
     assert_eq!(r["result"]["isError"], false);

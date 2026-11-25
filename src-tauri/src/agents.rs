@@ -677,6 +677,8 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
 
         // Optional per-turn Auto UI override (explicit from Voice Command, or detected from user's latest prompt)
         let explicit_auto_ui = a.get(6).and_then(Value::as_bool);
+        // Optional Module Creator mode toggle from Pony Chat / Settings "+ Create with Pony"
+        let module_creator = !brief && a.get(7).and_then(Value::as_bool).unwrap_or(false);
         let last_user_text = msgs.iter().rev().find(|m| m["role"] == "user").and_then(|m| m["content"].as_str()).unwrap_or("");
         let turn_auto_override = explicit_auto_ui.or_else(|| services::hands::parse_auto_ui_override(last_user_text));
         if let (Some(s), Some(ov)) = (session, turn_auto_override) {
@@ -716,6 +718,10 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
             chat_rules_with_caps("", tools, web, exec_on, eyes_on || askai_on || agents_on || outside_on)
         };
         let mut system = services::pony::system_prompt(&rules, &persona, &skills_block, &facts_blk, &now);
+        if module_creator {
+            system.push_str("\n\n");
+            system.push_str(services::custom_modules::CREATOR_PROMPT);
+        }
         if cli_caps {
             if exec_on {
                 system.push_str("\n\n");
@@ -818,6 +824,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let path = std::path::PathBuf::from(a.first().and_then(Value::as_str).unwrap_or(""));
         Ok(chat_file(&path))
     }));
+    // Safe local raster image reader for Markdown `![alt](path)` rendered in Pony Chat
+    reg.add("pony.image", Box::new(move |_, a| {
+        let raw = a.first().and_then(Value::as_str).unwrap_or("");
+        Ok(chat_local_image(raw))
+    }));
     let h = app.clone();
     reg.add("translate.translate", Box::new(move |_, a| {
         let s = |i: usize| a.get(i).and_then(Value::as_str).unwrap_or("").to_string();
@@ -884,6 +895,106 @@ fn lyric_lines(app: &AppHandle, kind: &str, lines: &[String], what: &str) -> Opt
     cache.insert(key, v.clone());
     let _ = services::paths::write_private(&file, &serde_json::to_vec(&*cache).unwrap_or_default());
     Some(v)
+}
+
+/// Decodes `%XX` sequences in a `file://` URL path.
+fn percent_decode_path(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(b) = u8::from_str_radix(hex, 16) {
+                    out.push(b);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Detects raster image MIME type from magic bytes (rejects SVG/HTML/text masquerading as images).
+fn sniff_raster_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 8 && &bytes[..8] == b"\x89PNG\r\n\x1a\n" {
+        return Some("image/png");
+    }
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 6 && (&bytes[..6] == b"GIF87a" || &bytes[..6] == b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.len() >= 2 && &bytes[..2] == b"BM" {
+        return Some("image/bmp");
+    }
+    None
+}
+
+/// Safely reads a local raster image referenced in Pony Chat (`![alt](/path/to/img.png)` or `file:///...`).
+fn chat_local_image(raw: &str) -> Value {
+    use base64::Engine;
+    let trimmed = raw.trim().split(['?', '#']).next().unwrap_or("").trim();
+    if trimmed.is_empty() {
+        return json!({"ok": false, "error": "empty path"});
+    }
+    let normalized = if let Some(rest) = trimmed.strip_prefix("file://") {
+        let dec = percent_decode_path(rest.strip_prefix("localhost").unwrap_or(rest));
+        // On Windows `file:///C:/...` -> `C:/...`
+        if cfg!(windows) && dec.starts_with('/') && dec.as_bytes().get(2) == Some(&b':') {
+            dec[1..].to_string()
+        } else {
+            dec
+        }
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        let base = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        base.join(rest).to_string_lossy().into_owned()
+    } else {
+        trimmed.to_string()
+    };
+    let path = PathBuf::from(&normalized);
+    if !path.is_absolute() || services::exec::secret_place(&normalized).is_some() {
+        return json!({"ok": false, "error": "blocked path"});
+    }
+    let Ok(canon) = std::fs::canonicalize(&path) else {
+        return json!({"ok": false, "error": "not found"});
+    };
+    let canon_str = canon.to_string_lossy().into_owned();
+    if services::exec::secret_place(&canon_str).is_some() {
+        return json!({"ok": false, "error": "blocked path"});
+    }
+    let Ok(meta) = std::fs::metadata(&canon) else {
+        return json!({"ok": false, "error": "not found"});
+    };
+    if !meta.is_file() || meta.len() > 10 << 20 {
+        return json!({"ok": false, "error": "image too large or not a file"});
+    }
+    let ext = canon.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp") {
+        return json!({"ok": false, "error": "unsupported image extension"});
+    }
+    let Ok(bytes) = std::fs::read(&canon) else {
+        return json!({"ok": false, "error": "unreadable"});
+    };
+    let Some(mime) = sniff_raster_mime(&bytes) else {
+        return json!({"ok": false, "error": "invalid raster image header"});
+    };
+    json!({
+        "ok": true,
+        "mime": mime,
+        "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "path": canon_str,
+    })
 }
 
 /// What a file dropped on Pony's chat holds, for the window: `{ok, name, size, kind: image|text|other, mime?, data?|text?, big?}`.

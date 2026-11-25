@@ -569,6 +569,9 @@ pub fn ask(app: &AppHandle, turns: &[Value], images: &[String], system: &str, se
                 let v = call(app, "POST", "/v1/fetch", Some(&json!({"url": url, "max_characters": 12000})), 60)?;
                 return Ok(services::brain::page_text(&v));
             }
+            if crate::mcp::tool_taints_turn(name) {
+                mark_taint(&mut after_web);
+            }
             let (kind, a) = services::tools::to_action(name, args)?;
             let v = crate::mcp::serve(app, json!({"token": token, "session": session.unwrap_or(""), "kind": kind, "args": a}));
             let text = v["text"].as_str().or(v["error"].as_str()).unwrap_or("").to_string();

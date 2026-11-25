@@ -6,6 +6,7 @@ mod brain;
 mod calendar;
 mod clipboard;
 mod colorpick;
+mod custom_modules;
 mod background;
 mod backup;
 mod commands;
@@ -129,6 +130,7 @@ pub fn run() {
             adhan::register(&mut reg, app.handle());
             github::register(&mut reg, app.handle());
             feed::register(&mut reg, app.handle());
+            custom_modules::register(&mut reg, app.handle());
             todosync::register(&mut reg, app.handle(), &data_dir);
             gcal::register(&mut reg, app.handle(), &data_dir);
             agents::register(&mut reg, app.handle());

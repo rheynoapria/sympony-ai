@@ -835,6 +835,11 @@
     list: ['folder-open', 'var(--amber)', 'Looking in'],
     write: ['file-circle-plus', 'var(--lilac)', 'Writing'],
     edit: ['pen-to-square', 'var(--lilac)', 'Editing'],
+    cm_list: ['cubes', 'var(--emerald)', 'Listing custom modules'],
+    cm_read: ['cubes', 'var(--emerald)', 'Reading custom module'],
+    cm_preview: ['cubes', 'var(--sky)', 'Validating custom module'],
+    cm_save: ['cubes', 'var(--emerald)', 'Installing custom module'],
+    cm_delete: ['trash', 'var(--red)', 'Deleting custom module'],
   };
   // Commands & files: Pony waits on this card for the user's OK (src-tauri/src/exec.rs, pony:approve)
   const AP = {
@@ -846,6 +851,8 @@
     hands: ['hand-pointer', 'Let Pony do this?'],
     remember: ['brain', 'Remember this?'],
     save_skill: ['wand-magic-sparkles', 'Save this skill?'],
+    save_custom_module: ['cubes', 'Install this custom module?'],
+    delete_custom_module: ['trash', 'Delete this custom module?'],
     agent_start: ['robot', 'Start an agent on this?'], agent_send: ['paper-plane', 'Send this to the agent?'], agent_stop: ['circle-stop', 'Stop this agent?'],
   };
   // The notch is closed when Pony finishes, needs an OK or asks something: it comes down open on Pony (as a scheduled
@@ -874,11 +881,18 @@
     const d = String(a.detail || '');
     // (an outside tool: its server and name, then what goes in)
     // (an outside tool or another agent: where it goes, then what goes in)
-    if (/^(mcp|agent_|ask_ai|hands|remember|save_skill)/.test(a.tool)) {
+    if (/^(mcp|agent_|ask_ai|hands|remember|save_skill|save_custom_module|delete_custom_module)/.test(a.tool)) {
       const [who, ...args] = d.split('\n');
       const lines = args.join('\n').split('\n').slice(0, 14).map((l) => `<span class="ln">${esc(l) || ' '}</span>`).join('');
       const note = a.tool === 'ask_ai' ? `<div class="ap-note">${esc(_t('Pony types it with your keyboard for a few seconds; switching apps stops it.'))}</div>` : '';
-      const ico = a.tool.startsWith('mcp') ? 'plug' : a.tool === 'ask_ai' ? 'comments' : a.tool === 'hands' ? 'hand-pointer' : a.tool === 'remember' ? 'brain' : a.tool === 'save_skill' ? 'wand-magic-sparkles' : 'folder';
+      const ico = a.tool.startsWith('mcp') ? 'plug'
+        : a.tool === 'ask_ai' ? 'comments'
+        : a.tool === 'hands' ? 'hand-pointer'
+        : a.tool === 'remember' ? 'brain'
+        : a.tool === 'save_skill' ? 'wand-magic-sparkles'
+        : a.tool === 'save_custom_module' ? 'cubes'
+        : a.tool === 'delete_custom_module' ? 'trash'
+        : 'folder';
       return `<div class="ap-file">${fa(ico)}<span dir="ltr">${esc(who)}</span></div>${lines ? `<div class="ap-code ap-lines">${lines}</div>` : ''}${note}`;
     }
     if (a.tool === 'run_command' || a.tool === 'delete') return `<div class="ap-code"><span class="pr">$</span><span class="ln">${esc(d)}</span></div>`;
@@ -896,7 +910,7 @@
     if (!approval) return '';
     const a = approval;
     const [, q] = AP[a.tool] || ['gear', 'Allow this?'];
-    const del = a.tool === 'delete' || a.tool === 'mcp_delete';
+    const del = a.tool === 'delete' || a.tool === 'mcp_delete' || a.tool === 'delete_custom_module';
     const name = (window.Pony && window.Pony.look ? window.Pony.look(st.settings).name : 'Pony');
     const face = window.Pony && window.Pony.snapshot
       ? `<img src="${window.Pony.snapshot({ shape: st.settings.ponyShape || 'Classic', color: st.settings.ponyColor || 'Lavender', mood: 'attention', size: 28 })}" alt="">`
@@ -970,6 +984,174 @@
     return `<button type="button" class="ch-worked${m.workOpen ? ' open' : ''}" data-work="${i}"><span>${esc(_t('Worked for {n} s', { n: w.secs }))}</span>${fa('chevron-right')}</button>`
       + (m.workOpen ? `<ul class="ch-tl static">${w.steps.map((s) => stepLi(s, false)).join('')}<li class="fin"><span class="mk">${fa('check')}</span><span class="t1">${esc(_t('Finished thinking'))}</span></li></ul>` : '');
   }
+  // ---- Inline chat image hydration (remote https://, raster data:, and safe local files via pony.image) + Lightbox
+  const localImgCache = new Map();
+  let activeLightbox = null;
+  function closeLightbox() {
+    if (activeLightbox) {
+      activeLightbox.remove();
+      activeLightbox = null;
+    }
+  }
+  function openLightbox(src, alt, extUrl) {
+    closeLightbox();
+    if (!src) return;
+    const ov = document.createElement('div');
+    ov.className = 'ch-lightbox';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    const bar = document.createElement('div');
+    bar.className = 'ch-lb-bar';
+    const cap = document.createElement('span');
+    cap.className = 'ch-lb-cap';
+    cap.textContent = alt || '';
+    const acts = document.createElement('div');
+    acts.className = 'ch-lb-acts';
+    if (extUrl && /^https?:\/\//i.test(extUrl)) {
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'ch-lb-btn';
+      openBtn.textContent = _t('Open image');
+      openBtn.onclick = (e) => { e.stopPropagation(); api.openExternal(extUrl); };
+      acts.appendChild(openBtn);
+    }
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'ch-lb-btn ch-lb-close';
+    closeBtn.textContent = '×';
+    closeBtn.setAttribute('aria-label', _t('Close'));
+    closeBtn.title = _t('Close');
+    closeBtn.onclick = (e) => { e.stopPropagation(); closeLightbox(); };
+    acts.appendChild(closeBtn);
+    bar.append(cap, acts);
+    const img = document.createElement('img');
+    img.className = 'ch-lb-img';
+    img.src = src;
+    img.alt = alt || '';
+    const frame = document.createElement('div');
+    frame.className = 'ch-lb-frame';
+    frame.onclick = (e) => e.stopPropagation();
+
+    const foot = document.createElement('div');
+    foot.className = 'ch-lb-foot';
+    const hint = document.createElement('span');
+    hint.className = 'ch-lb-hint';
+    hint.innerHTML = '<kbd>Esc</kbd> ' + esc(_t('Close'));
+    const footActs = document.createElement('div');
+    footActs.className = 'ch-lb-acts';
+    if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'ch-lb-btn ch-lb-ghost';
+      copyBtn.textContent = _t('Copy');
+      copyBtn.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          const resp = await fetch(src);
+          const blob = await resp.blob();
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+          copyBtn.textContent = '✓';
+          setTimeout(() => { copyBtn.textContent = _t('Copy'); }, 1400);
+        } catch { /* ignore */ }
+      };
+      footActs.appendChild(copyBtn);
+    }
+    foot.append(hint, footActs);
+    frame.append(bar, img, foot);
+    ov.append(frame);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { closeLightbox(); document.removeEventListener('keydown', onKey); }
+    };
+    ov.onclick = () => { closeLightbox(); document.removeEventListener('keydown', onKey); };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    activeLightbox = ov;
+  }
+  function showImgBroken(fig, label, extUrl) {
+    fig.classList.remove('loading');
+    fig.classList.add('broken');
+    const img = fig.querySelector('img');
+    if (img) img.hidden = true;
+    const sk = fig.querySelector('.md-img-skel');
+    if (sk) sk.remove();
+    if (fig.querySelector('.md-img-err')) return;
+    const err = document.createElement('div');
+    err.className = 'md-img-err';
+    const txt = document.createElement('span');
+    txt.textContent = `${_t('Image unavailable')}${label ? ` · ${label}` : ''}`;
+    err.appendChild(txt);
+    if (extUrl && /^https?:\/\//i.test(extUrl)) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'md-img-open';
+      btn.textContent = _t('Open image');
+      btn.onclick = (e) => { e.stopPropagation(); api.openExternal(extUrl); };
+      err.appendChild(btn);
+    }
+    fig.prepend(err);
+  }
+  function hydrateChatImages(root) {
+    if (!root) return;
+    $$('figure.md-img-wrap', root).forEach((fig) => {
+      const img = fig.querySelector('img.md-img');
+      if (!img) return;
+      const localPath = fig.dataset.localImg;
+      const alt = img.alt || fig.dataset.imgAlt || '';
+      const capEl = fig.querySelector('.md-img-cap');
+      const capTxt = (capEl && capEl.textContent ? capEl.textContent.trim() : '') || alt;
+      const ensureStage = (onOpen) => {
+        if (fig.querySelector('.md-img-stage')) return;
+        const stage = document.createElement('div');
+        stage.className = 'md-img-stage';
+        img.parentNode.insertBefore(stage, img);
+        stage.appendChild(img);
+        const badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'md-img-zoom';
+        badge.setAttribute('aria-label', _t('Open image'));
+        badge.title = _t('Open image');
+        badge.textContent = '⤢';
+        badge.onclick = onOpen;
+        stage.appendChild(badge);
+      };
+      if (localPath) {
+        const sk = fig.querySelector('.md-img-skel');
+        if (sk) sk.textContent = _t('Loading image…');
+        const applyLocal = (res) => {
+          if (!fig.isConnected) return;
+          if (res && res.ok && res.data && res.mime) {
+            const url = `data:${res.mime};base64,${res.data}`;
+            img.src = url;
+            img.hidden = false;
+            fig.classList.remove('loading');
+            if (sk && sk.isConnected) sk.remove();
+            const openFn = (e) => { e.stopPropagation(); openLightbox(url, capTxt || localPath.split(/[\\/]/).pop() || '', ''); };
+            img.onclick = openFn;
+            ensureStage(openFn);
+          } else {
+            showImgBroken(fig, alt || localPath.split(/[\\/]/).pop() || '', '');
+          }
+        };
+        let p = localImgCache.get(localPath);
+        if (!p) {
+          p = api.svc('pony', 'image', localPath).catch(() => ({ ok: false }));
+          if (localImgCache.size > 40) localImgCache.clear();
+          localImgCache.set(localPath, p);
+        }
+        p.then(applyLocal);
+        return;
+      }
+      const src = img.dataset.imgSrc || img.getAttribute('src') || '';
+      img.onerror = () => showImgBroken(fig, alt, /^https?:\/\//i.test(src) ? src : '');
+      const openRemote = (e) => {
+        e.stopPropagation();
+        openLightbox(img.currentSrc || src, capTxt, /^https?:\/\//i.test(src) ? src : '');
+      };
+      img.onclick = openRemote;
+      ensureStage(openRemote);
+    });
+  }
+
   let thinkTimer = 0;
   function syncThink() {
     const box = page && $('.ch-think', page);
@@ -979,6 +1161,7 @@
     avaMood();
     $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
     $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
+    hydrateChatImages(box);
     const lv = $('.ch-live', box);
     if (lv && tool && tool.live) tool.live.words = wordsIn(lv, tool.live.words || 0);
     if (tool) tool.steps.forEach((s) => { s.fresh = false; });
@@ -1119,6 +1302,7 @@
         });
         $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
         $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
+        hydrateChatImages(box);
         bindSuggest(box);
         $$('[data-tab]', box).forEach((b) => { b.onclick = () => N.openModule(b.dataset.tab); });
         $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); }; });
@@ -1298,7 +1482,7 @@
       return { role: m.role, content: body };
     });
     const autoOverride = typeof opts.autoUi === 'boolean' ? opts.autoUi : null;
-    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '', autoOverride);
+    const r = await api.svc('chat', 'send', wire, context, session, brief, imgs.map((a) => a.data), chats.current || '', autoOverride, !!creatorMode);
     const done = tool.actions;
     const wasStopped = !!tool.stopped;
     const work = tool.steps.length ? { secs: Math.max(1, Math.round((Date.now() - tool.start) / 1000)), steps: tool.steps.map(({ kind, detail, sources }) => ({ kind, detail, ...(sources ? { sources } : {}) })) } : null;
@@ -1347,26 +1531,104 @@
     api.svc('chat', 'stop', tool.session);
     syncSend();
   }
-  // Auto UI pill: quick toggle inside the composer when Eyes & Hands are on
-  function syncAutoUi() {
-    const b = page && $('#chAutoUi', page);
-    if (!b) return;
+  let creatorMode = false;
+  let modeMenuOpen = false;
+  function setModeMenu(open) {
+    modeMenuOpen = !!open;
+    const btn = page && $('#chMode', page);
+    const menu = page && $('#chModeMenu', page);
+    if (btn) btn.setAttribute('aria-expanded', modeMenuOpen ? 'true' : 'false');
+    if (menu) menu.hidden = !modeMenuOpen;
+  }
+  function syncModeControl() {
     const s = st.settings || {};
-    const avail = !!(s.ponyEyes && s.ponyHands);
-    b.hidden = !avail;
-    if (!avail) return;
-    const on = !!s.ponyAutoUi;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    b.title = on
-      ? _t('Auto UI: On — Pony operates UI, watches until responses finish, and continues automatically (financial/destructive actions still ask)')
-      : _t('Auto UI: Off — click to let Pony run full multi-step UI automation and watch until responses finish');
+    const autoAvail = !!(s.ponyEyes && s.ponyHands);
+    const autoOn = autoAvail && !!s.ponyAutoUi;
+    const btn = page && $('#chMode', page);
+    if (btn) {
+      btn.classList.toggle('is-creator', creatorMode);
+      btn.classList.toggle('is-auto', !creatorMode && autoOn);
+      const ico = $('.ch-mode-ico', btn);
+      const lbl = $('.ch-mode-lbl', btn);
+      const dot = $('.ch-mode-dot', btn);
+      if (creatorMode) {
+        if (ico) ico.innerHTML = fa('cubes');
+        if (lbl) lbl.textContent = _t('Creator');
+        if (dot) dot.hidden = !autoOn;
+        btn.title = _t('Module Creator: On — Pony can design, validate, and install local OLED custom modules into your Notch');
+      } else if (autoOn) {
+        if (ico) ico.innerHTML = fa('wand-magic-sparkles');
+        if (lbl) lbl.textContent = _t('Auto UI');
+        if (dot) dot.hidden = true;
+        btn.title = _t('Auto UI: On — Pony operates UI, watches until responses finish, and continues automatically (financial/destructive actions still ask)');
+      } else {
+        if (ico) ico.innerHTML = fa('comment-dots');
+        if (lbl) lbl.textContent = _t('Chat');
+        if (dot) dot.hidden = true;
+        btn.title = _t('Mode');
+      }
+    }
+    const menu = page && $('#chModeMenu', page);
+    if (menu) {
+      const chatOpt = $('[data-mode="chat"]', menu);
+      const creatorOpt = $('[data-mode="creator"]', menu);
+      if (chatOpt) {
+        chatOpt.classList.toggle('on', !creatorMode);
+        chatOpt.setAttribute('aria-checked', !creatorMode ? 'true' : 'false');
+      }
+      if (creatorOpt) {
+        creatorOpt.classList.toggle('on', creatorMode);
+        creatorOpt.setAttribute('aria-checked', creatorMode ? 'true' : 'false');
+      }
+      const sep = $('#chModeAutoSep', menu);
+      const autoOpt = $('#chModeAuto', menu);
+      if (sep) sep.hidden = !autoAvail;
+      if (autoOpt) {
+        autoOpt.hidden = !autoAvail;
+        autoOpt.classList.toggle('on', autoOn);
+        autoOpt.setAttribute('aria-checked', autoOn ? 'true' : 'false');
+      }
+    }
+    const inp = page && $('#chIn', page);
+    if (inp) {
+      inp.placeholder = creatorMode
+        ? _t('Describe the OLED module you want Pony to build…')
+        : _t('Ask anything…');
+    }
+  }
+  function syncCreatorMode() { syncModeControl(); }
+  function syncAutoUi() { syncModeControl(); }
+  function setCreatorMode(on) {
+    creatorMode = !!on;
+    syncModeControl();
+  }
+  N.openModuleCreator = (promptText) => {
+    creatorMode = true;
+    setModeMenu(false);
+    if (!N.isFloatingChat && typeof N.openModule === 'function') N.openModule('chat');
+    if (typeof N.ensurePage === 'function') N.ensurePage('chat');
+    syncModeControl();
+    const inp = page && $('#chIn', page);
+    if (inp) {
+      if (typeof promptText === 'string' && promptText.length) {
+        inp.value = promptText;
+        grow(inp);
+      }
+      if (N.focusField) N.focusField(inp);
+      else inp.focus();
+      syncSend();
+    }
+  };
+  if (api && typeof api.on === 'function') {
+    api.on('pony:creator', (p) => {
+      N.openModuleCreator((p && typeof p.prompt === 'string') ? p.prompt : '');
+    });
   }
   function toggleAutoUi(e) {
     if (e) e.stopPropagation();
     const next = !(st.settings && st.settings.ponyAutoUi);
     if (st.settings) st.settings.ponyAutoUi = next;
-    syncAutoUi();
+    syncModeControl();
     api.setSettings({ ponyAutoUi: next });
   }
   // the composer's round button: send (white arrow), or Stop (red square) while an answer is on its way
@@ -1667,7 +1929,24 @@
           + `<button type="button" class="mini-btn" id="chFloat" title="${esc(_t('Pop out floating chat'))}" style="width:34px;height:34px;border-radius:17px">${fa('up-right-from-square')}</button>`)
         + `<div class="ch-bar"><span class="ch-who" title="${esc(((st.settings && st.settings.ponyName) || 'Pony') + (prov.label ? ' · ' + prov.label : ''))}"><canvas class="ch-pony-canvas" id="chPony" width="34" height="58"></canvas></span>`
         + `<input id="chIn" type="text" placeholder="${esc(_t('Ask anything…'))}" spellcheck="false">`
-        + `<button type="button" id="chAutoUi" class="ch-autoui" hidden aria-pressed="false" title="${esc(_t('Auto UI'))}">${fa('wand-magic-sparkles')}<span>${esc(_t('Auto UI'))}</span></button>`
+        + `<div class="ch-mode" id="chModeWrap">`
+        + `<button type="button" id="chMode" class="ch-mode-btn" aria-haspopup="menu" aria-expanded="false" title="${esc(_t('Mode'))}">`
+        + `<span class="ch-mode-ico">${fa('comment-dots')}</span><span class="ch-mode-lbl">${esc(_t('Chat'))}</span><span class="ch-mode-dot" hidden></span><i class="fa-solid fa-chevron-down ch-mode-chev"></i></button>`
+        + `<div id="chModeMenu" class="ch-mode-menu" role="menu" hidden>`
+        + `<button type="button" class="ch-mode-item on" role="menuitemradio" data-mode="chat" aria-checked="true">`
+        + `<span class="ch-mi-ico">${fa('comment-dots')}</span>`
+        + `<span class="ch-mi-txt"><b>${esc(_t('Chat'))}</b><small>${esc(_t('Ask anything & desktop tools'))}</small></span>`
+        + `<span class="ch-mi-chk">${fa('check')}</span></button>`
+        + `<button type="button" class="ch-mode-item" role="menuitemradio" data-mode="creator" aria-checked="false">`
+        + `<span class="ch-mi-ico is-creator">${fa('cubes')}</span>`
+        + `<span class="ch-mi-txt"><b>${esc(_t('Creator'))}</b><small>${esc(_t('Build local OLED Notch modules'))}</small></span>`
+        + `<span class="ch-mi-chk">${fa('check')}</span></button>`
+        + `<div class="ch-mode-sep" id="chModeAutoSep" hidden></div>`
+        + `<button type="button" class="ch-mode-item ch-mode-toggle" id="chModeAuto" role="menuitemcheckbox" aria-checked="false" hidden>`
+        + `<span class="ch-mi-ico is-auto">${fa('wand-magic-sparkles')}</span>`
+        + `<span class="ch-mi-txt"><b>${esc(_t('Auto UI'))}</b><small>${esc(_t('Operate UI without asking'))}</small></span>`
+        + `<span class="ch-mi-sw" aria-hidden="true"><span></span></span></button>`
+        + `</div></div>`
         + `<button type="button" id="chClip" class="ch-clip" title="${esc(N.MAC ? _t('Attach a picture or a file (⌘V pastes a screenshot)') : _t('Attach a picture or a file (Ctrl+V pastes a screenshot)'))}">${fa('paperclip')}</button>`
         + `<input id="chPick" type="file" multiple hidden accept="image/*,.txt,.md,.csv,.tsv,.json,.log,.xml,.yaml,.yml,.toml,.ini,.html,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.php,.sh,.sql,.pdf">`
         + `<button type="button" id="chSend" class="mini-btn w" style="width:28px;height:28px" title="${esc(_t('Send'))}">${N.ic('up', 'width:12px;height:12px;stroke-width:3')}</button></div>`
@@ -1689,8 +1968,37 @@
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendInput(); } });
       input.addEventListener('input', syncSend);
       $('#chSend', page).onclick = sendInput;
-      const autoBtn = $('#chAutoUi', page);
-      if (autoBtn) autoBtn.onclick = toggleAutoUi;
+      const modeBtn = $('#chMode', page);
+      const modeMenu = $('#chModeMenu', page);
+      if (modeBtn) {
+        modeBtn.onclick = (e) => {
+          e.stopPropagation();
+          setModeMenu(!modeMenuOpen);
+        };
+      }
+      if (modeMenu) {
+        modeMenu.onclick = (e) => e.stopPropagation();
+        const chatOpt = $('[data-mode="chat"]', modeMenu);
+        const creatorOpt = $('[data-mode="creator"]', modeMenu);
+        const autoOpt = $('#chModeAuto', modeMenu);
+        if (chatOpt) chatOpt.onclick = () => { setCreatorMode(false); setModeMenu(false); N.focusField && N.focusField(input); };
+        if (creatorOpt) creatorOpt.onclick = () => { setCreatorMode(true); setModeMenu(false); N.focusField && N.focusField(input); };
+        if (autoOpt) autoOpt.onclick = toggleAutoUi;
+      }
+      document.addEventListener('click', (e) => {
+        if (!modeMenuOpen) return;
+        const wrap = page && $('#chModeWrap', page);
+        if (wrap && e.target && wrap.contains(e.target)) return;
+        setModeMenu(false);
+      });
+      window.addEventListener('keydown', (e) => {
+        if (modeMenuOpen && e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setModeMenu(false);
+        }
+      }, true);
+      syncModeControl();
       const pick = $('#chPick', page);
       $('#chClip', page).onclick = () => pick.click();
       pick.onchange = () => { [...pick.files].forEach(addFile); pick.value = ''; N.focusField(input); };
@@ -1715,7 +2023,7 @@
       render();
     },
     show() { if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },
-    hide() { if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
+    hide() { setModeMenu(false); if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
     onSettings() { launcher = null; syncHeaderPony(); syncAutoUi(); N.loadAgents().then(render); },
     takeFiles(type, paths) {
       if (history) return false;

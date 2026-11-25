@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 pub const SECRET_KEYS: &[&str] =
-    &["githubToken", "todoSyncGoogleClientSecret", "todoSyncGoogleRefresh", "vlcPassword", "voiceCloudKey", "brainKey", "symponyAiKey", "ponyMcpSecrets"];
+    &["githubToken", "todoSyncGoogleClientSecret", "todoSyncGoogleRefresh", "vlcPassword", "voiceCloudKey", "brainKey", "symponyAiKey", "ponyMcpSecrets", "customModSecrets"];
 /// AI API keys of before phase 5 (AI goes through the agents installed on the Mac now): removed from the secrets file.
 pub const RETIRED_KEYS: &[&str] = &["claudeApiKey", "geminiApiKey", "openaiApiKey", "tavilyApiKey"];
 

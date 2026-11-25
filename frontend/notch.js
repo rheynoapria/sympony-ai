@@ -125,6 +125,12 @@ const LINUX = window.SYMPONY_OS === 'linux';
 const MAC_TABS_OFF = []; // (System and Screen Time: Sympony reads the Mac's numbers, watchers.rs / everyday.rs)
 const LINUX_TABS_OFF = ['screentime', 'radio'];
 function register(mod) { modules.set(mod.id, mod); }
+function unregister(id) {
+  if (!id || !String(id).startsWith('custom:')) return;
+  modules.delete(id);
+  const el = document.getElementById('page-' + id);
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
 function moduleOf(id) { return modules.get(id) || BUILTIN[id]; }
 function moduleEnabled(id) {
   const s = st.settings;
@@ -148,8 +154,8 @@ function buildTabs() {
 
 function ensurePage(id) {
   const mod = modules.get(id);
-  if (!mod) return $('#page-' + id);
-  let page = $('#page-' + id);
+  if (!mod) return document.getElementById('page-' + id);
+  let page = document.getElementById('page-' + id);
   if (!page) {
     page = document.createElement('section');
     page.className = 'tab-page mod-page';
@@ -7563,7 +7569,7 @@ function dayInfo(now = Date.now()) {
 
 // Shared helpers for module files.
 window.N = {
-  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, effectiveSizes, chime: (kind) => chime(kind, true),
+  MAC, LINUX, st, api, $, $$, esc, fmt, fmtIn, dur, bytes, hm, dayInfo, later, cancel, register, unregister, openNotch, closeNotch, tuck, untuck, setTab, toast, bump, layout, effectiveSizes, chime: (kind) => chime(kind, true),
   openEvent, startOfDay, DAY, cmd, mediaPosition, appLabel, progressRing, fa, prayerTimes, nextPrayer,
   meter, meterLevel, ring, appIconImg, agentIconUrl, mountHitlCard, refreshHitlCards, renderHitlSection,
   ccCard, ccGetSel, ccWireContainer, ccSyncContainer, addPonyAsk, removePonyAsk, setFeedSum, revealFeedSummary,
@@ -7580,6 +7586,9 @@ window.N = {
   focusField(el) { beginTyping(); setTimeout(() => el.focus(), 30); },
   async boot() {
     paintIcons();
+    if (typeof window.N.loadCustomModules === 'function') {
+      await window.N.loadCustomModules();
+    }
     applySettings(await api.getSettings());
     // Legacy usage counter stays off; updateCheck & autoUpdate are active for the dual-channel updater.
     { const s = st.settings; if (s.usageCount) api.setSettings({ usageCount: false }); }

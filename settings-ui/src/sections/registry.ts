@@ -112,7 +112,7 @@ export const SECTIONS: readonly SectionMeta[] = [
     subtitle: "Enable, reorder, and choose default notch tabs.",
     icon: "Boxes",
     tint: "#6366f1",
-    words: ["tabs", "order", "teleprompter", "notes", "bookmarks"],
+    words: ["tabs", "order", "teleprompter", "notes", "bookmarks", "custom", "widget", "creator", "kustom", "modul kustom"],
   },
   {
     id: "live",

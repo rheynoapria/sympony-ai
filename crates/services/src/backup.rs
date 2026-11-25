@@ -149,6 +149,16 @@ pub fn settings_for_import_checked(from: &Value, here: &Value, has_brain_key: bo
             }
         }
     }
+    if m.contains_key("customModApprovedDomains") {
+        let had_domains = m
+            .get("customModApprovedDomains")
+            .and_then(Value::as_object)
+            .is_some_and(|map| map.values().any(|v| v.as_array().is_some_and(|a| !a.is_empty())));
+        if had_domains {
+            note("customModules");
+        }
+        m.insert("customModApprovedDomains".into(), json!({}));
+    }
     for (k, v) in here.as_object().into_iter().flatten().filter(|(k, _)| k.starts_with("has_")) {
         m.insert(k.clone(), v.clone());
     }
@@ -212,9 +222,26 @@ pub fn safe_extract_zip(
     Ok(())
 }
 
+fn custom_module_entry(rest: &str) -> bool {
+    if rest.is_empty() {
+        return true;
+    }
+    if let Some(slug) = rest.strip_suffix('/') {
+        return crate::custom_modules::validate_slug(slug).is_ok();
+    }
+    let Some((slug, file)) = rest.split_once('/') else { return false };
+    crate::custom_modules::validate_slug(slug).is_ok()
+        && matches!(file, "module.json" | "state.json" | "config.json")
+}
+
 /// A name a backup may hold (anything else and the file is refused).
 pub fn allowed_entry(name: &str) -> bool {
-    name == "manifest.json" || FILES.contains(&name) || name == "adhan/" || name.strip_prefix("adhan/").is_some_and(adhan_name)
+    name == "manifest.json"
+        || FILES.contains(&name)
+        || name == "adhan/"
+        || name.strip_prefix("adhan/").is_some_and(adhan_name)
+        || name == "custom-modules/"
+        || name.strip_prefix("custom-modules/").is_some_and(custom_module_entry)
 }
 
 /// Reads and validates `manifest.json` from an open `.sympony` ZIP archive (at most 1 MB manifest).
@@ -240,6 +267,34 @@ pub fn unzipped_size(listing: &str) -> Option<u64> {
     listing.lines().rev().find(|l| !l.trim().is_empty())?.split_whitespace().next()?.parse().ok()
 }
 
+fn copy_custom_modules_dir(src_root: &std::path::Path, dst_root: &std::path::Path) -> std::io::Result<()> {
+    let src = src_root.join("custom-modules");
+    if !src.is_dir() {
+        return Ok(());
+    }
+    let dst = dst_root.join("custom-modules");
+    crate::paths::ensure_private_dir(&dst)?;
+    for ent in std::fs::read_dir(&src)?.flatten() {
+        let p = ent.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let Some(slug) = p.file_name().and_then(|n| n.to_str()) else { continue };
+        if crate::custom_modules::validate_slug(slug).is_err() {
+            continue;
+        }
+        let dst_mod = dst.join(slug);
+        crate::paths::ensure_private_dir(&dst_mod)?;
+        for fname in ["module.json", "state.json", "config.json"] {
+            let f = p.join(fname);
+            if f.is_file() {
+                std::fs::copy(&f, dst_mod.join(fname))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn put_back(dir: &std::path::Path, copy: &std::path::Path) {
     for f in FILES {
         if copy.join(f).is_file() {
@@ -249,6 +304,10 @@ fn put_back(dir: &std::path::Path, copy: &std::path::Path) {
     let _ = std::fs::create_dir_all(dir.join("adhan"));
     for a in std::fs::read_dir(copy.join("adhan")).into_iter().flatten().flatten() {
         let _ = std::fs::copy(a.path(), dir.join("adhan").join(a.file_name()));
+    }
+    if copy.join("custom-modules").is_dir() {
+        let _ = std::fs::remove_dir_all(dir.join("custom-modules"));
+        let _ = copy_custom_modules_dir(copy, dir);
     }
 }
 
@@ -306,6 +365,7 @@ pub fn apply_pending(dir: &std::path::Path, now: i64, stamp: &str) -> Result<Opt
                 std::fs::copy(a.path(), copy.join("adhan").join(a.file_name())).map_err(e)?;
             }
         }
+        copy_custom_modules_dir(dir, &copy).map_err(e)?;
         Ok(())
     })();
     if let Err(x) = made {
@@ -325,6 +385,10 @@ pub fn apply_pending(dir: &std::path::Path, now: i64, stamp: &str) -> Result<Opt
         if p.join("adhan").is_dir() {
             let _ = std::fs::remove_dir_all(dir.join("adhan"));
             std::fs::rename(p.join("adhan"), dir.join("adhan")).map_err(e)?;
+        }
+        if p.join("custom-modules").is_dir() {
+            let _ = std::fs::remove_dir_all(dir.join("custom-modules"));
+            std::fs::rename(p.join("custom-modules"), dir.join("custom-modules")).map_err(e)?;
         }
         // Read ground truth from the encrypted secrets store (`secrets.json`), because `has_*` flags are never
         // persisted to `settings.json` on disk. Limitation: a legacy Mac whose `brainKey` exists only in macOS

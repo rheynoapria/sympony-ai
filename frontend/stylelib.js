@@ -310,7 +310,7 @@
     const out = {};
     for (const [id, pref] of Object.entries(map)) {
       if (!pref || typeof pref !== 'object' || typeof pref.gridSize !== 'string') continue;
-      const allowed = ALLOWED_GRID_SIZES[id];
+      const allowed = ALLOWED_GRID_SIZES[id] || (id.startsWith('custom:') ? ['1x1', '2x1', '1x2', '2x2'] : null);
       if (allowed && allowed.includes(pref.gridSize)) out[id] = pref.gridSize;
     }
     return out;

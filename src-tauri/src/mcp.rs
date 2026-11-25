@@ -178,6 +178,9 @@ fn serve_pony(app: &AppHandle, session: &str, kind: &str, args: &str) -> Option<
                 Some(json!({"ok": false, "error": format!("Memory fact '{id}' not found")}))
             }
         }
+        "cm_list" | "cm_read" | "cm_preview" | "cm_save" | "cm_delete" => {
+            crate::custom_modules::handle_pony_tool(app, session, kind, args)
+        }
         _ => None,
     }
 }
@@ -317,7 +320,22 @@ pub(crate) fn serve(app: &AppHandle, req: Value) -> Value {
         };
     }
     // (the chat shows Pony's steps while a long answer is on its way)
-    let detail: String = if matches!(kind, "skill" | "skill_file" | "open" | "music" | "pomodoro" | "recall") { args.split(" | ").next().unwrap_or("").chars().take(60).collect() } else { String::new() };
+    let detail: String = if matches!(kind, "cm_read" | "cm_preview" | "cm_save" | "cm_delete") {
+        serde_json::from_str::<Value>(args)
+            .ok()
+            .and_then(|v| {
+                v["slug"]
+                    .as_str()
+                    .or_else(|| v["manifest"]["slug"].as_str())
+                    .or_else(|| v["manifest"]["name"].as_str())
+                    .map(|s| s.chars().take(60).collect())
+            })
+            .unwrap_or_default()
+    } else if matches!(kind, "skill" | "skill_file" | "open" | "music" | "pomodoro" | "recall") {
+        args.split(" | ").next().unwrap_or("").chars().take(60).collect()
+    } else {
+        String::new()
+    };
     let _ = app.emit("agent:step", json!({"session": session, "kind": kind, "detail": detail}));
     if let Some(ans) = serve_pony(app, &session, kind, args) {
         return ans;
@@ -492,7 +510,14 @@ fn dirs_data() -> std::path::PathBuf {
 pub(crate) fn tool_taints_turn(name: &str) -> bool {
     matches!(
         name,
-        "web_search" | "read_web_page" | "screen_read" | "screen_do" | "screen_watch" | "ask_ai" | "agent_status"
+        "web_search"
+            | "read_web_page"
+            | "screen_read"
+            | "screen_do"
+            | "screen_watch"
+            | "ask_ai"
+            | "agent_status"
+            | "preview_custom_module"
     )
 }
 
@@ -537,7 +562,7 @@ mod tests {
         assert!(mcp.is_tainted("s1"));
         mcp.close("s1");
         assert!(!mcp.is_tainted("s1"));
-        for t in ["web_search", "read_web_page", "screen_read", "screen_do", "screen_watch", "ask_ai", "agent_status"] {
+        for t in ["web_search", "read_web_page", "screen_read", "screen_do", "screen_watch", "ask_ai", "agent_status", "preview_custom_module"] {
             assert!(tool_taints_turn(t), "must taint turn: {t}");
         }
         for safe in ["routine_save", "agents_list", "agent_stop", "remember", "set_auto_ui"] {

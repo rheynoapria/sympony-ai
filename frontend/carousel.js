@@ -123,6 +123,9 @@
   }
 
   function modIcon(id, style = '') {
+    if (typeof id === 'string' && id.startsWith('custom:') && typeof N.customModIcon === 'function') {
+      return N.customModIcon(id, style);
+    }
     return ic(MOD_SVG[id] || 'sliders', style);
   }
 
@@ -132,6 +135,10 @@
   }
 
   function modLabel(id) {
+    if (typeof id === 'string' && id.startsWith('custom:') && typeof N.customModMeta === 'function') {
+      const m = N.customModMeta(id);
+      if (m && m.name) return m.name;
+    }
     if (id === 'home') return _t('Music');
     if (id === 'hitl') return _t('Agent approvals');
     if (id === 'prayer') return _t('Prayer');
@@ -416,7 +423,7 @@
   }
 
   function hydrateSection(modId) {
-    const pageEl = $('#page-' + modId);
+    const pageEl = document.getElementById('page-' + modId);
     if (pageEl) applyPageStyleAttrs(pageEl, modId);
     if (modId === 'home') { N.renderMusic(true); N.renderCalendar(); if (N.renderHomeSection) N.renderHomeSection(); }
     else if (modId === 'shelf' && N.renderShelfSection) N.renderShelfSection();
@@ -494,7 +501,7 @@
 
   function returnPageToVault(modId, onlyInside) {
     if (!modId || ['drop', 'snap'].includes(modId)) return;
-    const pageEl = $('#page-' + modId);
+    const pageEl = document.getElementById('page-' + modId);
     if (!pageEl) return;
     if (onlyInside && !onlyInside.contains(pageEl)) return;
     if (pageEl.parentNode !== pageVault) {
@@ -566,7 +573,9 @@
     }
 
     cs.modIds = [];
-    const customSizes = window.StyleLib ? StyleLib.gridSizesMap(st.settings) : null;
+    const customDefaults = typeof N.customModDefaultSizes === 'function' ? N.customModDefaultSizes() : {};
+    const styleSizes = window.StyleLib ? StyleLib.gridSizesMap(st.settings) : {};
+    const customSizes = Object.assign({}, customDefaults, styleSizes);
     cs.pages = NotchKit.packCards(ids, { hitl, sizes: customSizes });
     if (!cs.pages.length) cs.pages = [{ cards: [{ id: 'home', x: 0, y: 0, w: 4, h: 2 }] }];
 

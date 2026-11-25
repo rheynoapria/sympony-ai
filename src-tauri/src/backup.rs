@@ -58,6 +58,21 @@ fn export(app: &AppHandle) -> Value {
         for a in &adhan {
             std::fs::copy(a, stage.join("adhan").join(a.file_name().unwrap_or_default())).map_err(|e| e.to_string())?;
         }
+        let cm_src = services::custom_modules::root(&dir);
+        if cm_src.is_dir() {
+            for m in services::custom_modules::list_manifests(&dir) {
+                let Some(slug) = m["slug"].as_str() else { continue };
+                let src_mod = cm_src.join(slug);
+                let dst_mod = stage.join("custom-modules").join(slug);
+                std::fs::create_dir_all(&dst_mod).map_err(|e| e.to_string())?;
+                for fname in ["module.json", "state.json", "config.json"] {
+                    let f = src_mod.join(fname);
+                    if f.is_file() {
+                        std::fs::copy(&f, dst_mod.join(fname)).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
         let r = |f: &str| read(&stage.join(f));
         let manifest = json!({"format": FORMAT, "version": VERSION, "created": chrono::Utc::now().timestamp_millis(), "pc": crate::phone::pc_name(),
             "app": env!("CARGO_PKG_VERSION"), "counts": counts(&r("settings.json"), &r("todo.json"), &r("notes.json"), &r("chats.json"), &r("bookmarks.json"), &r("radio.json"), adhan.len())});
