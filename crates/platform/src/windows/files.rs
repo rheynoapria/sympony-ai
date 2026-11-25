@@ -314,6 +314,57 @@ fn convert_in(src: &str, dst: &std::path::Path, jpeg: bool) -> ::windows::core::
     Ok(())
 }
 
+/// A picture's small JPEG for a tile, at most `longest` pixels on its longer side (never made bigger), upright by its
+/// EXIF orientation, what's see-through on white: Windows' own picture codecs (PNG, JPEG, GIF, BMP, TIFF, WebP, and
+/// HEIC with its extension), in memory (`_scratch`, where macOS's `sips` writes, isn't used). None: not a picture
+/// Windows reads, or not there. Not on a UI thread: it waits on WinRT.
+pub fn thumbnail(path: &str, longest: u32, _scratch: &std::path::Path) -> Option<Vec<u8>> {
+    super::mta();
+    thumbnail_in(path, longest.max(1)).ok()
+}
+
+fn thumbnail_in(path: &str, longest: u32) -> ::windows::core::Result<Vec<u8>> {
+    use ::windows::core::HSTRING;
+    use ::windows::Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapEncoder, BitmapInterpolationMode, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode};
+    use ::windows::Storage::Streams::{Buffer, DataReader, InMemoryRandomAccessStream};
+    use ::windows::Storage::{FileAccessMode, StorageFile};
+    let input = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))?.join()?.OpenAsync(FileAccessMode::Read)?.join()?;
+    let decoder = BitmapDecoder::CreateAsync(&input)?.join()?;
+    let (w, h) = (decoder.PixelWidth()?, decoder.PixelHeight()?);
+    let transform = BitmapTransform::new()?;
+    // (scaled as it's decoded; one scale for both sides, so the EXIF turn after it keeps the shape)
+    if w.max(h) > longest {
+        let k = f64::from(longest) / f64::from(w.max(h));
+        transform.SetScaledWidth(((f64::from(w) * k).round() as u32).max(1))?;
+        transform.SetScaledHeight(((f64::from(h) * k).round() as u32).max(1))?;
+        transform.SetInterpolationMode(BitmapInterpolationMode::Fant)?;
+    }
+    let bitmap = decoder.GetSoftwareBitmapTransformedAsync(BitmapPixelFormat::Bgra8, BitmapAlphaMode::Premultiplied, &transform, ExifOrientationMode::RespectExifOrientation, ColorManagementMode::ColorManageToSRgb)?.join()?;
+    let (tw, th) = (bitmap.PixelWidth()? as u32, bitmap.PixelHeight()? as u32);
+    let buffer = Buffer::Create(tw * th * 4)?;
+    bitmap.CopyToBuffer(&buffer)?;
+    let mut px = vec![0u8; buffer.Length()? as usize];
+    DataReader::FromBuffer(&buffer)?.ReadBytes(&mut px)?;
+    // (JPEG has no see-through: premultiplied colours plus what the alpha leaves of white)
+    for p in px.chunks_exact_mut(4) {
+        let white = 255 - p[3];
+        for c in &mut p[..3] {
+            *c = c.saturating_add(white);
+        }
+        p[3] = 255;
+    }
+    let stream = InMemoryRandomAccessStream::new()?;
+    let encoder = BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId()?, &stream)?.join()?;
+    encoder.SetPixelData(BitmapPixelFormat::Bgra8, BitmapAlphaMode::Ignore, tw, th, 96.0, 96.0, &px)?;
+    encoder.FlushAsync()?.join()?;
+    let size = stream.Size()? as u32;
+    let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0)?)?;
+    reader.LoadAsync(size)?.join()?;
+    let mut out = vec![0u8; size as usize];
+    reader.ReadBytes(&mut out)?;
+    Ok(out)
+}
+
 /// Ejects a drive as File Explorer's Eject does (a USB stick is then safe to pull out; Windows says so itself, or
 /// that it's still in use). `root` is the drive, `E:\`. A drive Windows can't eject (the PC's own disk) says so.
 pub fn eject(root: &str) -> Result<(), String> {
@@ -615,6 +666,62 @@ mod tests {
         let out = s.0.join("note.jpg");
         assert!(convert_picture(&txt.to_string_lossy(), &out, true).is_err());
         assert!(!out.exists());
+    }
+
+    /// `jpeg` with an EXIF orientation (an APP1 after the JFIF APP0, when there is one), as a phone saves a photo it
+    /// took held sideways.
+    fn with_orientation(jpeg: &[u8], o: u16) -> Vec<u8> {
+        let mut exif = b"Exif\0\0II*\0".to_vec();
+        for part in [&8u32.to_le_bytes()[..], &1u16.to_le_bytes(), &0x0112u16.to_le_bytes(), &3u16.to_le_bytes(), &1u32.to_le_bytes(), &o.to_le_bytes(), &[0, 0], &0u32.to_le_bytes()] {
+            exif.extend_from_slice(part);
+        }
+        let mut app1 = vec![0xFF, 0xE1];
+        app1.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        app1.extend_from_slice(&exif);
+        let at = if jpeg[2..4] == [0xFF, 0xE0] { 4 + u16::from_be_bytes([jpeg[4], jpeg[5]]) as usize } else { 2 };
+        [&jpeg[..at], &app1[..], &jpeg[at..]].concat()
+    }
+
+    /// A JPEG's (width, height) from its frame header.
+    fn jpeg_size(b: &[u8]) -> (u32, u32) {
+        let mut i = 2;
+        while i + 9 < b.len() && b[i] == 0xFF {
+            if matches!(b[i + 1], 0xC0 | 0xC1 | 0xC2) {
+                return (u16::from_be_bytes([b[i + 7], b[i + 8]]).into(), u16::from_be_bytes([b[i + 5], b[i + 6]]).into());
+            }
+            i += 2 + u16::from_be_bytes([b[i + 2], b[i + 3]]) as usize;
+        }
+        (0, 0)
+    }
+
+    #[test]
+    fn a_thumbnail_is_small_upright_and_see_through_parts_are_white() {
+        let s = Scratch::new("thumb");
+        let path = |n: &str| s.0.join(n).to_string_lossy().into_owned();
+        // a 40×20 photo, and the same saved sideways as a phone does (upright it's 20×40)
+        let px: Vec<u8> = (0..800u32).flat_map(|i| [(i % 40 * 6) as u8, 90, 160, 255]).collect();
+        std::fs::write(s.0.join("wide.png"), super::super::image::png(40, 20, px, false).unwrap()).unwrap();
+        convert_picture(&path("wide.png"), &s.0.join("wide.jpg"), true).unwrap();
+        std::fs::write(s.0.join("turned ü.jpg"), with_orientation(&std::fs::read(s.0.join("wide.jpg")).unwrap(), 6)).unwrap();
+        let t = thumbnail(&path("turned ü.jpg"), 16, &s.0).unwrap();
+        assert_eq!(&t[..3], &[0xFF, 0xD8, 0xFF]);
+        assert_eq!(jpeg_size(&t), (8, 16), "upright, its shape kept");
+        assert_eq!(jpeg_size(&thumbnail(&path("wide.jpg"), 16, &s.0).unwrap()), (16, 8));
+        assert_eq!(jpeg_size(&thumbnail(&path("wide.png"), 192, &s.0).unwrap()), (40, 20), "never made bigger");
+        // the top half see-through, the bottom half grey: the top comes out white
+        let px: Vec<u8> = (0..256u32).flat_map(|i| if i < 128 { [0, 0, 0, 0] } else { [60, 60, 60, 255] }).collect();
+        std::fs::write(s.0.join("clear.png"), super::super::image::png(16, 16, px, false).unwrap()).unwrap();
+        std::fs::write(s.0.join("clear-thumb.jpg"), thumbnail(&path("clear.png"), 192, &s.0).unwrap()).unwrap();
+        convert_picture(&path("clear-thumb.jpg"), &s.0.join("clear-back.png"), false).unwrap();
+        let (w, h, px) = super::super::image::bgra_of_png(&std::fs::read(s.0.join("clear-back.png")).unwrap()).unwrap();
+        // (rows from the bottom)
+        let at = |x: u32, y_from_top: u32| &px[(((h - 1 - y_from_top) * w + x) * 4) as usize..][..3];
+        assert!((0..w).all(|x| at(x, 2).iter().all(|c| *c > 240)), "top: {:?}", at(0, 2));
+        assert!((0..w).all(|x| at(x, 13).iter().all(|c| *c < 90)), "bottom: {:?}", at(0, 13));
+        // not a picture, or not there: none
+        std::fs::write(s.0.join("note.png"), "not a picture").unwrap();
+        assert!(thumbnail(&path("note.png"), 192, &s.0).is_none());
+        assert!(thumbnail(&path("gone.png"), 192, &s.0).is_none());
     }
 
     #[test]

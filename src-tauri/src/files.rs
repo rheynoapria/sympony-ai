@@ -33,7 +33,7 @@ fn data_url(mime: &str, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
-/// A file's picture for a tile: a photo's thumbnail (sips), else its Finder icon.
+/// A file's picture for a tile: a photo's thumbnail, else its icon (Finder's, Explorer's).
 pub fn picture(app: &AppHandle, path: &str, photo: bool) -> Option<String> {
     let changed = std::fs::metadata(path).and_then(|m| m.modified()).ok().map(|t| format!("{t:?}")).unwrap_or_default();
     let key = format!("{path}|{changed}");
@@ -68,14 +68,9 @@ pub fn load_json(app: &AppHandle, path: &Path) -> Vec<Value> {
     })
 }
 
-/// A photo's small JPEG (sips), as a data URL; nothing left on disk.
+/// A photo's small JPEG (`sips` on macOS, Windows' own picture codecs there), as a data URL; nothing left on disk.
 pub fn thumbnail(path: &str, tmp_dir: &Path) -> Option<String> {
-    let _ = std::fs::create_dir_all(tmp_dir);
-    let out = tmp_dir.join(format!("{}.jpg", new_id()));
-    let ok = Command::new("/usr/bin/sips").args(["-Z", "192", "-s", "format", "jpeg", path, "--out"]).arg(&out).output().is_ok_and(|o| o.status.success());
-    let r = ok.then(|| std::fs::read(&out).ok()).flatten().map(|b| data_url("image/jpeg", &b));
-    let _ = std::fs::remove_file(&out);
-    r
+    platform::os::files::thumbnail(path, 192, tmp_dir).map(|b| data_url("image/jpeg", &b))
 }
 
 pub fn hash(s: &str) -> u64 {

@@ -108,6 +108,19 @@ pub fn convert_picture(src: &str, dst: &std::path::Path, jpeg: bool) -> Result<(
     if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("failed").to_string()) }
 }
 
+/// A picture's small JPEG for a tile, at most `longest` pixels on its longer side (`sips`, through a file in `scratch`
+/// that's removed after). None: not a picture `sips` reads.
+pub fn thumbnail(path: &str, longest: u32, scratch: &std::path::Path) -> Option<Vec<u8>> {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let _ = std::fs::create_dir_all(scratch);
+    let out = scratch.join(format!("thumb-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let ok = std::process::Command::new("/usr/bin/sips").args(["-Z", &longest.to_string(), "-s", "format", "jpeg", path, "--out"]).arg(&out)
+        .output().is_ok_and(|o| o.status.success());
+    let r = if ok { std::fs::read(&out).ok() } else { None };
+    let _ = std::fs::remove_file(&out);
+    r
+}
+
 /// Ejects a drive (`diskutil eject`); `root` is its folder, `/Volumes/Name`.
 pub fn eject(root: &str) -> Result<(), String> {
     let o = std::process::Command::new("/usr/sbin/diskutil").arg("eject").arg(root).output().map_err(|e| e.to_string())?;

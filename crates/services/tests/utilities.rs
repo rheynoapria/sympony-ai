@@ -151,3 +151,16 @@ fn alpha_edges_stay_valid() {
     assert_eq!(color("rgba(1, 2, 3, 0.0001)"), Some("rgba(1, 2, 3, 0)".into()));
     assert_eq!(color("#ffffff00"), Some("rgba(255, 255, 255, 0)".into()));
 }
+
+#[test]
+fn pictures_kept_without_a_thumbnail_are_found() {
+    use services::clipboard::without_thumb;
+    let list = vec![
+        json!({"id": "a", "kind": "image", "thumb": null}),
+        json!({"id": "b", "kind": "image", "thumb": ""}),
+        json!({"id": "c", "kind": "image", "thumb": "data:image/jpeg;base64,AA"}),
+        json!({"id": "d", "kind": "text", "text": "x"}),
+        json!({"id": "e", "kind": "image"}),
+    ];
+    assert_eq!(without_thumb(&list), ["a", "b", "e"]);
+}
