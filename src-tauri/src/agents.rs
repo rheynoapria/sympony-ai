@@ -71,9 +71,34 @@ fn home() -> PathBuf {
 }
 
 /// The PATH a terminal has (an app started from the Dock gets a bare one), with the usual install folders after it.
+/// On Windows, Sympony's own PATH (Windows gives an app the user's and the system's) with the folders CLIs install to
+/// after it, `;`-joined as Windows reads it.
 pub(crate) fn path() -> &'static str {
     static P: OnceLock<String> = OnceLock::new();
-    P.get_or_init(|| {
+    P.get_or_init(|| if cfg!(windows) { windows_path() } else { unix_path() })
+}
+
+/// Windows: Sympony's PATH, then where AI CLIs install themselves (Claude Code's own installer, npm, Bun, Cargo).
+fn windows_path() -> String {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let extra = [
+        env("USERPROFILE").map(|h| h.join(".local").join("bin")),
+        env("APPDATA").map(|a| a.join("npm")),
+        env("USERPROFILE").map(|h| h.join(".bun").join("bin")),
+        env("USERPROFILE").map(|h| h.join(".cargo").join("bin")),
+    ];
+    for d in extra.into_iter().flatten() {
+        if !dirs.iter().any(|x| x.as_os_str().eq_ignore_ascii_case(d.as_os_str())) {
+            dirs.push(d);
+        }
+    }
+    std::env::join_paths(dirs).map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// macOS and Linux: the login shell's PATH, then the usual install folders.
+fn unix_path() -> String {
+    {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let mut p = run_capture(Command::new(shell).args(["-ilc", "printf '%s' \"$PATH\""]), Duration::from_secs(5))
             .ok()
@@ -93,11 +118,42 @@ pub(crate) fn path() -> &'static str {
             }
         }
         p
-    })
+    }
 }
 
+/// Where `bin` is on the agents' PATH.
 pub(crate) fn which(bin: &str) -> Option<PathBuf> {
+    if cfg!(windows) {
+        return which_windows(bin, std::env::split_paths(path()));
+    }
     path().split(':').map(|d| PathBuf::from(d).join(bin)).find(|p| p.is_file())
+}
+
+/// Windows: `bin.exe`, else `bin.cmd` / `bin.bat`, in the folders' order. An npm shim that only forwards to an `.exe`
+/// (Claude Code's `claude.cmd` → `…\claude-code\bin\claude.exe`) is followed to it: an `.exe` gets its arguments as
+/// they are, while a batch file takes them through cmd.exe's quoting.
+fn which_windows(bin: &str, dirs: impl Iterator<Item = PathBuf>) -> Option<PathBuf> {
+    for d in dirs {
+        for ext in ["exe", "cmd", "bat"] {
+            let p = d.join(format!("{bin}.{ext}"));
+            if p.is_file() {
+                return Some(if ext == "exe" { p } else { shim_target(&p).unwrap_or(p) });
+            }
+        }
+    }
+    None
+}
+
+/// The `.exe` an npm shim runs, when it runs one: npm writes it as `"%dp0%\node_modules\…\name.exe"   %*`, the
+/// folder being the shim's own. A shim that runs a script with node has no such line.
+fn shim_target(cmd: &std::path::Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(cmd).ok()?;
+    let dir = cmd.parent()?;
+    text.lines().find_map(|l| {
+        let rest = l.trim().strip_prefix("\"%dp0%\\")?;
+        let rel = &rest[..rest.find('"')?];
+        rel.to_ascii_lowercase().ends_with(".exe").then(|| dir.join(rel)).filter(|p| p.is_file())
+    })
 }
 
 /// Runs a command to its end (or `limit`): (exited well, stdout, stderr). It gets a process group of its own, killed
@@ -934,4 +990,83 @@ fn chat_file(path: &std::path::Path) -> Value {
         };
     }
     json!({"ok": true, "name": name, "size": size, "kind": "other"})
+}
+
+// (Windows: the agents' PATH and where their CLIs are, #66)
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::{path, shim_target, which_windows};
+    use std::path::PathBuf;
+
+    /// A fresh folder under the temp folder, removed when dropped.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Scratch {
+            let d = std::env::temp_dir().join(format!("sy-agents-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Scratch(d)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn the_path_is_windows_own_with_the_cli_folders_after_it() {
+        let p = path();
+        let dirs: Vec<PathBuf> = std::env::split_paths(p).collect();
+        assert!(!p.is_empty() && !p.contains(":/usr/bin"), "{p}");
+        // Sympony's own PATH comes first, as it is
+        let own: Vec<PathBuf> = std::env::split_paths(&std::env::var_os("PATH").unwrap()).collect();
+        assert_eq!(dirs.first(), own.first());
+        // then npm's folder, where `npm install -g` puts claude.cmd, codex.cmd …
+        let npm = PathBuf::from(std::env::var_os("APPDATA").unwrap()).join("npm");
+        assert!(dirs.iter().any(|d| d.as_os_str().eq_ignore_ascii_case(npm.as_os_str())), "{p}");
+        // (every folder whole: a drive's `C:` never splits one)
+        assert!(dirs.iter().all(|d| d.as_os_str().len() > 2), "{p}");
+    }
+
+    #[test]
+    fn an_npm_shim_is_followed_to_the_exe_it_runs_and_an_exe_comes_first() {
+        let s = Scratch::new("which");
+        let npm = s.0.join("npm");
+        let exe = npm.join(r"node_modules\@anthropic-ai\claude-code\bin\claude.exe");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"MZ").unwrap();
+        // (as npm writes it for Claude Code)
+        std::fs::write(npm.join("claude.cmd"), "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n").unwrap();
+        // (a CLI npm runs with node: no .exe to follow, the shim itself)
+        std::fs::write(npm.join("codex.cmd"), "@ECHO off\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n)\r\nendLocal & \"%_prog%\"  \"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js\" %*\r\n").unwrap();
+        assert_eq!(shim_target(&npm.join("claude.cmd")), Some(exe.clone()));
+        assert_eq!(which_windows("claude", [s.0.join("empty"), npm.clone()].into_iter()), Some(exe));
+        assert_eq!(which_windows("codex", [npm.clone()].into_iter()), Some(npm.join("codex.cmd")));
+        assert_eq!(which_windows("gemini", [npm.clone()].into_iter()), None);
+        // an .exe beside a shim is the one taken
+        let tools = s.0.join("tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        std::fs::write(tools.join("agy.exe"), b"MZ").unwrap();
+        std::fs::write(tools.join("agy.cmd"), "@echo off\r\n").unwrap();
+        assert_eq!(which_windows("agy", [tools.clone()].into_iter()), Some(tools.join("agy.exe")));
+    }
+
+    /// This PC's own Claude Code, if it has one: found, and answering `--version` with the agents' PATH.
+    /// `cargo test -p sympony --lib agents::windows_tests -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn finds_and_runs_this_pcs_claude_code() {
+        let Some(claude) = super::which("claude") else {
+            eprintln!("no Claude Code on this PC");
+            return;
+        };
+        eprintln!("claude: {}", claude.display());
+        let out = std::process::Command::new(&claude).arg("--version").env("PATH", path()).output().unwrap();
+        let v = String::from_utf8_lossy(&out.stdout);
+        eprintln!("--version: {}", v.trim());
+        assert!(out.status.success() && v.contains("Claude Code"), "{v}");
+    }
 }

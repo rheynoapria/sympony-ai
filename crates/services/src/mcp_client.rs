@@ -64,13 +64,43 @@ fn inherited_env() -> Vec<&'static str> {
     keys
 }
 
+/// The program a stdio server's `command` names. On Windows a bare name (`npx`, `uvx`, `node`) is looked up on the
+/// agents' `path` (else Sympony's PATH) as `.exe`, `.cmd` or `.bat`: Windows only finds `name.exe` by itself, and
+/// npm's tools are `.cmd` files. A path, a name with an extension, and every name elsewhere stay as they are.
+pub fn resolve_program(command: &str, path: &str) -> std::path::PathBuf {
+    let p = std::path::PathBuf::from(command);
+    if !cfg!(windows) || command.contains(['/', '\\']) || p.extension().is_some() {
+        return p;
+    }
+    let dirs: Vec<std::path::PathBuf> = if path.is_empty() {
+        std::env::var_os("PATH").map(|v| std::env::split_paths(&v).collect()).unwrap_or_default()
+    } else {
+        std::env::split_paths(path).collect()
+    };
+    for d in dirs {
+        for ext in ["exe", "cmd", "bat"] {
+            let c = d.join(format!("{command}.{ext}"));
+            if c.is_file() {
+                return c;
+            }
+        }
+    }
+    p
+}
+
 impl Client {
     /// Starts or reaches the server, says hello and reads its tools, within `limit`.
     pub fn connect(spec: &Spec, limit: Duration) -> Result<Client, String> {
         let link = match spec {
             Spec::Stdio { command, args, env, path } => {
-                let mut cmd = Command::new(command);
+                let mut cmd = Command::new(resolve_program(command, path));
                 cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+                // (Windows: no console window flashing up for each server)
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    cmd.creation_flags(0x0800_0000);
+                }
                 // Clear parent process env so third-party stdio MCP servers never inherit unrelated API keys or tokens.
                 cmd.env_clear();
                 for k in inherited_env() {
@@ -534,5 +564,29 @@ for line in sys.stdin:
         let (text, err) = c.call("list_agents", &json!({"limit": 2}), Duration::from_secs(20), &|| false).unwrap();
         println!("list_agents → {} chars (error: {err})", text.len());
         assert!(!err && text.contains("agents"));
+    }
+    #[test]
+    fn a_servers_command_is_found_as_windows_names_it() {
+        // a path or a name with an extension is taken as it is, everywhere
+        assert_eq!(resolve_program("/usr/local/bin/server", ""), std::path::PathBuf::from("/usr/local/bin/server"));
+        assert_eq!(resolve_program("server.exe", ""), std::path::PathBuf::from("server.exe"));
+        if !cfg!(windows) {
+            assert_eq!(resolve_program("npx", "/opt/x"), std::path::PathBuf::from("npx"));
+            return;
+        }
+        // Windows: npm's `npx.cmd` on the agents' PATH, an .exe before a .cmd, a name found nowhere as it is
+        let d = std::env::temp_dir().join(format!("sy-mcp-resolve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (npm, tools) = (d.join("npm"), d.join("tools"));
+        std::fs::create_dir_all(&npm).unwrap();
+        std::fs::create_dir_all(&tools).unwrap();
+        std::fs::write(npm.join("npx.cmd"), "@echo off").unwrap();
+        std::fs::write(tools.join("uvx.exe"), "MZ").unwrap();
+        std::fs::write(tools.join("uvx.cmd"), "@echo off").unwrap();
+        let path = std::env::join_paths([npm.clone(), tools.clone()]).unwrap().to_string_lossy().to_string();
+        assert_eq!(resolve_program("npx", &path), npm.join("npx.cmd"));
+        assert_eq!(resolve_program("uvx", &path), tools.join("uvx.exe"));
+        assert_eq!(resolve_program("nothing-here", &path), std::path::PathBuf::from("nothing-here"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
