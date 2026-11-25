@@ -491,7 +491,10 @@ pub fn hook(agent: &str, event: &str) {
     let Ok(mut s) = UnixStream::connect(&sock) else { return };
     let _ = s.set_read_timeout(Some(Duration::from_secs(75)));
     let ppid = platform::process::parent_pid();
-    if writeln!(s, "{}", json!({"type": "hook", "agent": agent, "event": event, "payload": payload, "ppid": ppid})).is_err() {
+    // (on Windows the agent runs a hook through a shell that's gone by the time its card is answered: the line of
+    // parents is taken now, while it's all there, for Open to find the agent's app in)
+    let up = if cfg!(windows) { platform::process::ancestors(ppid, 20) } else { vec![] };
+    if writeln!(s, "{}", json!({"type": "hook", "agent": agent, "event": event, "payload": payload, "ppid": ppid, "up": up})).is_err() {
         return;
     }
     let mut line = String::new();

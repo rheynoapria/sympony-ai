@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Windows port, small Mac-only calls:** On Windows, answering an agent's card with Open brings its app forward (Windows Terminal, VS Code…): the hook now knows its parent process there (`platform::process::parent_of`, Toolhelp, a number reused by a later process not taken for it) and the log says what it found; a running Paseo comes forward too. Language "auto" follows Windows' display languages and Radio's stations near you its country or region (they read macOS's `defaults`); Sympony AI's device list names the PC (it said "this computer"); a file a phone sends is marked as a download (the Mark of the Web), so Windows asks before running it; Open Calendar opens the calendar app Windows shows appointments in (#71).
+- **Windows port, small Mac-only calls:** On Windows, answering an agent's card with Open brings its app forward (Windows Terminal, VS Code…): the hook now takes its line of parent processes when it runs (`platform::process::ancestors`, Toolhelp; the shell an agent runs a hook through is gone by the time the card is answered, and a number reused by a later process isn't taken for a parent), and the log says what Open found; a running Paseo comes forward too. Language "auto" follows Windows' display languages and Radio's stations near you its country or region (they read macOS's `defaults`); Sympony AI's device list names the PC (it said "this computer"); a file a phone sends is marked as a download (the Mark of the Web), so Windows asks before running it; Open Calendar opens the calendar app Windows shows appointments in (#71).
 
 ## [0.3.0-beta.1] - 2026-11-26
 

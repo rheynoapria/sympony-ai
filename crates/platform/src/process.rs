@@ -160,6 +160,17 @@ pub fn parent_of(pid: i32) -> Option<i32> {
     }
 }
 
+/// `pid` and the processes above it, nearest first, at most `max` (it stops where a parent isn't known).
+pub fn ancestors(pid: i32, max: usize) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut p = pid;
+    while p > 0 && out.len() < max && !out.contains(&p) {
+        out.push(p);
+        p = parent_of(p).unwrap_or(0);
+    }
+    out
+}
+
 /// When process `pid` started (Windows' 100 ns ticks), when this account may ask.
 #[cfg(windows)]
 fn started(pid: i32) -> Option<u64> {
@@ -231,5 +242,16 @@ mod tests {
         // nothing there: none
         assert_eq!(parent_of(-5), None);
         assert_eq!(parent_of(0), None);
+    }
+
+    #[test]
+    fn the_line_of_parents_starts_at_the_process_and_goes_up() {
+        let me = std::process::id() as i32;
+        let up = ancestors(me, 20);
+        assert!(up.len() >= 2, "{up:?}");
+        assert_eq!((up[0], Some(up[1])), (me, parent_of(me)));
+        assert!(up.len() <= 20);
+        assert_eq!(ancestors(me, 1), [me]);
+        assert!(ancestors(0, 20).is_empty());
     }
 }

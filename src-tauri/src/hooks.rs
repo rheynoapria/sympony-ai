@@ -19,6 +19,8 @@ struct Pending {
     item: Value,
     session: String,
     ppid: i32,
+    /// the hook's line of parents, taken when it ran (Windows)
+    up: Vec<i32>,
     shown: Instant,
     answer: Option<Sender<(String, Option<Value>, Option<Value>)>>,
 }
@@ -76,7 +78,8 @@ pub fn on_hook(app: &AppHandle, req: &Value, stream: Option<&crate::mcp::UnixStr
         let mut items = h.items.lock().unwrap();
         // that session moved on: its cards that only told something go
         items.retain(|p| p.answer.is_some() || p.session != session || session.is_empty());
-        items.push(Pending { item: it, session, ppid: req["ppid"].as_i64().unwrap_or(0) as i32, shown: Instant::now(), answer: waits.then_some(tx) });
+        let up = req["up"].as_array().into_iter().flatten().filter_map(Value::as_i64).map(|p| p as i32).collect();
+        items.push(Pending { item: it, session, ppid: req["ppid"].as_i64().unwrap_or(0) as i32, up, shown: Instant::now(), answer: waits.then_some(tx) });
     }
     send(app, s["claudeSound"] != false);
     if !waits {
@@ -101,22 +104,28 @@ pub fn on_hook(app: &AppHandle, req: &Value, stream: Option<&crate::mcp::UnixStr
     }
 }
 
-/// The app the agent runs in (its hook's ancestors: Terminal, VS Code, Warp, Windows Terminal…), brought forward.
-fn bring_forward(app: &AppHandle, ppid: i32) {
+/// The app the agent runs in (its hook's ancestors: Terminal, VS Code, Warp, Windows Terminal…), brought forward:
+/// the first with a window among `up` (the line of parents taken when the hook ran, on Windows), else walked up from
+/// `ppid` now.
+fn bring_forward(app: &AppHandle, ppid: i32, up: &[i32]) {
     let log = |m: String| app.state::<App>().log.line(&m);
-    let mut pid = ppid;
-    for up in 0..20 {
+    let (mut walk, mut looked) = (ppid, 0usize);
+    for i in 0..20 {
+        let pid = if up.is_empty() { walk } else { up.get(i).copied().unwrap_or(0) };
         if pid <= 1 {
             break;
         }
+        looked += 1;
         if platform::os::apps::is_app(pid) {
             platform::os::apps::activate_pid(pid);
-            log(format!("hooks: Open brought the agent's app forward (pid {pid}, {up} up from the hook)"));
+            log(format!("hooks: Open brought the agent's app forward (pid {pid}, {i} up from the hook)"));
             return;
         }
-        pid = platform::process::parent_of(pid).unwrap_or(0);
+        if up.is_empty() {
+            walk = platform::process::parent_of(pid).unwrap_or(0);
+        }
     }
-    log(format!("hooks: Open found no app with a window above the hook (from pid {ppid})"));
+    log(format!("hooks: Open found no app with a window above the hook ({looked} looked at, from pid {ppid})"));
 }
 
 /// Paseo brought to the front (macOS opens it; on Windows a Paseo that's running comes forward).
@@ -186,7 +195,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         };
         if let Some(p) = found {
             if choice == "open" {
-                bring_forward(&h, p.ppid);
+                bring_forward(&h, p.ppid, &p.up);
             }
             if let Some(tx) = p.answer {
                 let _ = tx.send((choice, picks, texts));
