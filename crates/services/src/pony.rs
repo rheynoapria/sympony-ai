@@ -1163,26 +1163,23 @@ pub fn import_skill(root: &Path, src: &Path, replace: bool) -> Result<String, St
     res
 }
 
-/// Exports `<root>/<name>` as a zip archive using `/usr/bin/ditto -c -k --keepParent`.
+/// Exports `<root>/<name>` as a zip archive at `dest_zip`, the folder under its own name (as `ditto --keepParent`
+/// did), written in Rust on every OS. A file already at `dest_zip` (the save dialog asked first) is replaced only
+/// once the new one is whole; when it fails, it's left as it was.
 pub fn export_skill(root: &Path, name: &str, dest_zip: &Path) -> Result<(), String> {
     validate_name(name)?;
     let dir = root.join(name);
     if !dir.is_dir() {
         return Err(format!("Skill '{name}' not found"));
     }
-    if let Some(parent) = dest_zip.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let status = std::process::Command::new("/usr/bin/ditto")
-        .args(["-c", "-k", "--keepParent"])
-        .arg(&dir)
-        .arg(dest_zip)
-        .status()
-        .map_err(|e| format!("Could not export skill: {e}"))?;
-    if !status.success() {
-        return Err("Could not export skill archive".into());
-    }
-    Ok(())
+    let parent = dest_zip.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let _ = std::fs::create_dir_all(parent);
+    let part = parent.join(format!(".{name}-export-{}-{}.part", std::process::id(), TMP_SEQ.fetch_add(1, Ordering::Relaxed)));
+    crate::archive::zip_items(&part, &[dir]).map_err(|e| format!("Could not export skill: {e}"))?;
+    std::fs::rename(&part, dest_zip).map_err(|e| {
+        let _ = std::fs::remove_file(&part);
+        format!("Could not export skill: {e}")
+    })
 }
 
 /// Writes any missing built-in skills into `root`, never overwriting existing folders.

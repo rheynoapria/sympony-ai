@@ -230,8 +230,12 @@ pub unsafe fn drag_out(view: *mut std::ffi::c_void, paths: &[String], done: Box<
 }
 
 /// `osascript` choosing files / a folder / an app / an audio file: their POSIX paths (none: cancelled). `what`:
-/// "files" (several), "folder", "app", "backup" (from Downloads), "audio", anything else one file (from Applications).
+/// "files" (several), "folder", "app", "backup" (from Downloads), "audio", "skill" (a Pony skill: a folder, or a
+/// .skill or .zip file), anything else one file (from Applications).
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
+    if what == "skill" {
+        return skill_panel(prompt).into_iter().collect();
+    }
     let script = match what {
         "files" => format!("set l to choose file with prompt {prompt:?} with multiple selections allowed\nset o to \"\"\nrepeat with f in l\nset o to o & POSIX path of f & linefeed\nend repeat\nreturn o"),
         "folder" => format!("POSIX path of (choose folder with prompt {prompt:?})"),
@@ -245,4 +249,42 @@ pub fn choose(what: &str, prompt: &str) -> Vec<String> {
         return vec![];
     }
     String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+}
+
+/// An open panel taking a folder or a file (AppleScript's `choose` takes one or the other), for a Pony skill: its
+/// POSIX path (None: cancelled).
+fn skill_panel(prompt: &str) -> Option<String> {
+    const JXA: &str = r#"
+ObjC.import('AppKit');
+const p = $.NSOpenPanel.openPanel;
+p.setCanChooseFiles(true);
+p.setCanChooseDirectories(true);
+p.setAllowsMultipleSelection(false);
+p.setPrompt($('Import'));
+p.setMessage($(MESSAGE));
+if (p.runModal == $.NSModalResponseOK) {
+  p.URL.path.js;
+} else {
+  '';
+}
+"#;
+    let jxa = JXA.replace("MESSAGE", &serde_json::to_string(prompt).unwrap_or_else(|_| "\"\"".into()));
+    let out = std::process::Command::new("/usr/bin/osascript").args(["-l", "JavaScript", "-e", &jxa]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// The save panel (`choose file name`): where to save `name`; None: cancelled. macOS asks before replacing a file
+/// that's there. `_kind` (the file type's name) is for Windows' dialog.
+pub fn save_as(prompt: &str, name: &str, _kind: &str) -> Option<String> {
+    let script = format!("POSIX path of (choose file name with prompt {prompt:?} default name {name:?})");
+    let out = std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
 }

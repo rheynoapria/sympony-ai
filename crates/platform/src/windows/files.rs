@@ -6,11 +6,74 @@ use std::ffi::c_void;
 
 /// The Explorer file dialog choosing files / a folder / a program / an audio file: their paths (none: cancelled).
 /// `what` as for `macos::files::choose`: "files" (several), "folder", "app" (.exe or shortcut, from the Start menu),
-/// "backup" (.sympony, from Downloads), "audio", anything else one file (from the Start menu).
+/// "backup" (.sympony, from Downloads), "audio", "skill" (a Pony skill: a .skill or .zip file, or a skill folder by
+/// its SKILL.md, as Windows' dialog picks a file or a folder, not either; from Downloads), anything else one file
+/// (from the Start menu).
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
-    let (what, prompt) = (what.to_string(), prompt.to_string());
+    let (kind, prompt) = (what.to_string(), prompt.to_string());
     // (its own thread: the dialog wants a single-threaded COM apartment, which the caller's thread may not be)
-    std::thread::spawn(move || dialog(&what, &prompt).unwrap_or_default()).join().unwrap_or_default()
+    let picked = std::thread::spawn(move || dialog(&kind, &prompt).unwrap_or_default()).join().unwrap_or_default();
+    if what == "skill" {
+        picked.iter().map(|p| skill_source(p)).collect()
+    } else {
+        picked
+    }
+}
+
+/// A skill picked by its SKILL.md is its folder; an archive is itself.
+fn skill_source(picked: &str) -> String {
+    let p = std::path::Path::new(picked);
+    match (p.file_name().and_then(|n| n.to_str()), p.parent()) {
+        (Some(n), Some(dir)) if n.eq_ignore_ascii_case("SKILL.md") => dir.to_string_lossy().into_owned(),
+        _ => picked.to_string(),
+    }
+}
+
+/// The Explorer save dialog: where to save `name`, a `kind` file (its extension the type the dialog keeps); None:
+/// cancelled. It asks before replacing a file that's there; it starts in the last folder used, else Downloads.
+pub fn save_as(prompt: &str, name: &str, kind: &str) -> Option<String> {
+    let (prompt, name, kind) = (prompt.to_string(), name.to_string(), kind.to_string());
+    // (its own thread, as `choose`)
+    std::thread::spawn(move || save_dialog(&prompt, &name, &kind).ok().flatten()).join().ok().flatten()
+}
+
+fn save_dialog(prompt: &str, name: &str, kind: &str) -> ::windows::core::Result<Option<String>> {
+    use ::windows::core::{HSTRING, PCWSTR};
+    use ::windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+    use ::windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
+    use ::windows::Win32::UI::Shell::{FileSaveDialog, IFileSaveDialog, IShellItem, SHCreateItemFromParsingName, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, SIGDN_FILESYSPATH};
+    // SAFETY: COM calls on this thread's own apartment, set up here and torn down at the end; the filter's strings
+    // outlive the dialog; the path it hands back is copied, then freed with CoTaskMemFree as its docs ask.
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let out = (|| {
+            let d: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER)?;
+            d.SetOptions(d.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)?;
+            d.SetTitle(&HSTRING::from(prompt))?;
+            d.SetFileName(&HSTRING::from(name))?;
+            let ext = std::path::Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("");
+            let (label, spec) = (HSTRING::from(format!("{kind} (*.{ext})")), HSTRING::from(format!("*.{ext}")));
+            if !ext.is_empty() {
+                d.SetFileTypes(&[COMDLG_FILTERSPEC { pszName: PCWSTR(label.as_ptr()), pszSpec: PCWSTR(spec.as_ptr()) }])?;
+                d.SetDefaultExtension(&HSTRING::from(ext))?;
+            }
+            if let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(downloads().to_string_lossy().as_ref()), None) {
+                let _ = d.SetDefaultFolder(&item);
+            }
+            // (Show errs when the user cancels: nothing chosen)
+            if d.Show(None).is_err() {
+                return Ok(None);
+            }
+            let p = d.GetResult()?.GetDisplayName(SIGDN_FILESYSPATH)?;
+            let s = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const c_void));
+            Ok(s.filter(|s| !s.is_empty()))
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        out
+    }
 }
 
 /// The Downloads folder: Windows' own (it can be moved, to another drive or into OneDrive), else the profile's.
@@ -32,7 +95,7 @@ pub fn downloads() -> std::path::PathBuf {
 /// Where the dialog starts for `what`.
 fn start_folder(what: &str) -> Option<String> {
     match what {
-        "backup" => Some(downloads().to_string_lossy().into_owned()),
+        "backup" | "skill" => Some(downloads().to_string_lossy().into_owned()),
         "files" | "folder" | "audio" => None,
         _ => std::env::var("ProgramData").ok().map(|d| format!("{d}\\Microsoft\\Windows\\Start Menu\\Programs")),
     }
@@ -61,6 +124,7 @@ fn dialog(what: &str, prompt: &str) -> ::windows::core::Result<Vec<String>> {
                 "app" => &[COMDLG_FILTERSPEC { pszName: w!("Programs"), pszSpec: w!("*.exe;*.lnk") }],
                 "audio" => &[COMDLG_FILTERSPEC { pszName: w!("Audio"), pszSpec: w!("*.mp3;*.m4a;*.aac;*.wav;*.ogg;*.opus;*.flac") }],
                 "backup" => &[COMDLG_FILTERSPEC { pszName: w!("Sympony backup"), pszSpec: w!("*.sympony") }, COMDLG_FILTERSPEC { pszName: w!("All files"), pszSpec: w!("*.*") }],
+                "skill" => &[COMDLG_FILTERSPEC { pszName: w!("Pony skill (.skill, .zip, a folder's SKILL.md)"), pszSpec: w!("*.skill;*.zip;SKILL.md") }, COMDLG_FILTERSPEC { pszName: w!("All files"), pszSpec: w!("*.*") }],
                 _ => &[],
             };
             if !filters.is_empty() {
@@ -258,8 +322,9 @@ pub fn write_png(png: &[u8]) -> bool {
 /// deleting for good.
 pub fn trash(path: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING, FO_DELETE, SHFILEOPSTRUCTW};
-    // (a list of paths, each NUL-terminated, ending in an empty one)
-    let mut from = super::shell::wide(path);
+    // (a list of paths, each NUL-terminated, ending in an empty one; the shell wants `\`, and a path joined from a
+    // relative one may hold `/`)
+    let mut from = super::shell::wide(&shell_path(path));
     from.push(0);
     let mut op = SHFILEOPSTRUCTW {
         wFunc: FO_DELETE,
@@ -277,6 +342,11 @@ pub fn trash(path: &str) -> Result<(), String> {
         return Err("cancelled".into());
     }
     Ok(())
+}
+
+/// `path` with Windows' own separator throughout.
+fn shell_path(path: &str) -> String {
+    path.replace('/', "\\")
 }
 
 /// A picture converted to JPEG (`jpeg`) or PNG at `dst` (a new file) with Windows' own codecs (WIC, through WinRT's
@@ -722,6 +792,21 @@ mod tests {
         std::fs::write(s.0.join("note.png"), "not a picture").unwrap();
         assert!(thumbnail(&path("note.png"), 192, &s.0).is_none());
         assert!(thumbnail(&path("gone.png"), 192, &s.0).is_none());
+    }
+
+    #[test]
+    fn a_skill_picked_by_its_skill_md_is_its_folder() {
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill\SKILL.md"), r"C:\Users\me\Downloads\my-skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill\skill.md"), r"C:\Users\me\Downloads\my-skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill.skill"), r"C:\Users\me\Downloads\my-skill.skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\pack.zip"), r"C:\Users\me\Downloads\pack.zip");
+        assert_eq!(skill_source(r"C:\Users\me\notes\README.md"), r"C:\Users\me\notes\README.md");
+    }
+
+    #[test]
+    fn the_recycle_bin_is_handed_windows_separators() {
+        assert_eq!(shell_path(r"C:\Users\me\.sympony\skills\my-skill\references/note.txt"), r"C:\Users\me\.sympony\skills\my-skill\references\note.txt");
+        assert_eq!(shell_path(r"C:\plain\path"), r"C:\plain\path");
     }
 
     #[test]
