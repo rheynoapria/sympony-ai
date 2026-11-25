@@ -28,5 +28,15 @@ describe('the agents the notch answers through', () => {
     const n = calls.length;
     expect(await N.recheckAgents()).toBe(false); // (not again within 15 s)
     expect(calls.length).toBe(n);
+    expect(await N.recheckAgents(true)).toBe(false); // but right away for a message just sent (nothing changed now)
+    expect(calls.at(-1)).toBe('ai.agents (fresh)');
+    expect(calls.length).toBe(n + 1);
+  });
+
+  test('two looks at the same time share one check', async () => {
+    const n = calls.length;
+    const [a, b] = await Promise.all([N.recheckAgents(true), N.recheckAgents(true)]);
+    expect([a, b]).toEqual([false, false]);
+    expect(calls.length).toBe(n + 1);
   });
 });

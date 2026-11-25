@@ -61,13 +61,14 @@
   N.loadAgents = () => loading || (loading = api.svc('ai', 'agents').then((v) => { agents = Array.isArray(v) ? v : []; return agents; })
     .catch(() => { agents = []; return agents; }).finally(() => { loading = null; }));
   // No agent ready yet (the first check can run while a CLI is still starting: Claude Code's first cold start on
-  // Windows takes longer than its time to answer): checked again, forced, at most every 15 s; true when that changed
-  // which agent is ready
+  // Windows takes longer than its time to answer): checked again, forced, at most every 15 s (`now`: right away, for
+  // a message the user just sent); true when that changed which agent is ready
   let rechecked = 0;
   let rechecking = null;
   const agentsSig = () => JSON.stringify((agents || []).map((a) => [a.id, a.installed, a.responding, a.signedIn]));
-  N.recheckAgents = () => {
-    if (rechecking || loading || Date.now() - rechecked < 15000) return Promise.resolve(false);
+  N.recheckAgents = (now) => {
+    if (rechecking) return rechecking;
+    if (loading || (!now && Date.now() - rechecked < 15000)) return Promise.resolve(false);
     rechecked = Date.now();
     const was = agentsSig();
     return (rechecking = api.svc('ai', 'agents', true)
