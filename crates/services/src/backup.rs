@@ -262,6 +262,130 @@ pub fn read_zip_manifest(file: &mut std::fs::File) -> Result<Value, String> {
     Ok(m)
 }
 
+/// The adhan files kept in the data folder `dir` (`<dir>/adhan/`), by name.
+pub fn adhan_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut v: Vec<std::path::PathBuf> = std::fs::read_dir(dir.join("adhan")).into_iter().flatten().flatten().map(|e| e.path())
+        .filter(|p| p.is_file() && p.file_name().and_then(|n| n.to_str()).is_some_and(adhan_name)).collect();
+    v.sort();
+    v
+}
+
+/// Export: one `.sympony` file of the data folder `dir` written to `out` — the manifest, `settings` (as
+/// `settings_for_export` leaves them), the other data files there are, and the adhan files: the zip that
+/// `read_zip_manifest` and `safe_extract_zip` read. `created` (ms), `pc` and `app` say where and from which Sympony.
+/// Written here on every OS (no `ditto`). A file already at `out` is never touched; when it fails, nothing is left there.
+pub fn export(dir: &std::path::Path, settings: &Value, created: i64, pc: &str, app: &str, out: &std::path::Path) -> Result<(), String> {
+    use std::io::Write;
+    let settings = settings_for_export(settings);
+    let adhan = adhan_files(dir);
+    let read = |f: &str| std::fs::read(dir.join(f)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+    let manifest = json!({"format": FORMAT, "version": VERSION, "created": created, "pc": pc, "app": app,
+        "counts": counts(&settings, &read("todo.json"), &read("notes.json"), &read("chats.json"), &read("bookmarks.json"), &read("radio.json"), adhan.len())});
+    let file = std::fs::File::create_new(out).map_err(|e| e.to_string())?;
+    let r = (|| -> Result<(), String> {
+        let z = |e: zip::result::ZipError| e.to_string();
+        let io = |what: &str, e: std::io::Error| format!("{what}: {e}");
+        let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
+        let o = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).unix_permissions(0o600);
+        let o = match crate::archive::zip_time(std::time::SystemTime::now()) {
+            Some(t) => o.last_modified_time(t),
+            None => o,
+        };
+        for (name, v) in [("manifest.json", &manifest), ("settings.json", &settings)] {
+            zip.start_file(name, o).map_err(z)?;
+            zip.write_all(&serde_json::to_vec_pretty(v).unwrap_or_default()).map_err(|e| io(name, e))?;
+        }
+        for f in FILES.iter().filter(|f| **f != "settings.json") {
+            let p = dir.join(f);
+            if p.is_file() {
+                let mut src = std::fs::File::open(&p).map_err(|e| io(f, e))?;
+                zip.start_file(*f, o).map_err(z)?;
+                std::io::copy(&mut src, &mut zip).map_err(|e| io(f, e))?;
+            }
+        }
+        // (always there, as `ditto` kept it: an import puts the backup's adhan files in place of the ones there)
+        zip.add_directory("adhan/", o.unix_permissions(0o700)).map_err(z)?;
+        for a in &adhan {
+            let name = a.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let mut src = std::fs::File::open(a).map_err(|e| io(&name, e))?;
+            zip.start_file(format!("adhan/{name}"), o).map_err(z)?;
+            std::io::copy(&mut src, &mut zip).map_err(|e| io(&name, e))?;
+        }
+        let cm_root = crate::custom_modules::root(dir);
+        let cm_list = crate::custom_modules::list_manifests(dir);
+        if !cm_list.is_empty() {
+            zip.add_directory("custom-modules/", o.unix_permissions(0o700)).map_err(z)?;
+            for m in &cm_list {
+                let Some(slug) = m["slug"].as_str() else { continue };
+                let src_mod = cm_root.join(slug);
+                zip.add_directory(format!("custom-modules/{slug}/"), o.unix_permissions(0o700)).map_err(z)?;
+                for fname in ["module.json", "state.json", "config.json"] {
+                    let f = src_mod.join(fname);
+                    if f.is_file() {
+                        let entry_name = format!("custom-modules/{slug}/{fname}");
+                        let mut src = std::fs::File::open(&f).map_err(|e| io(&entry_name, e))?;
+                        zip.start_file(&entry_name, o).map_err(z)?;
+                        std::io::copy(&mut src, &mut zip).map_err(|e| io(&entry_name, e))?;
+                    }
+                }
+            }
+        }
+        zip.finish().map_err(z)?.flush().map_err(|e| e.to_string())
+    })();
+    if r.is_err() {
+        let _ = std::fs::remove_file(out);
+    }
+    r
+}
+
+/// Import, before the restart: the backup in `file` (open already, so what's checked is what's unpacked) checked and
+/// unpacked into `<dir>/pending-import` — at most 200 entries and `max` bytes, only names a backup holds, no links;
+/// each data file a plain one that reads, the settings an object — and `ready` written last (with `stamp`, the name
+/// the copy of the data from before gets). The next start puts it in place (`apply_pending`). Err: why it can't be
+/// used, and nothing is left staged. Ok: its manifest.
+pub fn stage_import(mut file: std::fs::File, dir: &std::path::Path, stamp: &str, max: u64) -> Result<Value, String> {
+    use std::io::{Seek, SeekFrom};
+    let m = read_zip_manifest(&mut file)?;
+    file.seek(SeekFrom::Start(0)).map_err(|_| "That file can’t be read".to_string())?;
+    let pending = dir.join(PENDING);
+    let _ = std::fs::remove_dir_all(&pending);
+    let staged = (|| -> Result<(), String> {
+        crate::paths::ensure_private_dir(&pending).map_err(|e| e.to_string())?;
+        safe_extract_zip(file, &pending, 200, max, &allowed_entry)?;
+        for f in FILES {
+            let p = pending.join(f);
+            let Ok(meta) = std::fs::symlink_metadata(&p) else { continue };
+            let v: Option<Value> = meta.file_type().is_file().then(|| std::fs::read(&p).ok().and_then(|b| serde_json::from_slice(&b).ok())).flatten();
+            let good = match v {
+                Some(v) if *f == "settings.json" => v.is_object(),
+                Some(v) => v.is_object() || v.is_array(),
+                None => false,
+            };
+            if !good {
+                return Err(format!("That backup is damaged ({f})"));
+            }
+        }
+        if !std::fs::symlink_metadata(pending.join("settings.json")).is_ok_and(|m| m.is_file()) {
+            return Err("That backup has no settings".into());
+        }
+        if let Ok(meta) = std::fs::symlink_metadata(pending.join("adhan")) {
+            if !meta.is_dir() || std::fs::read_dir(pending.join("adhan")).into_iter().flatten().flatten().any(|e| e.file_type().map_or(true, |t| !t.is_file())) {
+                return Err("That backup is damaged (adhan)".into());
+            }
+        }
+        let _ = std::fs::remove_file(pending.join("manifest.json"));
+        // (written last: a whole one)
+        crate::paths::write_private(&pending.join("ready"), json!({"created": m["created"], "pc": m["pc"], "stamp": stamp}).to_string().as_bytes()).map_err(|e| e.to_string())
+    })();
+    match staged {
+        Ok(()) => Ok(m),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&pending);
+            Err(e)
+        }
+    }
+}
+
 /// The unpacked size from `unzip -l`'s last line ("  5243000                     2 files").
 pub fn unzipped_size(listing: &str) -> Option<u64> {
     listing.lines().rev().find(|l| !l.trim().is_empty())?.split_whitespace().next()?.parse().ok()

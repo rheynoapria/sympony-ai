@@ -321,3 +321,142 @@ fn c03_safe_extract_zip_enforces_allowlist_symlinks_traversal_and_size() {
     let err = safe_extract_zip(f, d.path(), 50, 1024, &allowed_entry).unwrap_err();
     assert!(err.contains("too big"), "{err}");
 }
+
+fn names_in(zip: &std::path::Path) -> Vec<String> {
+    let z = zip::ZipArchive::new(std::fs::File::open(zip).unwrap()).unwrap();
+    let mut v: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
+    v.sort();
+    v
+}
+
+/// A data folder like Sympony's: a task (and one in the trash), a note, a file a backup never holds, an adhan file.
+fn data_folder(d: &std::path::Path) {
+    std::fs::create_dir_all(d.join("adhan")).unwrap();
+    std::fs::write(d.join("todo.json"), r#"{"items":[{"t":"a"},{"t":"b","deletedAt":5}]}"#).unwrap();
+    std::fs::write(d.join("notes.json"), r#"{"notes":[{"n":"ü"}]}"#).unwrap();
+    std::fs::write(d.join("secrets.json"), "never in a backup").unwrap();
+    std::fs::write(d.join("adhan").join("fajr.mp3"), [0u8, 1, 2, 3]).unwrap();
+}
+
+#[test]
+fn an_export_imports_back_with_hands_and_auto_ui_off() {
+    let a = tempfile::tempdir().unwrap();
+    data_folder(a.path());
+    let settings = json!({"theme": "dark", "ponyHands": true, "ponyAutoUi": true, "has_githubToken": true, "backupImported": {"at": 1}, "launcherItems": [{}]});
+    let out = a.path().join("Sympony-backup.sympony");
+    export(a.path(), &settings, 1234, "Ery’s PC", "0.2.0", &out).unwrap();
+
+    // in it: only names a backup may hold, the directory for the adhan files too
+    let names = names_in(&out);
+    assert!(names.iter().all(|n| allowed_entry(n)), "{names:?}");
+    for n in ["manifest.json", "settings.json", "todo.json", "notes.json", "adhan/", "adhan/fajr.mp3"] {
+        assert!(names.iter().any(|x| x == n), "{n}: {names:?}");
+    }
+    let m = read_zip_manifest(&mut std::fs::File::open(&out).unwrap()).unwrap();
+    assert_eq!((m["created"].as_i64(), m["pc"].as_str(), m["app"].as_str()), (Some(1234), Some("Ery’s PC"), Some("0.2.0")));
+    assert_eq!([&m["counts"]["tasks"], &m["counts"]["notes"], &m["counts"]["launcher"], &m["counts"]["files"]], [1, 1, 1, 1]);
+
+    // imported on another computer, which has a bookmark and its own secrets flag
+    let b = tempfile::tempdir().unwrap();
+    std::fs::write(b.path().join("settings.json"), r#"{"theme":"light","has_brainKey":false}"#).unwrap();
+    std::fs::write(b.path().join("bookmarks.json"), r#"{"items":[1]}"#).unwrap();
+    let staged = stage_import(std::fs::File::open(&out).unwrap(), b.path(), "20261125-150000", 1 << 20).unwrap();
+    assert_eq!(staged["pc"], "Ery’s PC");
+    assert!(b.path().join(PENDING).join("ready").is_file());
+    let copy = apply_pending(b.path(), 99, "LATER").unwrap().unwrap();
+    assert_eq!(copy, b.path().join("before-import-20261125-150000"));
+    let here = |f: &str| std::fs::read(b.path().join(f)).unwrap();
+    let there = |f: &str| std::fs::read(a.path().join(f)).unwrap();
+    assert_eq!(here("todo.json"), there("todo.json"));
+    assert_eq!(here("notes.json"), there("notes.json"));
+    assert_eq!(here("adhan/fajr.mp3"), [0u8, 1, 2, 3]);
+    assert!(!b.path().join("bookmarks.json").exists(), "not in the backup: gone, kept in the copy");
+    assert!(copy.join("bookmarks.json").is_file());
+    assert!(!b.path().join("secrets.json").exists());
+    let s: serde_json::Value = serde_json::from_slice(&here("settings.json")).unwrap();
+    assert_eq!(s["theme"], "dark");
+    assert_eq!((s["ponyHands"].as_bool(), s["ponyAutoUi"].as_bool()), (Some(false), Some(false)));
+    assert_eq!((s["has_githubToken"].as_bool(), s["has_brainKey"].as_bool()), (None, Some(false)), "this computer's secrets flags");
+    assert_eq!(s["backupImported"]["pc"], "Ery’s PC");
+    assert!(s["backupImported"]["disarmed"].as_array().unwrap().contains(&json!("hands")));
+}
+
+#[test]
+fn an_export_never_writes_over_a_file_and_leaves_nothing_when_it_fails() {
+    let a = tempfile::tempdir().unwrap();
+    data_folder(a.path());
+    let taken = a.path().join("taken.sympony");
+    std::fs::write(&taken, "mine").unwrap();
+    assert!(export(a.path(), &json!({}), 1, "PC", "0", &taken).is_err());
+    assert_eq!(std::fs::read_to_string(&taken).unwrap(), "mine");
+    let nowhere = a.path().join("no such folder").join("x.sympony");
+    assert!(export(a.path(), &json!({}), 1, "PC", "0", &nowhere).is_err());
+    assert!(!nowhere.exists());
+    // no data yet (a new install): the settings alone
+    let empty = tempfile::tempdir().unwrap();
+    let out = empty.path().join("b.sympony");
+    export(empty.path(), &json!({"theme": "dark"}), 1, "PC", "0", &out).unwrap();
+    assert_eq!(names_in(&out), ["adhan/", "manifest.json", "settings.json"]);
+}
+
+#[test]
+fn a_damaged_backup_is_refused_and_nothing_is_staged() {
+    let manifest: &[u8] = br#"{"format":"sympony-backup","version":1,"created":1,"pc":"PC"}"#;
+    let b = tempfile::tempdir().unwrap();
+    let f = make_zip(&[("manifest.json", manifest, None), ("settings.json", b"{}", None), ("todo.json", b"not json", None)]);
+    assert_eq!(stage_import(f, b.path(), "S", 1 << 20).unwrap_err(), "That backup is damaged (todo.json)");
+    assert!(!b.path().join(PENDING).exists());
+    let f = make_zip(&[("manifest.json", manifest, None), ("settings.json", b"[]", None)]);
+    assert_eq!(stage_import(f, b.path(), "S", 1 << 20).unwrap_err(), "That backup is damaged (settings.json)");
+    let f = make_zip(&[("manifest.json", manifest, None), ("todo.json", b"[]", None)]);
+    assert_eq!(stage_import(f, b.path(), "S", 1 << 20).unwrap_err(), "That backup has no settings");
+    let f = make_zip(&[("settings.json", b"{}", None)]);
+    assert!(stage_import(f, b.path(), "S", 1 << 20).unwrap_err().contains("isn’t a Sympony backup"));
+    let f = make_zip(&[("manifest.json", manifest, None), ("settings.json", &[b' '; 4096], None)]);
+    assert!(stage_import(f, b.path(), "S", 1024).unwrap_err().contains("too big"));
+    assert!(!b.path().join(PENDING).exists());
+}
+
+#[test]
+fn custom_modules_round_trip_backup_and_disarm_approved_domains() {
+    let a = tempfile::tempdir().unwrap();
+    data_folder(a.path());
+    let tpl = services::custom_modules::starter_templates()
+        .into_iter()
+        .find(|m| m["slug"] == "mochi-pet")
+        .expect("mochi-pet template");
+    services::custom_modules::save_manifest(a.path(), &tpl, true).unwrap();
+    services::custom_modules::write_state(a.path(), "mochi-pet", &json!({"hunger": 99, "xp": 42})).unwrap();
+
+    let settings = json!({
+        "theme": "dark",
+        "customModApprovedDomains": { "crypto-pulse": ["api.coingecko.com"] }
+    });
+    let out = a.path().join("Sympony-cm.sympony");
+    export(a.path(), &settings, 5555, "Mac", "0.2.0", &out).unwrap();
+
+    let names = names_in(&out);
+    assert!(names.iter().all(|n| allowed_entry(n)), "{names:?}");
+    assert!(names.iter().any(|n| n == "custom-modules/mochi-pet/module.json"), "{names:?}");
+    assert!(names.iter().any(|n| n == "custom-modules/mochi-pet/state.json"), "{names:?}");
+
+    let b = tempfile::tempdir().unwrap();
+    std::fs::write(b.path().join("settings.json"), r#"{"theme":"light"}"#).unwrap();
+    stage_import(std::fs::File::open(&out).unwrap(), b.path(), "20261126-010000", 4 << 20).unwrap();
+    apply_pending(b.path(), 7777, "LATER").unwrap().unwrap();
+
+    let restored = services::custom_modules::read_manifest(b.path(), "mochi-pet").unwrap();
+    assert_eq!(restored["name"], "Mochi Pet");
+    let st = services::custom_modules::read_state(b.path(), "mochi-pet", &restored);
+    assert_eq!(st["xp"], 42);
+
+    let imported_settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(b.path().join("settings.json")).unwrap()).unwrap();
+    assert_eq!(imported_settings["customModApprovedDomains"], json!({}));
+    assert!(
+        imported_settings["backupImported"]["disarmed"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("customModules"))
+    );
+}

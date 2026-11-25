@@ -79,6 +79,7 @@ pub fn settings_changed(app: &AppHandle, patch: &serde_json::Value) {
         crate::github::kick(app);
     }
     crate::feed::on_settings_changed(app, patch);
+    crate::login::settings_changed(app, patch);
     if has(&["icsFeeds", "localEvents", "calendarEnabled"]) {
         crate::calendar::kick(app, patch.get("icsFeeds").is_some());
     }

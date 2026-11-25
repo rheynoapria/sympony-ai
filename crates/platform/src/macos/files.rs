@@ -88,12 +88,48 @@ pub fn write_png(png: &[u8]) -> bool {
     })
 }
 
+/// The Downloads folder (`~/Downloads`).
+pub fn downloads() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Downloads")
+}
+
 /// Into the Trash (Finder's Put Back works).
 pub fn trash(path: &str) -> Result<(), String> {
     objc2::rc::autoreleasepool(|_| {
         let url = NSURL::fileURLWithPath(&NSString::from_str(path));
         NSFileManager::defaultManager().trashItemAtURL_resultingItemURL_error(&url, None).map_err(|e| e.localizedDescription().to_string())
     })
+}
+
+/// A picture converted to JPEG (`jpeg`) or PNG at `dst` (`sips`).
+pub fn convert_picture(src: &str, dst: &std::path::Path, jpeg: bool) -> Result<(), String> {
+    let o = std::process::Command::new("/usr/bin/sips").args(["-s", "format", if jpeg { "jpeg" } else { "png" }, src, "--out"]).arg(dst)
+        .output().map_err(|e| e.to_string())?;
+    if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("failed").to_string()) }
+}
+
+/// A picture's small JPEG for a tile, at most `longest` pixels on its longer side (`sips`, through a file in `scratch`
+/// that's removed after). None: not a picture `sips` reads.
+pub fn thumbnail(path: &str, longest: u32, scratch: &std::path::Path) -> Option<Vec<u8>> {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let _ = std::fs::create_dir_all(scratch);
+    let out = scratch.join(format!("thumb-{}-{}.jpg", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let ok = std::process::Command::new("/usr/bin/sips").args(["-Z", &longest.to_string(), "-s", "format", "jpeg", path, "--out"]).arg(&out)
+        .output().is_ok_and(|o| o.status.success());
+    let r = if ok { std::fs::read(&out).ok() } else { None };
+    let _ = std::fs::remove_file(&out);
+    r
+}
+
+/// Ejects a drive (`diskutil eject`); `root` is its folder, `/Volumes/Name`.
+pub fn eject(root: &str) -> Result<(), String> {
+    let o = std::process::Command::new("/usr/sbin/diskutil").arg("eject").arg(root).output().map_err(|e| e.to_string())?;
+    if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("failed").to_string()) }
+}
+
+/// Whether `path` is a drive that `eject` takes: a volume's own folder, `/Volumes/Name`.
+pub fn is_drive(path: &str) -> bool {
+    path.starts_with("/Volumes/") && path.trim_end_matches('/').matches('/').count() == 2
 }
 
 fn urls(paths: &[String]) -> Retained<NSArray<NSURL>> {
@@ -123,6 +159,11 @@ pub unsafe fn share(view: *mut std::ffi::c_void, paths: &[String]) {
     picker.showRelativeToRect_ofView_preferredEdge(NSRect::new(NSPoint::new(at.x - 1.0, at.y - 1.0), NSSize::new(2.0, 2.0)), view, NSRectEdge::MinY);
     // Keep only the active picker alive on the main thread; opening the next releases the previous one.
     LAST_PICKER.with(|slot| *slot.borrow_mut() = Some(picker));
+}
+
+/// Why the last `share` didn't open (as on Windows): the share menu has no way to fail that it tells, so None.
+pub fn share_failed() -> Option<String> {
+    None
 }
 
 pub struct DragIvars {
@@ -189,8 +230,12 @@ pub unsafe fn drag_out(view: *mut std::ffi::c_void, paths: &[String], done: Box<
 }
 
 /// `osascript` choosing files / a folder / an app / an audio file: their POSIX paths (none: cancelled). `what`:
-/// "files" (several), "folder", "app", "backup" (from Downloads), "audio", anything else one file (from Applications).
+/// "files" (several), "folder", "app", "backup" (from Downloads), "audio", "skill" (a Pony skill: a folder, or a
+/// .skill or .zip file), anything else one file (from Applications).
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
+    if what == "skill" {
+        return skill_panel(prompt).into_iter().collect();
+    }
     let script = match what {
         "files" => format!("set l to choose file with prompt {prompt:?} with multiple selections allowed\nset o to \"\"\nrepeat with f in l\nset o to o & POSIX path of f & linefeed\nend repeat\nreturn o"),
         "folder" => format!("POSIX path of (choose folder with prompt {prompt:?})"),
@@ -204,4 +249,42 @@ pub fn choose(what: &str, prompt: &str) -> Vec<String> {
         return vec![];
     }
     String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+}
+
+/// An open panel taking a folder or a file (AppleScript's `choose` takes one or the other), for a Pony skill: its
+/// POSIX path (None: cancelled).
+fn skill_panel(prompt: &str) -> Option<String> {
+    const JXA: &str = r#"
+ObjC.import('AppKit');
+const p = $.NSOpenPanel.openPanel;
+p.setCanChooseFiles(true);
+p.setCanChooseDirectories(true);
+p.setAllowsMultipleSelection(false);
+p.setPrompt($('Import'));
+p.setMessage($(MESSAGE));
+if (p.runModal == $.NSModalResponseOK) {
+  p.URL.path.js;
+} else {
+  '';
+}
+"#;
+    let jxa = JXA.replace("MESSAGE", &serde_json::to_string(prompt).unwrap_or_else(|_| "\"\"".into()));
+    let out = std::process::Command::new("/usr/bin/osascript").args(["-l", "JavaScript", "-e", &jxa]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// The save panel (`choose file name`): where to save `name`; None: cancelled. macOS asks before replacing a file
+/// that's there. `_kind` (the file type's name) is for Windows' dialog.
+pub fn save_as(prompt: &str, name: &str, _kind: &str) -> Option<String> {
+    let script = format!("POSIX path of (choose file name with prompt {prompt:?} default name {name:?})");
+    let out = std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
 }

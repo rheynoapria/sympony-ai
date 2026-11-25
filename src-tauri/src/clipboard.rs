@@ -167,6 +167,23 @@ fn meta(url: &str) -> Value {
     v
 }
 
+/// Pictures kept with no thumbnail (on Windows, before it made them) get one, from their kept PNG.
+fn fill_thumbs(app: &AppHandle) {
+    let want = services::clipboard::without_thumb(&app.state::<Clipboard>().list.lock().unwrap());
+    let scratch = app.state::<App>().data_dir.join("thumbs");
+    let made: Vec<(String, String)> = want.into_iter()
+        .filter_map(|id| crate::files::thumbnail(&image_path(app, &id).to_string_lossy(), &scratch).map(|t| (id, t))).collect();
+    if made.is_empty() {
+        return;
+    }
+    for (id, t) in made {
+        if let Some(x) = app.state::<Clipboard>().list.lock().unwrap().iter_mut().find(|x| x["id"] == id.as_str()) {
+            x["thumb"] = json!(t);
+        }
+    }
+    changed(app);
+}
+
 /// Twice a second while the history is on: a new copy is kept; turned off, all but the pinned go.
 pub fn start(app: &AppHandle) {
     let list = crate::files::load_json(app, &file(app));
@@ -181,6 +198,7 @@ pub fn start(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
+        fill_thumbs(&app);
         let mut seen = pb::change_count();
         let mut was_on = None;
         loop {

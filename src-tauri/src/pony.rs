@@ -7,7 +7,6 @@ use services::pony::{
     skill_tree, validate_name, write_skill_file,
 };
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 use crate::commands::App;
@@ -32,49 +31,25 @@ pub(crate) fn skills_off(app: &AppHandle) -> Vec<String> {
     skills_off_from(&app.state::<App>().settings.get())
 }
 
-/// Opens a macOS panel that accepts either a folder or a `.zip` / `.skill` archive.
+/// A skill to import: a folder, or a `.zip` / `.skill` archive (macOS's open panel takes either; Windows' dialog
+/// takes a folder by its SKILL.md).
 fn pick_import_source() -> Option<String> {
-    let jxa = r#"
-ObjC.import('AppKit');
-const p = $.NSOpenPanel.openPanel;
-p.setCanChooseFiles(true);
-p.setCanChooseDirectories(true);
-p.setAllowsMultipleSelection(false);
-p.setPrompt($('Import'));
-p.setMessage($('Choose a skill folder, .skill or .zip file'));
-if (p.runModal == $.NSModalResponseOK) {
-  p.URL.path.js;
-} else {
-  '';
-}
-"#;
-    let out = Command::new("/usr/bin/osascript")
-        .args(["-l", "JavaScript", "-e", jxa])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!s.is_empty()).then_some(s)
+    let prompt = if cfg!(windows) { "Choose a .skill or .zip file, or the SKILL.md in a skill's folder" } else { "Choose a skill folder, .skill or .zip file" };
+    platform::os::files::choose("skill", prompt).into_iter().next()
 }
 
+/// Where to export the skill `default_name` (the save dialog asks before replacing a file).
 fn pick_export_dest(default_name: &str) -> Option<String> {
-    let script = format!(
-        "POSIX path of (choose file name with prompt \"Export skill\" default name {:?})",
-        format!("{default_name}.skill")
-    );
-    let out = Command::new("/usr/bin/osascript")
-        .args(["-e", &script])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!s.is_empty()).then_some(s)
+    platform::os::files::save_as("Export skill", &format!("{default_name}.skill"), "Pony skill")
 }
 
+/// To the Recycle Bin (its Restore works).
+#[cfg(windows)]
+fn move_to_trash(path: &Path) -> Result<(), String> {
+    platform::os::files::trash(&path.to_string_lossy())
+}
+
+#[cfg(not(windows))]
 fn move_to_trash(path: &Path) -> Result<(), String> {
     let path_str = path.to_string_lossy().to_string();
     // Try NSFileManager trashItemAtURL first via JXA (fast, doesn't launch/focus Finder)
@@ -86,7 +61,7 @@ const ok = fm.trashItemAtURLResultingItemURLError(url, null, null);
 ok ? 'ok' : 'err';"#,
         serde_json::to_string(&path_str).unwrap_or_else(|_| "\"\"".into())
     );
-    if let Ok(out) = Command::new("/usr/bin/osascript")
+    if let Ok(out) = std::process::Command::new("/usr/bin/osascript")
         .args(["-l", "JavaScript", "-e", &jxa])
         .output()
     {
@@ -99,7 +74,7 @@ ok ? 'ok' : 'err';"#,
         "tell application \"Finder\" to delete POSIX file {}",
         serde_json::to_string(&path_str).unwrap_or_else(|_| "\"\"".into())
     );
-    let out = Command::new("/usr/bin/osascript")
+    let out = std::process::Command::new("/usr/bin/osascript")
         .args(["-e", &script])
         .output()
         .map_err(|e| e.to_string())?;

@@ -1,5 +1,6 @@
 //! Sympony's services: what `svc(name, method, ...args)` and the commands do, written against `platform`.
 pub mod adhan;
+pub mod archive;
 pub mod agents;
 pub mod askai;
 pub mod brain;

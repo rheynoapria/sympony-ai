@@ -7,7 +7,12 @@
 #   release/build.sh [--clean]   --clean: drop target/ afterwards
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=$(command -v python3 || command -v python)
+# (on Windows, python3 can be the Microsoft Store's alias, which only prints "Python was not found": take one that runs)
+PY=""
+for c in python3 python; do
+  if command -v "$c" >/dev/null && "$c" -c '' 2>/dev/null; then PY=$(command -v "$c"); break; fi
+done
+if [ -z "$PY" ]; then echo "ERROR: Python 3 is needed to build the installer" >&2; exit 1; fi
 V=$("$PY" -I -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
 OUT="release/out/$V"; mkdir -p "$OUT"
 

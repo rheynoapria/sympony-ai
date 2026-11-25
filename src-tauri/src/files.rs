@@ -33,7 +33,7 @@ fn data_url(mime: &str, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
-/// A file's picture for a tile: a photo's thumbnail (sips), else its Finder icon.
+/// A file's picture for a tile: a photo's thumbnail, else its icon (Finder's, Explorer's).
 pub fn picture(app: &AppHandle, path: &str, photo: bool) -> Option<String> {
     let changed = std::fs::metadata(path).and_then(|m| m.modified()).ok().map(|t| format!("{t:?}")).unwrap_or_default();
     let key = format!("{path}|{changed}");
@@ -68,14 +68,9 @@ pub fn load_json(app: &AppHandle, path: &Path) -> Vec<Value> {
     })
 }
 
-/// A photo's small JPEG (sips), as a data URL; nothing left on disk.
+/// A photo's small JPEG (`sips` on macOS, Windows' own picture codecs there), as a data URL; nothing left on disk.
 pub fn thumbnail(path: &str, tmp_dir: &Path) -> Option<String> {
-    let _ = std::fs::create_dir_all(tmp_dir);
-    let out = tmp_dir.join(format!("{}.jpg", new_id()));
-    let ok = Command::new("/usr/bin/sips").args(["-Z", "192", "-s", "format", "jpeg", path, "--out"]).arg(&out).output().is_ok_and(|o| o.status.success());
-    let r = ok.then(|| std::fs::read(&out).ok()).flatten().map(|b| data_url("image/jpeg", &b));
-    let _ = std::fs::remove_file(&out);
-    r
+    platform::os::files::thumbnail(path, 192, tmp_dir).map(|b| data_url("image/jpeg", &b))
 }
 
 pub fn hash(s: &str) -> u64 {
@@ -177,39 +172,84 @@ fn notch_view(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 
 /// The share menu for these files at the mouse, in `win` (else the notch under the mouse).
 pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<String>) {
+    // (the log says how many and how it went, never the files' names)
+    let log = app.state::<App>().log.clone();
+    let asked = paths.len();
     let paths: Vec<String> = paths.into_iter().filter(|p| Path::new(p).exists()).collect();
-    let Some(w) = win.or_else(|| notch_view(app)) else { return };
+    let Some(w) = win.or_else(|| notch_view(app)) else {
+        log.line("share: no window to share from");
+        return;
+    };
     if paths.is_empty() {
+        log.line(&format!("share: nothing to share, the {asked} item(s) are gone"));
         return;
     }
-    let _ = app.run_on_main_thread(move || {
-        if let Some(v) = crate::native::view(&w) {
-            // SAFETY: the window's own NSView, on the main thread
-            unsafe { platform::os::files::share(v, &paths) };
+    #[cfg(windows)]
+    let h = app.clone();
+    on_main(app, move || {
+        let Some(v) = crate::native::view(&w) else {
+            log.line("share: no window to share from");
+            return;
+        };
+        // (Windows shows the Share window only over the window in front: the notch comes forward for it)
+        #[cfg(windows)]
+        crate::shell::front_for_share(&h, &w);
+        // SAFETY: the window's own NSView (HWND on Windows), on the main thread
+        unsafe { platform::os::files::share(v, &paths) };
+        match platform::os::files::share_failed() {
+            None => log.line(&format!("share: {} item(s), the share window opened", paths.len())),
+            Some(why) => log.line(&format!("share: {} item(s), the share window didn't open: {why}", paths.len())),
         }
     });
+}
+
+/// Runs `f` on the main thread for the share menu or a drag. On Windows from the event loop: a command that isn't
+/// async runs inside WebView2's own callback, and neither the drag's loop nor the Share window may run nested in one
+/// (`native::later_on_main_thread`). On macOS right there: AppKit's drag needs the mouse event that's current now.
+fn on_main(app: &AppHandle, f: impl FnOnce() + Send + 'static) {
+    if cfg!(windows) {
+        crate::native::later_on_main_thread(app, f);
+    } else {
+        let _ = app.run_on_main_thread(f);
+    }
 }
 
 /// A real drag of Shelf files out of `win` (to Finder, Mail…); taken off the Shelf after a drop with
 /// shelfRemoveAfterDrag.
 pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
+    // (the log says how many and how it went, never the files' names)
+    let log = app.state::<App>().log.clone();
     let paths: Vec<String> = shelf_paths(app, &ids).into_iter().filter(|p| Path::new(p).exists()).collect();
     if paths.is_empty() {
+        log.line(&format!("shelf: drag out of {} item(s): nothing to drag, the files are gone", ids.len()));
         return;
     }
+    let n = paths.len();
     let h = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let Some(v) = crate::native::view(&win) else { return };
+    on_main(app, move || {
+        let Some(v) = crate::native::view(&win) else {
+            log.line("shelf: drag out: no window to drag from");
+            return;
+        };
+        let said = log.clone();
         let done = Box::new(move |dropped: bool| {
-            if dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true {
+            let remove = dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true;
+            said.line(&format!("shelf: drag out of {n} item(s): {}", match (dropped, remove) {
+                (true, true) => "dropped, taken off the Shelf (Remove after drag)",
+                (true, false) => "dropped",
+                _ => "not dropped (let go on Sympony, or cancelled)",
+            }));
+            if remove {
                 h.state::<Files>().shelf.lock().unwrap().retain(|x| !ids.contains(&x["id"]));
                 // (thumbnails and the save: not on the main thread)
                 let h = h.clone();
                 std::thread::spawn(move || { shelf_changed(&h); });
             }
         });
-        // SAFETY: the window's own NSView, on the main thread, while the page's drag goes on
-        unsafe { platform::os::files::drag_out(v, &paths, done) };
+        // SAFETY: the window's own NSView (HWND on Windows), on the main thread, while the page's drag goes on
+        if !unsafe { platform::os::files::drag_out(v, &paths, done) } {
+            log.line(&format!("shelf: drag out of {n} item(s): didn't start (no mouse drag going on, the button was up)"));
+        }
     });
 }
 
@@ -261,6 +301,15 @@ fn done(ok: bool, message: String) -> Value {
     json!({"ok": ok, "message": message})
 }
 
+/// Where Trash puts things, as the OS names it.
+const BIN: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
+
+/// A drive's name in a message: a Mac volume's folder name, a Windows drive's letter (`E:`).
+fn drive_name(p: &str) -> String {
+    let n = name_of(p);
+    if n.is_empty() { p.trim_end_matches(['\\', '/']).to_string() } else { n }
+}
+
 fn run_action(action: &str, files: &[String]) -> Value {
     let files: Vec<String> = files.iter().filter(|p| Path::new(p.as_str()).exists()).cloned().collect();
     let Some(first) = files.first() else { return done(false, "Nothing to do".into()) };
@@ -270,7 +319,10 @@ fn run_action(action: &str, files: &[String]) -> Value {
             let dir = parent(first);
             let name = if files.len() == 1 { format!("{}.zip", name_of(first)) } else { "Archive.zip".into() };
             let out = unique_in(&dir, &name);
-            let r = if files.len() == 1 {
+            // (Windows has no ditto or zip: the archive is written in Rust, each item under its own name)
+            let r = if cfg!(windows) {
+                services::archive::zip_items(&out, &files.iter().map(PathBuf::from).collect::<Vec<_>>())
+            } else if files.len() == 1 {
                 run_ok(Command::new("/usr/bin/ditto").args(["-c", "-k", "--sequesterRsrc", "--keepParent"]).arg(first).arg(&out))
             } else {
                 // (names from their folder when they share it)
@@ -292,7 +344,12 @@ fn run_action(action: &str, files: &[String]) -> Value {
             for z in &zips {
                 let stem = name_of(z);
                 let out = unique_in(&parent(z), stem.trim_end_matches(".zip").trim_end_matches(".ZIP"));
-                if let Err(e) = run_ok(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(z.as_str()).arg(&out)) {
+                let r = if cfg!(windows) {
+                    services::archive::extract(Path::new(z.as_str()), &out).map(|_| ())
+                } else {
+                    run_ok(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(z.as_str()).arg(&out))
+                };
+                if let Err(e) = r {
                     return done(false, format!("Couldn’t extract {stem}: {e}"));
                 }
             }
@@ -308,7 +365,7 @@ fn run_action(action: &str, files: &[String]) -> Value {
                 let (fmt, ext) = if low.ends_with(".png") { ("jpeg", "jpg") } else { ("png", "png") };
                 let stem = Path::new(f).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 let out = unique_in(&parent(f), &format!("{stem}.{ext}"));
-                if let Err(e) = run_ok(Command::new("/usr/bin/sips").args(["-s", "format", fmt, f.as_str(), "--out"]).arg(&out)) {
+                if let Err(e) = platform::os::files::convert_picture(f, &out, fmt == "jpeg") {
                     return done(false, format!("Couldn’t convert {}: {e}", name_of(f)));
                 }
                 n += 1;
@@ -325,7 +382,13 @@ fn run_action(action: &str, files: &[String]) -> Value {
                     continue;
                 }
                 let out = unique_in(&dir, &name_of(f));
-                let r = if action == "copy" { run_ok(Command::new("/bin/cp").args(["-Rp", f.as_str()]).arg(&out)) } else { run_ok(Command::new("/bin/mv").args(["-n", f.as_str()]).arg(&out)) };
+                let r = match (cfg!(windows), action == "copy") {
+                    // (Windows: in Rust, folders whole, a move across drives copied then removed)
+                    (true, true) => services::archive::copy_tree(Path::new(f.as_str()), &out),
+                    (true, false) => services::archive::move_path(Path::new(f.as_str()), &out),
+                    (false, true) => run_ok(Command::new("/bin/cp").args(["-Rp", f.as_str()]).arg(&out)),
+                    (false, false) => run_ok(Command::new("/bin/mv").args(["-n", f.as_str()]).arg(&out)),
+                };
                 if let Err(e) = r {
                     return done(false, format!("Couldn’t {}: {e}", action));
                 }
@@ -343,22 +406,22 @@ fn run_action(action: &str, files: &[String]) -> Value {
         "trash" => {
             for f in &files {
                 if let Err(e) = platform::os::files::trash(f) {
-                    return done(false, format!("Couldn’t move {} to the Trash: {e}", name_of(f)));
+                    return done(false, format!("Couldn’t move {} to the {BIN}: {e}", name_of(f)));
                 }
             }
-            done(true, format!("Moved {what} to the Trash"))
+            done(true, format!("Moved {what} to the {BIN}"))
         }
         "eject" => {
-            let vols: Vec<&String> = files.iter().filter(|f| f.starts_with("/Volumes/") && f.trim_end_matches('/').matches('/').count() == 2).collect();
+            let vols: Vec<&String> = files.iter().filter(|f| platform::os::files::is_drive(f)).collect();
             if vols.is_empty() {
-                return done(false, "Drop a drive from Finder to eject it".into());
+                return done(false, format!("Drop a drive from {} to eject it", if cfg!(windows) { "File Explorer" } else { "Finder" }));
             }
             for v in &vols {
-                if let Err(e) = run_ok(Command::new("/usr/sbin/diskutil").arg("eject").arg(v.as_str())) {
-                    return done(false, format!("Couldn’t eject {}: {e}", name_of(v)));
+                if let Err(e) = platform::os::files::eject(v) {
+                    return done(false, format!("Couldn’t eject {}: {e}", drive_name(v)));
                 }
             }
-            done(true, format!("Ejected {}", if vols.len() == 1 { name_of(vols[0]) } else { format!("{} drives", vols.len()) }))
+            done(true, format!("Ejected {}", if vols.len() == 1 { drive_name(vols[0]) } else { format!("{} drives", vols.len()) }))
         }
         _ => done(false, "Nothing to do".into()),
     }

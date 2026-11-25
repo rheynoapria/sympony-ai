@@ -132,8 +132,12 @@
     }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
-    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
+    // (asleep: an agent that failed may work again, e.g. after its update: looked at again, at most every 15 s)
+    if (!a && N.recheckAgents) N.recheckAgents().then((woke) => { if (woke) changed(); });
+    return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, asleep: true, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
   }
+  // (the agents' list changed behind: one slow to start answered at last, or failed)
+  N.watch('agents', () => changed());
 
   // ---- what the assistant knows about your day: sent along with each message (Settings → AI can turn it
   // off). Plain lines, 24-hour times, a few items each, so it stays small.
@@ -1470,6 +1474,8 @@
 
   async function send(text, opts = {}) {
     if (!text || pending) return null;
+    // (asleep: one more look right away; an agent that answers now gets the message)
+    if (provider().asleep && N.recheckAgents) await N.recheckAgents(true);
     if (!provider().ready) { changed(); return { role: 'assistant', content: _t('Add {need} in Settings → Pony Assistant first.', { need: provider().need }), error: true }; }
     const brief = !!(opts && opts.brief);
     const hidden = !!(opts && opts.hidden);

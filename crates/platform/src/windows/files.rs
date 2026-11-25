@@ -1,22 +1,101 @@
 //! Files and the clipboard: choosing files (the Explorer file dialog), a file's icon, the clipboard (text and
-//! pictures, read and written), the Recycle Bin. Sharing and dragging files out are stand-ins for now. `view` is the
-//! window's HWND where macOS takes its NSView.
+//! pictures, read and written), the Recycle Bin, Windows' Share window and dragging files out to Explorer and apps.
+//! `view` is the window's HWND where macOS takes its NSView.
 #![allow(clippy::missing_safety_doc)]
 use std::ffi::c_void;
 
 /// The Explorer file dialog choosing files / a folder / a program / an audio file: their paths (none: cancelled).
 /// `what` as for `macos::files::choose`: "files" (several), "folder", "app" (.exe or shortcut, from the Start menu),
-/// "backup" (.sympony, from Downloads), "audio", anything else one file (from the Start menu).
+/// "backup" (.sympony, from Downloads), "audio", "skill" (a Pony skill: a .skill or .zip file, or a skill folder by
+/// its SKILL.md, as Windows' dialog picks a file or a folder, not either; from Downloads), anything else one file
+/// (from the Start menu).
 pub fn choose(what: &str, prompt: &str) -> Vec<String> {
-    let (what, prompt) = (what.to_string(), prompt.to_string());
+    let (kind, prompt) = (what.to_string(), prompt.to_string());
     // (its own thread: the dialog wants a single-threaded COM apartment, which the caller's thread may not be)
-    std::thread::spawn(move || dialog(&what, &prompt).unwrap_or_default()).join().unwrap_or_default()
+    let picked = std::thread::spawn(move || dialog(&kind, &prompt).unwrap_or_default()).join().unwrap_or_default();
+    if what == "skill" {
+        picked.iter().map(|p| skill_source(p)).collect()
+    } else {
+        picked
+    }
+}
+
+/// A skill picked by its SKILL.md is its folder; an archive is itself.
+fn skill_source(picked: &str) -> String {
+    let p = std::path::Path::new(picked);
+    match (p.file_name().and_then(|n| n.to_str()), p.parent()) {
+        (Some(n), Some(dir)) if n.eq_ignore_ascii_case("SKILL.md") => dir.to_string_lossy().into_owned(),
+        _ => picked.to_string(),
+    }
+}
+
+/// The Explorer save dialog: where to save `name`, a `kind` file (its extension the type the dialog keeps); None:
+/// cancelled. It asks before replacing a file that's there; it starts in the last folder used, else Downloads.
+pub fn save_as(prompt: &str, name: &str, kind: &str) -> Option<String> {
+    let (prompt, name, kind) = (prompt.to_string(), name.to_string(), kind.to_string());
+    // (its own thread, as `choose`)
+    std::thread::spawn(move || save_dialog(&prompt, &name, &kind).ok().flatten()).join().ok().flatten()
+}
+
+fn save_dialog(prompt: &str, name: &str, kind: &str) -> ::windows::core::Result<Option<String>> {
+    use ::windows::core::{HSTRING, PCWSTR};
+    use ::windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+    use ::windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
+    use ::windows::Win32::UI::Shell::{FileSaveDialog, IFileSaveDialog, IShellItem, SHCreateItemFromParsingName, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, SIGDN_FILESYSPATH};
+    // SAFETY: COM calls on this thread's own apartment, set up here and torn down at the end; the filter's strings
+    // outlive the dialog; the path it hands back is copied, then freed with CoTaskMemFree as its docs ask.
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let out = (|| {
+            let d: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER)?;
+            d.SetOptions(d.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)?;
+            d.SetTitle(&HSTRING::from(prompt))?;
+            d.SetFileName(&HSTRING::from(name))?;
+            let ext = std::path::Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("");
+            let (label, spec) = (HSTRING::from(format!("{kind} (*.{ext})")), HSTRING::from(format!("*.{ext}")));
+            if !ext.is_empty() {
+                d.SetFileTypes(&[COMDLG_FILTERSPEC { pszName: PCWSTR(label.as_ptr()), pszSpec: PCWSTR(spec.as_ptr()) }])?;
+                d.SetDefaultExtension(&HSTRING::from(ext))?;
+            }
+            if let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(downloads().to_string_lossy().as_ref()), None) {
+                let _ = d.SetDefaultFolder(&item);
+            }
+            // (Show errs when the user cancels: nothing chosen)
+            if d.Show(None).is_err() {
+                return Ok(None);
+            }
+            let p = d.GetResult()?.GetDisplayName(SIGDN_FILESYSPATH)?;
+            let s = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const c_void));
+            Ok(s.filter(|s| !s.is_empty()))
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        out
+    }
+}
+
+/// The Downloads folder: Windows' own (it can be moved, to another drive or into OneDrive), else the profile's.
+pub fn downloads() -> std::path::PathBuf {
+    use ::windows::Win32::System::Com::CoTaskMemFree;
+    use ::windows::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    // SAFETY: the path the shell hands back is copied, then freed with CoTaskMemFree as its docs ask
+    let known = unsafe {
+        SHGetKnownFolderPath(&FOLDERID_Downloads, KF_FLAG_DEFAULT, None).ok().and_then(|p| {
+            let s = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const c_void));
+            s
+        })
+    };
+    known.filter(|s| !s.is_empty()).map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads"))
 }
 
 /// Where the dialog starts for `what`.
 fn start_folder(what: &str) -> Option<String> {
     match what {
-        "backup" => std::env::var("USERPROFILE").ok().map(|h| format!("{h}\\Downloads")),
+        "backup" | "skill" => Some(downloads().to_string_lossy().into_owned()),
         "files" | "folder" | "audio" => None,
         _ => std::env::var("ProgramData").ok().map(|d| format!("{d}\\Microsoft\\Windows\\Start Menu\\Programs")),
     }
@@ -45,6 +124,7 @@ fn dialog(what: &str, prompt: &str) -> ::windows::core::Result<Vec<String>> {
                 "app" => &[COMDLG_FILTERSPEC { pszName: w!("Programs"), pszSpec: w!("*.exe;*.lnk") }],
                 "audio" => &[COMDLG_FILTERSPEC { pszName: w!("Audio"), pszSpec: w!("*.mp3;*.m4a;*.aac;*.wav;*.ogg;*.opus;*.flac") }],
                 "backup" => &[COMDLG_FILTERSPEC { pszName: w!("Sympony backup"), pszSpec: w!("*.sympony") }, COMDLG_FILTERSPEC { pszName: w!("All files"), pszSpec: w!("*.*") }],
+                "skill" => &[COMDLG_FILTERSPEC { pszName: w!("Pony skill (.skill, .zip, a folder's SKILL.md)"), pszSpec: w!("*.skill;*.zip;SKILL.md") }, COMDLG_FILTERSPEC { pszName: w!("All files"), pszSpec: w!("*.*") }],
                 _ => &[],
             };
             if !filters.is_empty() {
@@ -242,8 +322,9 @@ pub fn write_png(png: &[u8]) -> bool {
 /// deleting for good.
 pub fn trash(path: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING, FO_DELETE, SHFILEOPSTRUCTW};
-    // (a list of paths, each NUL-terminated, ending in an empty one)
-    let mut from = super::shell::wide(path);
+    // (a list of paths, each NUL-terminated, ending in an empty one; the shell wants `\`, and a path joined from a
+    // relative one may hold `/`)
+    let mut from = super::shell::wide(&shell_path(path));
     from.push(0);
     let mut op = SHFILEOPSTRUCTW {
         wFunc: FO_DELETE,
@@ -263,8 +344,505 @@ pub fn trash(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub unsafe fn share(_view: *mut c_void, _paths: &[String]) {}
+/// `path` with Windows' own separator throughout.
+fn shell_path(path: &str) -> String {
+    path.replace('/', "\\")
+}
 
-pub unsafe fn drag_out(_view: *mut c_void, _paths: &[String], _done: Box<dyn Fn(bool)>) -> bool {
-    false
+/// A picture converted to JPEG (`jpeg`) or PNG at `dst` (a new file) with Windows' own codecs (WIC, through WinRT's
+/// BitmapDecoder): whatever Windows opens (JPEG, PNG, GIF, BMP, TIFF, WebP; HEIC with its extension), turned upright
+/// by its EXIF orientation, in sRGB. A file already at `dst` is never touched; when it fails, nothing it began is
+/// left there.
+pub fn convert_picture(src: &str, dst: &std::path::Path, jpeg: bool) -> Result<(), String> {
+    if dst.exists() {
+        return Err(format!("{} is already there", dst.display()));
+    }
+    let r = convert_in(src, dst, jpeg).map_err(|e| e.message());
+    if r.is_err() {
+        let _ = std::fs::remove_file(dst);
+    }
+    r
+}
+
+fn convert_in(src: &str, dst: &std::path::Path, jpeg: bool) -> ::windows::core::Result<()> {
+    use ::windows::core::HSTRING;
+    use ::windows::Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapEncoder, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode};
+    use ::windows::Storage::{CreationCollisionOption, FileAccessMode, StorageFile, StorageFolder};
+    use ::windows::Win32::Foundation::E_INVALIDARG;
+    let (Some(dir), Some(name)) = (dst.parent(), dst.file_name()) else { return Err(E_INVALIDARG.into()) };
+    let input = StorageFile::GetFileFromPathAsync(&HSTRING::from(src))?.join()?.OpenAsync(FileAccessMode::Read)?.join()?;
+    let decoder = BitmapDecoder::CreateAsync(&input)?.join()?;
+    // (JPEG has no transparency: what's see-through comes out as the colour under it)
+    let alpha = if jpeg { BitmapAlphaMode::Ignore } else { BitmapAlphaMode::Straight };
+    let bitmap = decoder.GetSoftwareBitmapTransformedAsync(BitmapPixelFormat::Bgra8, alpha, &BitmapTransform::new()?, ExifOrientationMode::RespectExifOrientation, ColorManagementMode::ColorManageToSRgb)?.join()?;
+    let folder = StorageFolder::GetFolderFromPathAsync(&HSTRING::from(dir))?.join()?;
+    let out = folder.CreateFileAsync(&HSTRING::from(name), CreationCollisionOption::FailIfExists)?.join()?;
+    let stream = out.OpenAsync(FileAccessMode::ReadWrite)?.join()?;
+    let encoder = BitmapEncoder::CreateAsync(if jpeg { BitmapEncoder::JpegEncoderId()? } else { BitmapEncoder::PngEncoderId()? }, &stream)?.join()?;
+    encoder.SetSoftwareBitmap(&bitmap)?;
+    encoder.FlushAsync()?.join()?;
+    Ok(())
+}
+
+/// A picture's small JPEG for a tile, at most `longest` pixels on its longer side (never made bigger), upright by its
+/// EXIF orientation, what's see-through on white: Windows' own picture codecs (PNG, JPEG, GIF, BMP, TIFF, WebP, and
+/// HEIC with its extension), in memory (`_scratch`, where macOS's `sips` writes, isn't used). None: not a picture
+/// Windows reads, or not there. Not on a UI thread: it waits on WinRT.
+pub fn thumbnail(path: &str, longest: u32, _scratch: &std::path::Path) -> Option<Vec<u8>> {
+    super::mta();
+    thumbnail_in(path, longest.max(1)).ok()
+}
+
+fn thumbnail_in(path: &str, longest: u32) -> ::windows::core::Result<Vec<u8>> {
+    use ::windows::core::HSTRING;
+    use ::windows::Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapEncoder, BitmapInterpolationMode, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode};
+    use ::windows::Storage::Streams::{Buffer, DataReader, InMemoryRandomAccessStream};
+    use ::windows::Storage::{FileAccessMode, StorageFile};
+    let input = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))?.join()?.OpenAsync(FileAccessMode::Read)?.join()?;
+    let decoder = BitmapDecoder::CreateAsync(&input)?.join()?;
+    let (w, h) = (decoder.PixelWidth()?, decoder.PixelHeight()?);
+    let transform = BitmapTransform::new()?;
+    // (scaled as it's decoded; one scale for both sides, so the EXIF turn after it keeps the shape)
+    if w.max(h) > longest {
+        let k = f64::from(longest) / f64::from(w.max(h));
+        transform.SetScaledWidth(((f64::from(w) * k).round() as u32).max(1))?;
+        transform.SetScaledHeight(((f64::from(h) * k).round() as u32).max(1))?;
+        transform.SetInterpolationMode(BitmapInterpolationMode::Fant)?;
+    }
+    let bitmap = decoder.GetSoftwareBitmapTransformedAsync(BitmapPixelFormat::Bgra8, BitmapAlphaMode::Premultiplied, &transform, ExifOrientationMode::RespectExifOrientation, ColorManagementMode::ColorManageToSRgb)?.join()?;
+    let (tw, th) = (bitmap.PixelWidth()? as u32, bitmap.PixelHeight()? as u32);
+    let buffer = Buffer::Create(tw * th * 4)?;
+    bitmap.CopyToBuffer(&buffer)?;
+    let mut px = vec![0u8; buffer.Length()? as usize];
+    DataReader::FromBuffer(&buffer)?.ReadBytes(&mut px)?;
+    // (JPEG has no see-through: premultiplied colours plus what the alpha leaves of white)
+    for p in px.chunks_exact_mut(4) {
+        let white = 255 - p[3];
+        for c in &mut p[..3] {
+            *c = c.saturating_add(white);
+        }
+        p[3] = 255;
+    }
+    let stream = InMemoryRandomAccessStream::new()?;
+    let encoder = BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId()?, &stream)?.join()?;
+    encoder.SetPixelData(BitmapPixelFormat::Bgra8, BitmapAlphaMode::Ignore, tw, th, 96.0, 96.0, &px)?;
+    encoder.FlushAsync()?.join()?;
+    let size = stream.Size()? as u32;
+    let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0)?)?;
+    reader.LoadAsync(size)?.join()?;
+    let mut out = vec![0u8; size as usize];
+    reader.ReadBytes(&mut out)?;
+    Ok(out)
+}
+
+/// Ejects a drive as File Explorer's Eject does (a USB stick is then safe to pull out; Windows says so itself, or
+/// that it's still in use). `root` is the drive, `E:\`. A drive Windows can't eject (the PC's own disk) says so.
+pub fn eject(root: &str) -> Result<(), String> {
+    let root = root.to_string();
+    // (its own thread: the shell's menus want a single-threaded COM apartment)
+    std::thread::spawn(move || eject_in(&root).map_err(|e| if e.code() == ::windows::Win32::Foundation::E_INVALIDARG { "Windows can’t eject this drive".to_string() } else { e.message() }))
+        .join().unwrap_or_else(|_| Err("the eject stopped".into()))
+}
+
+fn eject_in(root: &str) -> ::windows::core::Result<()> {
+    use ::windows::core::{s, HSTRING};
+    use ::windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, IBindCtx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+    use ::windows::Win32::UI::Shell::{IContextMenu, IShellItem, SHCreateItemFromParsingName, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO};
+    use ::windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, DestroyMenu, SW_SHOWNORMAL};
+    // SAFETY: COM calls on this thread's own apartment, set up here and torn down at the end; the menu made here is
+    // destroyed here; the verb is a static NUL-terminated string
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let r = (|| {
+            let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(root), None)?;
+            let menu: IContextMenu = item.BindToHandler(None::<&IBindCtx>, &BHID_SFUIObject)?;
+            let hmenu = CreatePopupMenu()?;
+            // (the drive's own menu, as Explorer shows it, so its "eject" verb is there to call)
+            let r = menu.QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_NORMAL).ok().and_then(|_| {
+                let info = CMINVOKECOMMANDINFO { cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32, lpVerb: s!("eject"), nShow: SW_SHOWNORMAL.0, ..Default::default() };
+                menu.InvokeCommand(&info)
+            });
+            let _ = DestroyMenu(hmenu);
+            r
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        r
+    }
+}
+
+/// Whether `path` is a drive that `eject` takes: a drive's own folder, `E:\` (as File Explorer drops one).
+pub fn is_drive(path: &str) -> bool {
+    let b = path.as_bytes();
+    (b.len() == 2 || (b.len() == 3 && (b[2] == b'\\' || b[2] == b'/'))) && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+thread_local! {
+    // The Share window's request handler on the window it was last opened over: one at a time, the next share takes
+    // its place (else that window would hand out every earlier share's files too).
+    static SHARING: std::cell::RefCell<Option<(::windows::ApplicationModel::DataTransfer::DataTransferManager, i64)>> =
+        const { std::cell::RefCell::new(None) };
+    // why the last `share` on this thread didn't open the Share window (None: it opened)
+    static SHARE_FAILED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Why the last `share` on this thread didn't open the Share window, taken (None: it opened, or none was asked).
+pub fn share_failed() -> Option<String> {
+    SHARE_FAILED.with(|f| f.borrow_mut().take())
+}
+
+/// Windows' Share window (Nearby Sharing, Mail, other apps…) for these files and folders, over `view`'s window.
+/// Closing it shares nothing. Main thread; `view` is the window's HWND.
+///
+/// # Safety
+/// `view` must be a live window of this thread.
+pub unsafe fn share(view: *mut c_void, paths: &[String]) {
+    let why = if view.is_null() || paths.is_empty() {
+        Some("nothing to share from".to_string())
+    } else {
+        share_in(::windows::Win32::Foundation::HWND(view), paths).err().map(|e| format!("{} ({:#010x})", e.message(), e.code().0))
+    };
+    SHARE_FAILED.with(|f| *f.borrow_mut() = why);
+}
+
+fn share_in(hwnd: ::windows::Win32::Foundation::HWND, paths: &[String]) -> ::windows::core::Result<()> {
+    use ::windows::core::HSTRING;
+    use ::windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
+    use ::windows::Foundation::TypedEventHandler;
+    use ::windows::Storage::IStorageItem;
+    use ::windows::Win32::UI::Shell::IDataTransferManagerInterop;
+    use windows_collections::IIterable;
+    let paths: Vec<String> = paths.iter().filter(|p| std::path::Path::new(p).exists()).cloned().collect();
+    if paths.is_empty() {
+        return Err(::windows::core::Error::new(::windows::Win32::Foundation::E_INVALIDARG, "the files are gone"));
+    }
+    let title = HSTRING::from(share_title(&paths));
+    let interop = ::windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()?;
+    // SAFETY: `hwnd` is the caller's live window, on its own thread
+    let manager: DataTransferManager = unsafe { interop.GetForWindow(hwnd)? };
+    SHARING.with(|s| {
+        if let Some((m, token)) = s.borrow_mut().take() {
+            let _ = m.RemoveDataRequested(token);
+        }
+    });
+    // (asked for when the window opens, on this thread; a title is required, or Windows shows nothing to share.
+    // The storage items are made there: they can't be handed between threads, and the handler could be)
+    let token = manager.DataRequested(&TypedEventHandler::<DataTransferManager, DataRequestedEventArgs>::new(move |_, args| {
+        let Some(args) = args.as_ref() else { return Ok(()) };
+        let data = args.Request()?.Data()?;
+        data.Properties()?.SetTitle(&title)?;
+        // (WinRT lists of an interface hold Option<it>)
+        let list: IIterable<IStorageItem> = storage_items(&paths).into_iter().map(Some).collect::<Vec<_>>().into();
+        data.SetStorageItemsReadOnly(&list)
+    }))?;
+    SHARING.with(|s| *s.borrow_mut() = Some((manager, token)));
+    // SAFETY: as above
+    unsafe { interop.ShowShareUIForWindow(hwnd) }
+}
+
+/// The files and folders as WinRT storage items, the ones that are gone left out.
+fn storage_items(paths: &[String]) -> Vec<::windows::Storage::IStorageItem> {
+    use ::windows::core::{Interface, HSTRING};
+    use ::windows::Storage::{IStorageItem, StorageFile, StorageFolder};
+    paths.iter().filter_map(|p| {
+        let h = HSTRING::from(p.as_str());
+        if std::path::Path::new(p).is_dir() {
+            StorageFolder::GetFolderFromPathAsync(&h).and_then(|op| op.join()).and_then(|f| f.cast::<IStorageItem>()).ok()
+        } else {
+            StorageFile::GetFileFromPathAsync(&h).and_then(|op| op.join()).and_then(|f| f.cast::<IStorageItem>()).ok()
+        }
+    }).collect()
+}
+
+/// What the Share window names: the one file's name, else how many there are.
+fn share_title(paths: &[String]) -> String {
+    match paths {
+        [one] => std::path::Path::new(one).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| one.clone()),
+        _ => format!("{} items", paths.len()),
+    }
+}
+
+/// The files as the shell's own data object (CF_HDROP and the shell's formats, its drag picture), as Explorer makes
+/// for a drag. Files from different folders are fine. COM must be set up on this thread.
+fn data_object(paths: &[String]) -> ::windows::core::Result<::windows::Win32::System::Com::IDataObject> {
+    use ::windows::core::HSTRING;
+    use ::windows::Win32::Foundation::E_INVALIDARG;
+    use ::windows::Win32::System::Com::IDataObject;
+    use ::windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use ::windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHCreateShellItemArrayFromIDLists, BHID_DataObject};
+    // SAFETY: each ID list made here is freed below, after the item array has copied them
+    let ids: Vec<*mut ITEMIDLIST> = paths.iter().filter(|p| std::path::Path::new(p).exists())
+        .map(|p| unsafe { ILCreateFromPathW(&HSTRING::from(p.as_str())) }).filter(|id| !id.is_null()).collect();
+    if ids.is_empty() {
+        return Err(E_INVALIDARG.into());
+    }
+    let whole: Vec<*const ITEMIDLIST> = ids.iter().map(|id| *id as *const ITEMIDLIST).collect();
+    // (the items' own data object, as Explorer asks for one)
+    // SAFETY: the ID lists are live for the call
+    let data = unsafe { SHCreateShellItemArrayFromIDLists(&whole).and_then(|items| items.BindToHandler::<_, IDataObject>(None::<&::windows::Win32::System::Com::IBindCtx>, &BHID_DataObject)) };
+    for id in ids {
+        // SAFETY: made by ILCreateFromPathW above, freed once
+        unsafe { ILFree(Some(id)) };
+    }
+    data
+}
+
+/// Whether the mouse is over one of Sympony's own windows (the WebView's are another process's, under ours).
+fn over_own_window() -> bool {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetCursorPos, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT};
+    let mut at = POINT { x: 0, y: 0 };
+    // SAFETY: reads of the cursor and the window under it
+    unsafe {
+        if GetCursorPos(&mut at) == 0 {
+            return false;
+        }
+        let w = WindowFromPoint(at);
+        if w.is_null() {
+            return false;
+        }
+        let root = GetAncestor(w, GA_ROOT);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(if root.is_null() { w } else { root }, &mut pid);
+        pid == std::process::id()
+    }
+}
+
+/// Drags these files out of `view`'s window from the mouse's place now (the drag the page just started): Explorer and
+/// the desktop copy them (or make shortcuts), apps take them as attachments. `done(dropped)` when it ends; a drop back
+/// on Sympony's own windows isn't one, as on macOS. Main thread, during a mouse drag: with the button already up
+/// (a click that's over) nothing starts, false.
+///
+/// # Safety
+/// `view` must be a live window of this thread.
+pub unsafe fn drag_out(view: *mut c_void, paths: &[String], done: Box<dyn Fn(bool)>) -> bool {
+    use ::windows::Win32::System::Ole::{IDropSource, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_NONE};
+    use ::windows::Win32::UI::Shell::SHDoDragDrop;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+    if view.is_null() {
+        return false;
+    }
+    // (the primary button as the user set it, still held; GetAsyncKeyState reads the physical ones)
+    // SAFETY: plain reads of the mouse
+    let primary = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 { VK_RBUTTON } else { VK_LBUTTON };
+    if unsafe { GetAsyncKeyState(primary as i32) } >= 0 {
+        return false;
+    }
+    let Ok(data) = data_object(paths) else { return false };
+    // the shell's own drop source and drag picture; a copy or a link, never a move: the Shelf only points at files,
+    // and a drag never takes the user's file away from where it is
+    // SAFETY: `view` is the caller's live window; the drag runs its own loop here until the drop
+    let effect = unsafe { SHDoDragDrop(Some(::windows::Win32::Foundation::HWND(view)), &data, None::<&IDropSource>, DROPEFFECT_COPY | DROPEFFECT_LINK) };
+    done(matches!(effect, Ok(e) if e != DROPEFFECT_NONE) && !over_own_window());
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh folder under the temp folder, removed when dropped.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Scratch {
+            let d = std::env::temp_dir().join(format!("sy-files-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Scratch(d)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The paths a data object hands a drop target as CF_HDROP, as Explorer reads them.
+    fn dropped_paths(data: &::windows::Win32::System::Com::IDataObject) -> Vec<String> {
+        use ::windows::Win32::System::Com::{DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+        use ::windows::Win32::System::Ole::{ReleaseStgMedium, CF_HDROP};
+        use ::windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+        let fmt = FORMATETC { cfFormat: CF_HDROP.0, ptd: std::ptr::null_mut(), dwAspect: DVASPECT_CONTENT.0, lindex: -1, tymed: TYMED_HGLOBAL.0 as u32 };
+        // SAFETY: the medium is read while held and released once
+        unsafe {
+            let mut medium = data.GetData(&fmt).unwrap();
+            let drop = HDROP(medium.u.hGlobal.0);
+            let n = DragQueryFileW(drop, u32::MAX, None);
+            let out = (0..n).map(|i| {
+                let mut buf = vec![0u16; DragQueryFileW(drop, i, None) as usize + 1];
+                let len = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
+                String::from_utf16_lossy(&buf[..len])
+            }).collect();
+            ReleaseStgMedium(&mut medium);
+            out
+        }
+    }
+
+    #[test]
+    fn a_drag_hands_out_the_shelfs_files_from_any_folder_as_explorer_reads_them() {
+        use ::windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+        let s = Scratch::new("drag");
+        let (a, b) = (s.0.join("one"), s.0.join("two words"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let files = [a.join("note.txt"), b.join("picture ü.png")];
+        for f in &files {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let paths: Vec<String> = files.iter().map(|f| f.to_string_lossy().into_owned()).collect();
+        // SAFETY: this test thread's own apartment, torn down at the end
+        let init = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        {
+            // (the shell hands out long names; the temp folder may be named short, DKEASS~1)
+            let same = |a: &[String]| a.iter().map(|p| std::fs::canonicalize(p).unwrap()).collect::<Vec<_>>();
+            let data = data_object(&paths).unwrap();
+            assert_eq!(same(&dropped_paths(&data)), same(&paths));
+            // a file that's gone is left out; none left: no drag
+            let gone = s.0.join("gone.txt").to_string_lossy().into_owned();
+            assert_eq!(same(&dropped_paths(&data_object(&[gone.clone(), paths[0].clone()]).unwrap())), same(&paths[..1]));
+            assert!(data_object(&[gone]).is_err());
+        }
+        if init.is_ok() {
+            // SAFETY: paired with the CoInitializeEx above
+            unsafe { CoUninitialize() };
+        }
+    }
+
+    #[test]
+    fn a_picture_converts_to_jpeg_and_back_to_png_and_a_non_picture_leaves_nothing() {
+        let s = Scratch::new("convert");
+        // a 4×3 picture, half see-through
+        let px: Vec<u8> = (0..12).flat_map(|i| [(i * 20) as u8, 100, 200, if i % 2 == 0 { 255 } else { 128 }]).collect();
+        let png = super::super::image::png(4, 3, px, false).unwrap();
+        let src = s.0.join("photo ü.png");
+        std::fs::write(&src, png).unwrap();
+        let jpg = s.0.join("photo ü.jpg");
+        convert_picture(&src.to_string_lossy(), &jpg, true).unwrap();
+        assert_eq!(&std::fs::read(&jpg).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
+        let back = s.0.join("back.png");
+        convert_picture(&jpg.to_string_lossy(), &back, false).unwrap();
+        let (w, h, _) = super::super::image::bgra_of_png(&std::fs::read(&back).unwrap()).unwrap();
+        assert_eq!((w, h), (4, 3));
+        // never over a file that's there
+        assert!(convert_picture(&src.to_string_lossy(), &jpg, true).is_err());
+        assert_eq!(&std::fs::read(&jpg).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
+        // not a picture: an error, nothing written
+        let txt = s.0.join("note.png");
+        std::fs::write(&txt, "not a picture").unwrap();
+        let out = s.0.join("note.jpg");
+        assert!(convert_picture(&txt.to_string_lossy(), &out, true).is_err());
+        assert!(!out.exists());
+    }
+
+    /// `jpeg` with an EXIF orientation (an APP1 after the JFIF APP0, when there is one), as a phone saves a photo it
+    /// took held sideways.
+    fn with_orientation(jpeg: &[u8], o: u16) -> Vec<u8> {
+        let mut exif = b"Exif\0\0II*\0".to_vec();
+        for part in [&8u32.to_le_bytes()[..], &1u16.to_le_bytes(), &0x0112u16.to_le_bytes(), &3u16.to_le_bytes(), &1u32.to_le_bytes(), &o.to_le_bytes(), &[0, 0], &0u32.to_le_bytes()] {
+            exif.extend_from_slice(part);
+        }
+        let mut app1 = vec![0xFF, 0xE1];
+        app1.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        app1.extend_from_slice(&exif);
+        let at = if jpeg[2..4] == [0xFF, 0xE0] { 4 + u16::from_be_bytes([jpeg[4], jpeg[5]]) as usize } else { 2 };
+        [&jpeg[..at], &app1[..], &jpeg[at..]].concat()
+    }
+
+    /// A JPEG's (width, height) from its frame header.
+    fn jpeg_size(b: &[u8]) -> (u32, u32) {
+        let mut i = 2;
+        while i + 9 < b.len() && b[i] == 0xFF {
+            if matches!(b[i + 1], 0xC0 | 0xC1 | 0xC2) {
+                return (u16::from_be_bytes([b[i + 7], b[i + 8]]).into(), u16::from_be_bytes([b[i + 5], b[i + 6]]).into());
+            }
+            i += 2 + u16::from_be_bytes([b[i + 2], b[i + 3]]) as usize;
+        }
+        (0, 0)
+    }
+
+    #[test]
+    fn a_thumbnail_is_small_upright_and_see_through_parts_are_white() {
+        let s = Scratch::new("thumb");
+        let path = |n: &str| s.0.join(n).to_string_lossy().into_owned();
+        // a 40×20 photo, and the same saved sideways as a phone does (upright it's 20×40)
+        let px: Vec<u8> = (0..800u32).flat_map(|i| [(i % 40 * 6) as u8, 90, 160, 255]).collect();
+        std::fs::write(s.0.join("wide.png"), super::super::image::png(40, 20, px, false).unwrap()).unwrap();
+        convert_picture(&path("wide.png"), &s.0.join("wide.jpg"), true).unwrap();
+        std::fs::write(s.0.join("turned ü.jpg"), with_orientation(&std::fs::read(s.0.join("wide.jpg")).unwrap(), 6)).unwrap();
+        let t = thumbnail(&path("turned ü.jpg"), 16, &s.0).unwrap();
+        assert_eq!(&t[..3], &[0xFF, 0xD8, 0xFF]);
+        assert_eq!(jpeg_size(&t), (8, 16), "upright, its shape kept");
+        assert_eq!(jpeg_size(&thumbnail(&path("wide.jpg"), 16, &s.0).unwrap()), (16, 8));
+        assert_eq!(jpeg_size(&thumbnail(&path("wide.png"), 192, &s.0).unwrap()), (40, 20), "never made bigger");
+        // the top half see-through, the bottom half grey: the top comes out white
+        let px: Vec<u8> = (0..256u32).flat_map(|i| if i < 128 { [0, 0, 0, 0] } else { [60, 60, 60, 255] }).collect();
+        std::fs::write(s.0.join("clear.png"), super::super::image::png(16, 16, px, false).unwrap()).unwrap();
+        std::fs::write(s.0.join("clear-thumb.jpg"), thumbnail(&path("clear.png"), 192, &s.0).unwrap()).unwrap();
+        convert_picture(&path("clear-thumb.jpg"), &s.0.join("clear-back.png"), false).unwrap();
+        let (w, h, px) = super::super::image::bgra_of_png(&std::fs::read(s.0.join("clear-back.png")).unwrap()).unwrap();
+        // (rows from the bottom)
+        let at = |x: u32, y_from_top: u32| &px[(((h - 1 - y_from_top) * w + x) * 4) as usize..][..3];
+        assert!((0..w).all(|x| at(x, 2).iter().all(|c| *c > 240)), "top: {:?}", at(0, 2));
+        assert!((0..w).all(|x| at(x, 13).iter().all(|c| *c < 90)), "bottom: {:?}", at(0, 13));
+        // not a picture, or not there: none
+        std::fs::write(s.0.join("note.png"), "not a picture").unwrap();
+        assert!(thumbnail(&path("note.png"), 192, &s.0).is_none());
+        assert!(thumbnail(&path("gone.png"), 192, &s.0).is_none());
+    }
+
+    #[test]
+    fn a_skill_picked_by_its_skill_md_is_its_folder() {
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill\SKILL.md"), r"C:\Users\me\Downloads\my-skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill\skill.md"), r"C:\Users\me\Downloads\my-skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill.skill"), r"C:\Users\me\Downloads\my-skill.skill");
+        assert_eq!(skill_source(r"C:\Users\me\Downloads\pack.zip"), r"C:\Users\me\Downloads\pack.zip");
+        assert_eq!(skill_source(r"C:\Users\me\notes\README.md"), r"C:\Users\me\notes\README.md");
+    }
+
+    #[test]
+    fn the_recycle_bin_is_handed_windows_separators() {
+        assert_eq!(shell_path(r"C:\Users\me\.sympony\skills\my-skill\references/note.txt"), r"C:\Users\me\.sympony\skills\my-skill\references\note.txt");
+        assert_eq!(shell_path(r"C:\plain\path"), r"C:\plain\path");
+    }
+
+    #[test]
+    fn a_drive_is_its_own_folder() {
+        assert!(is_drive(r"E:\") && is_drive("E:") && is_drive("e:/"));
+        assert!(!is_drive(r"E:\photos") && !is_drive(r"C:\Users\me\a.txt") && !is_drive(r"\\server\share") && !is_drive("/Volumes/USB"));
+    }
+
+    #[test]
+    fn a_share_that_cant_open_says_why_once() {
+        // SAFETY: a null window is turned away before any use
+        unsafe { share(std::ptr::null_mut(), &[r"C:\a.txt".into()]) };
+        assert_eq!(share_failed().as_deref(), Some("nothing to share from"));
+        assert_eq!(share_failed(), None);
+    }
+
+    #[test]
+    fn the_share_window_names_one_file_or_how_many() {
+        assert_eq!(share_title(&[r"C:\Users\me\Desktop\report.pdf".into()]), "report.pdf");
+        assert_eq!(share_title(&[r"C:\a.txt".into(), r"C:\b.txt".into()]), "2 items");
+    }
+
+    #[test]
+    fn the_share_window_gets_files_and_folders_as_storage_items() {
+        let s = Scratch::new("share");
+        let f = s.0.join("a.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let paths = [f.to_string_lossy().into_owned(), s.0.to_string_lossy().into_owned(), s.0.join("gone.txt").to_string_lossy().into_owned()];
+        let names: Vec<String> = storage_items(&paths).iter().map(|i| i.Name().unwrap().to_string()).collect();
+        assert_eq!(names, vec!["a.txt".to_string(), s.0.file_name().unwrap().to_string_lossy().into_owned()]);
+    }
+
+    #[test]
+    fn downloads_is_a_folder_that_is_there() {
+        let d = downloads();
+        assert!(d.is_absolute() && d.is_dir(), "{}", d.display());
+        assert_eq!(start_folder("backup").as_deref(), Some(d.to_string_lossy().as_ref()));
+    }
 }

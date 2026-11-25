@@ -68,6 +68,11 @@ pub fn remove(list: &mut Vec<Value>, id: &str) -> Option<Value> {
     Some(list.remove(i))
 }
 
+/// The pictures with no thumbnail (kept on Windows before it made them): their ids.
+pub fn without_thumb(list: &[Value]) -> Vec<String> {
+    list.iter().filter(|x| x["kind"] == "image" && x["thumb"].as_str().is_none_or(str::is_empty)).filter_map(|x| x["id"].as_str().map(String::from)).collect()
+}
+
 /// All but the pinned; returns what went.
 pub fn clear(list: &mut Vec<Value>) -> Vec<Value> {
     let (keep, gone) = std::mem::take(list).into_iter().partition(|x| x["pinned"] == true);

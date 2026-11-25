@@ -310,18 +310,44 @@ fn import_folder_and_zip_with_clash_keeps_both() {
     assert_eq!(second, "my-skill-2");
     assert_eq!(std::fs::read_to_string(dst_root.join("my-skill-2/references/note.txt")).unwrap(), "ref");
 
-    // Zip export & import (with ditto)
-    if std::path::Path::new("/usr/bin/ditto").exists() {
-        let zip_path = tmp.path().join("my-skill.skill");
-        export_skill(&src_root, "my-skill", &zip_path).unwrap();
-        let third = import_skill(&dst_root, &zip_path, false).unwrap();
-        assert_eq!(third, "my-skill-3");
-        let skills = load_skills(&dst_root);
-        assert_eq!(skills.len(), 3);
-        assert!(skills.iter().all(|s| s.valid()));
-    } else {
-        eprintln!("skipping zip import test: /usr/bin/ditto not available");
-    }
+    // Zip export & import (written in Rust on every OS)
+    let zip_path = tmp.path().join("my-skill.skill");
+    export_skill(&src_root, "my-skill", &zip_path).unwrap();
+    let third = import_skill(&dst_root, &zip_path, false).unwrap();
+    assert_eq!(third, "my-skill-3");
+    let skills = load_skills(&dst_root);
+    assert_eq!(skills.len(), 3);
+    assert!(skills.iter().all(|s| s.valid()));
+    assert_eq!(std::fs::read_to_string(dst_root.join("my-skill-3/references/note.txt")).unwrap(), "ref");
+}
+
+#[test]
+fn an_exported_skill_holds_its_folder_and_replaces_the_file_chosen() {
+    use services::pony::{export_skill, write_skill};
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("skills");
+    write_skill(&root, "my-skill", "Desc", "Body", &serde_json::Map::new()).unwrap();
+    std::fs::create_dir_all(root.join("my-skill/references")).unwrap();
+    std::fs::write(root.join("my-skill/references/note.txt"), "ref").unwrap();
+    let names = |p: &std::path::Path| {
+        let z = zip::ZipArchive::new(std::fs::File::open(p).unwrap()).unwrap();
+        let mut v: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
+        v.sort();
+        v
+    };
+    // into a folder that isn't there yet
+    let out = tmp.path().join("exports").join("my-skill.skill");
+    export_skill(&root, "my-skill", &out).unwrap();
+    assert_eq!(names(&out), ["my-skill/", "my-skill/SKILL.md", "my-skill/references/", "my-skill/references/note.txt"]);
+    // over a file that's there (the save dialog asked first): replaced, nothing else left beside it
+    std::fs::write(&out, "an older export").unwrap();
+    export_skill(&root, "my-skill", &out).unwrap();
+    assert_eq!(names(&out).len(), 4);
+    let beside: Vec<_> = std::fs::read_dir(out.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert_eq!(beside, [std::ffi::OsString::from("my-skill.skill")]);
+    // a skill that isn't there: an error, the file chosen untouched
+    assert!(export_skill(&root, "no-such-skill", &out).is_err());
+    assert_eq!(names(&out).len(), 4);
 }
 
 #[test]

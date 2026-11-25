@@ -6612,7 +6612,11 @@ window.addEventListener('message', (e) => {
     if (Number(d.s) !== yt.state) { yt.state = Number(d.s); yt.stateAt = Date.now(); }
   } else if (d.type === 'time') {
     yt.t = Number(d.t) || 0; yt.d = Number(d.d) || 0; yt.tAt = Date.now();
-  } else if (d.type === 'error' && [100, 101, 150, 153].includes(Number(d.code))) {
+  } else if (d.type === 'error') {
+    // (the code and the video id go into the log, never the title)
+    const kind = NotchKit.ytErrorKind(d.code);
+    api.log(`youtube: the player said ${Number(d.code)} (${kind}) for ${yt.id || 'no video'}`);
+    if (kind === 'retry') return;
     if (yt.id) yt.blocked.add(yt.id);
     ytTeardown(); renderHomeSection();
   }

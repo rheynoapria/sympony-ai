@@ -58,8 +58,26 @@
   // ---- the AI agents on this Mac (agents.rs): which one AI Chat and Translate answer through, for their labels
   let agents = null;
   let loading = null; // (one request at a time)
+  // (sent when the list changes behind a check: a CLI slow to start answered at last, or failed; N.watch('agents'))
+  if (api.onAgents) api.onAgents((v) => { if (Array.isArray(v)) { agents = v; set('agents', v); } });
   N.loadAgents = () => loading || (loading = api.svc('ai', 'agents').then((v) => { agents = Array.isArray(v) ? v : []; return agents; })
     .catch(() => { agents = []; return agents; }).finally(() => { loading = null; }));
+  // No agent ready yet (the first check can run while a CLI is still starting: Claude Code's first cold start on
+  // Windows takes longer than its time to answer): checked again, forced, at most every 15 s (`now`: right away, for
+  // a message the user just sent); true when that changed which agent is ready
+  let rechecked = 0;
+  let rechecking = null;
+  const agentsSig = () => JSON.stringify((agents || []).map((a) => [a.id, a.installed, a.responding, a.signedIn]));
+  N.recheckAgents = (now) => {
+    if (rechecking) return rechecking;
+    if (loading || (!now && Date.now() - rechecked < 15000)) return Promise.resolve(false);
+    rechecked = Date.now();
+    const was = agentsSig();
+    return (rechecking = api.svc('ai', 'agents', true)
+      .then((v) => { if (Array.isArray(v)) agents = v; return agentsSig() !== was; })
+      .catch(() => false)
+      .finally(() => { rechecking = null; }));
+  };
   // the agent `key` (chatAgent / translateAgent) names, else the first ready one, as agents.rs picks it; undefined
   // while the list hasn't come yet
   N.aiAgent = (key) => {

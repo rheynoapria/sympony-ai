@@ -254,7 +254,11 @@ pub fn call(app: &AppHandle, session: &str, name: &str, args: &Value) -> Result<
             step(app, session, &id);
             if let Some(r) = app.state::<Bridge>().runs.lock().unwrap().get(&id) {
                 if let Some(pid) = r.pid.filter(|_| r.running) {
+                    #[cfg(unix)]
                     let _ = Command::new("/bin/kill").arg(pid.to_string()).status();
+                    // (Windows has no /bin/kill: taskkill ends the run and what it started)
+                    #[cfg(windows)]
+                    platform::process::kill_group(pid);
                 }
                 return Ok("Stopped.".into());
             }
@@ -327,9 +331,15 @@ fn follow_paseo(app: &AppHandle, id: &str, folder: &str) {
 
 /// Claude Code headless in `folder` (`resume`: (our id, its session) to go on with a run).
 fn start_claude(app: &AppHandle, folder: &str, task: &str, resume: Option<(&str, &str)>) -> Result<String, String> {
-    let bin = crate::agents::bin(app, "claude").ok_or("Neither Paseo nor Claude Code is on this Mac")?;
-    let mut child = Command::new(&bin).args(claude_args(task, resume.map(|r| r.1))).current_dir(folder).env("PATH", crate::agents::path())
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("Couldn’t start Claude Code: {e}"))?;
+    let bin = crate::agents::bin(app, "claude")
+        .ok_or(if cfg!(windows) { "Neither Paseo nor Claude Code is on this PC" } else { "Neither Paseo nor Claude Code is on this Mac" })?;
+    let mut cmd = Command::new(&bin);
+    cmd.args(claude_args(task, resume.map(|r| r.1))).current_dir(folder).env("PATH", crate::agents::path())
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    // (Windows: no console window flashing up)
+    #[cfg(windows)]
+    platform::process::own_group(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("Couldn’t start Claude Code: {e}"))?;
     let b = app.state::<Bridge>();
     let id = match resume {
         Some((id, _)) => id.to_string(),

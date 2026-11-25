@@ -116,6 +116,7 @@
     onNotchOpenMod: (fn) => symponyListen('notch:openMod', fn),
     onNotchDisplay: (fn) => symponyListen('notch:display', fn),
     onFeedSumDelta: (fn) => symponyListen('feed:sumDelta', fn),
+    onAgents: (fn) => symponyListen('agents:list', fn), // (the AI agents' list, when it changed behind a check)
     startDragging: () => (me && typeof me.startDragging === 'function' ? me.startDragging() : Promise.resolve()),
     quit: () => invoke('app_quit'),
     version: () => invoke('app_info').then((i) => i.version),

@@ -242,6 +242,14 @@ describe('ytCover', () => {
   });
 });
 
+describe('ytErrorKind', () => {
+  test('only a refusal reads as one; a missing video is gone; anything else is worth another try (#59)', () => {
+    for (const c of [101, 150, 153, '150']) expect(K.ytErrorKind(c)).toBe('blocked');
+    expect(K.ytErrorKind(100)).toBe('gone');
+    for (const c of [2, 5, 0, undefined, 'x']) expect(K.ytErrorKind(c)).toBe('retry');
+  });
+});
+
 describe('ytSync while the copy settles', () => {
   test('no seek while it buffers or just after a seek (that loop never let it play)', () => {
     expect(K.ytSync({ t: 40, d: 267, target: 50, npDur: 267, playing: true, settling: true }).seek).toBe(null);

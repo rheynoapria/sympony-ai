@@ -59,8 +59,14 @@ pub fn opened(app: &AppHandle, open: bool, seq: u64) {
     }
 }
 
+/// Whether the page has the keyboard now (its last `focus` ask), for a share that brought the notch forward.
+#[cfg(windows)]
+static KEYS: AtomicBool = AtomicBool::new(false);
+
 /// `true`: the notch window takes the keyboard (a field was clicked); `false`: it gives it back.
 pub fn focus(app: &AppHandle, want: bool) {
+    #[cfg(windows)]
+    KEYS.store(want, Ordering::SeqCst);
     if want && DRIVING.load(Ordering::SeqCst) {
         return;
     }
@@ -87,6 +93,95 @@ pub fn focus(app: &AppHandle, want: bool) {
                 apps::activate_pid(pid);
             }
         }
+    });
+}
+
+/// Windows shows its Share window only over the window in front, and the notch doesn't come to the front by itself:
+/// it's unfocusable, so a click in it leaves the keyboard with your app (only a text field or the arrow keys take
+/// it, and not on the drop page, where files land on the Share tile). For a share from it, the notch comes to the
+/// front as for typing, and is unfocusable again once the Share window has the front. When the Share window closes
+/// (Esc, or an app was picked), Windows hands the front back to the notch: the app you were in gets it back then, as
+/// when typing ends, unless the page has taken the keyboard meanwhile. A click on the app before ends the watch;
+/// after a click on some other app it just runs out (two minutes): the notch only comes to the front again for
+/// typing or the arrow keys (the page has the keyboard then) or another share (whose watch takes over). Main thread.
+#[cfg(windows)]
+pub fn front_for_share(app: &AppHandle, w: &tauri::WebviewWindow) {
+    use std::sync::atomic::AtomicU64;
+    static SHARES: AtomicU64 = AtomicU64::new(0);
+    let mine = std::process::id() as i32;
+    if w.label() != LABEL || apps::frontmost_pid() == Some(mine) {
+        return;
+    }
+    let before = apps::frontmost_pid();
+    let _ = w.set_focusable(true);
+    let _ = w.set_focus();
+    let log = app.state::<App>().log.clone();
+    log.line(if apps::frontmost_pid() == Some(mine) { "share: the notch came to the front for it" } else { "share: the notch didn't come to the front" });
+    // (this share's watch; a later share's takes over)
+    let me = SHARES.fetch_add(1, Ordering::SeqCst) + 1;
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let current = || SHARES.load(Ordering::SeqCst) == me;
+        let tick = || std::thread::sleep(std::time::Duration::from_millis(250));
+        // the Share window takes the front (10 s at most: it may not come). It takes a second or two to show, and
+        // meanwhile the front may still be the notch or the app before: neither is the Share window
+        let mut host = None;
+        for _ in 0..40 {
+            tick();
+            let p = apps::frontmost_pid();
+            if p.is_some() && p != Some(mine) && p != before {
+                host = p;
+                break;
+            }
+        }
+        if !current() {
+            return;
+        }
+        let b = a.clone();
+        let _ = a.run_on_main_thread(move || {
+            if let Some(w) = b.get_webview_window(LABEL).filter(|_| !KEYS.load(Ordering::SeqCst)) {
+                let _ = w.set_focusable(false);
+            }
+        });
+        // until it closes (two minutes at most): the front back on the notch, or on the app before (a click there).
+        // (the Share window is several windows of more than one process, the front moving among them: anything
+        // else in front is waited through)
+        if host.is_some() {
+            log.line("share: the Share window has the front");
+            let mut back = false;
+            for _ in 0..480 {
+                tick();
+                let p = apps::frontmost_pid();
+                if p == Some(mine) {
+                    back = true;
+                    break;
+                }
+                if p.is_some() && p == before {
+                    log.line("share: the Share window closed, the app before has the front");
+                    return;
+                }
+            }
+            if !back {
+                return;
+            }
+        } else {
+            log.line("share: no Share window came to the front");
+        }
+        if !current() || KEYS.load(Ordering::SeqCst) || apps::frontmost_pid() != Some(mine) {
+            return;
+        }
+        let Some(pid) = before else { return };
+        log.line("share: the Share window closed, the app before gets the front back");
+        // (the Share window's last pieces may hand the front to the notch once more as they go: a second try)
+        for _ in 0..2 {
+            let _ = a.run_on_main_thread(move || apps::activate_pid(pid));
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            if apps::frontmost_pid() == Some(pid) {
+                log.line("share: the app before has the front again");
+                return;
+            }
+        }
+        log.line("share: the app before didn't take the front, Windows kept it on the notch");
     });
 }
 
