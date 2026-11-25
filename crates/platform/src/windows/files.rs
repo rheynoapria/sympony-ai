@@ -344,6 +344,16 @@ pub fn trash(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A file that came from the network marked as Windows marks a download: the Mark of the Web, a `Zone.Identifier`
+/// stream naming the Internet zone, so Windows asks before running it and Office opens it in Protected View. `_by`
+/// (the app that fetched it) is for macOS's mark; Windows' has no place for it. On a drive without streams (FAT),
+/// nothing.
+pub fn mark_downloaded(path: &std::path::Path, _by: &str) {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    let _ = std::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n");
+}
+
 /// `path` with Windows' own separator throughout.
 fn shell_path(path: &str) -> String {
     path.replace('/', "\\")
@@ -801,6 +811,18 @@ mod tests {
         assert_eq!(skill_source(r"C:\Users\me\Downloads\my-skill.skill"), r"C:\Users\me\Downloads\my-skill.skill");
         assert_eq!(skill_source(r"C:\Users\me\Downloads\pack.zip"), r"C:\Users\me\Downloads\pack.zip");
         assert_eq!(skill_source(r"C:\Users\me\notes\README.md"), r"C:\Users\me\notes\README.md");
+    }
+
+    #[test]
+    fn a_file_from_the_network_carries_the_mark_of_the_web() {
+        let s = Scratch::new("motw");
+        let f = s.0.join("from phone ü.pdf");
+        std::fs::write(&f, "a received file").unwrap();
+        mark_downloaded(&f, "Sympony");
+        let mark = std::fs::read_to_string(format!("{}:Zone.Identifier", f.display())).unwrap();
+        assert!(mark.starts_with("[ZoneTransfer]") && mark.contains("ZoneId=3"), "{mark}");
+        // the file itself as it was
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "a received file");
     }
 
     #[test]

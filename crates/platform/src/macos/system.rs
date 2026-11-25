@@ -597,6 +597,21 @@ pub fn computer_name() -> String {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Mac".into())
 }
 
+/// The languages in Language & Region, first first ("en-ID", "id-ID"): `defaults read -g AppleLanguages`.
+pub fn languages() -> Vec<String> {
+    std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).split(['(', ')', ',', '\n']).map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// The region in Language & Region as two letters ("en_ID" → "ID"; none: ""): `defaults read -g AppleLocale`.
+pub fn region() -> String {
+    let Ok(o) = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLocale"]).output() else { return String::new() };
+    let locale = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    let base = locale.split('@').next().unwrap_or("");
+    base.rsplit_once('_').map(|(_, r)| r.to_string()).filter(|r| r.len() == 2 && r.chars().all(|c| c.is_ascii_uppercase())).unwrap_or_default()
+}
+
 /// Whether the screen is locked (the login window is up), from the session's own record.
 pub fn screen_locked() -> bool {
     objc2::rc::autoreleasepool(|_| unsafe {

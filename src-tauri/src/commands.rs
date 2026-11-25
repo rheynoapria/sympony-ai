@@ -43,7 +43,7 @@ pub async fn calendar_refresh(handle: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn open_calendar_app() {
     std::thread::spawn(|| {
-        let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.iCal"]).status();
+        platform::os::calendar::open_app();
     });
 }
 

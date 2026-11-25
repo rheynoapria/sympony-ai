@@ -104,3 +104,8 @@ pub fn events(from: i64, to: i64) -> Vec<Value> {
             .collect()
     })
 }
+
+/// Opens Calendar.
+pub fn open_app() {
+    let _ = std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.iCal"]).status();
+}

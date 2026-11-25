@@ -814,12 +814,9 @@ fn small(app: &AppHandle, system: &str, user: &str) -> Result<String, String> {
 }
 
 
+/// This computer as Sympony AI lists its signed-in devices: "Ery-PC (windows)".
 fn device_name() -> String {
-    let name = std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output().ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "this computer".into());
-    format!("{name} ({})", std::env::consts::OS)
+    format!("{} ({})", platform::os::system::computer_name(), std::env::consts::OS)
 }
 
 /// The browser sign-in to Sympony AI (OAuth code + PKCE, loopback): the key it gives this device is kept as a secret.

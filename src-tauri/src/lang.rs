@@ -59,9 +59,9 @@ fn refresh_list(app: &AppHandle) {
     }
 }
 
+/// The system's languages, first first (macOS's Language & Region, Windows' display languages).
 fn system() -> Vec<String> {
-    std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]).output().ok()
-        .map(|o| services::i18n::system_codes(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default()
+    platform::os::system::languages()
 }
 
 fn offered_codes(app: &AppHandle) -> Vec<(String, String, bool)> {

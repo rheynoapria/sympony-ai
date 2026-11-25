@@ -101,20 +101,32 @@ pub fn on_hook(app: &AppHandle, req: &Value, stream: Option<&crate::mcp::UnixStr
     }
 }
 
-/// The app the agent runs in (its hook's ancestors: Terminal, VS Code, Warp…), brought forward.
-fn bring_forward(ppid: i32) {
+/// The app the agent runs in (its hook's ancestors: Terminal, VS Code, Warp, Windows Terminal…), brought forward.
+fn bring_forward(app: &AppHandle, ppid: i32) {
+    let log = |m: String| app.state::<App>().log.line(&m);
     let mut pid = ppid;
-    for _ in 0..20 {
+    for up in 0..20 {
         if pid <= 1 {
-            return;
+            break;
         }
         if platform::os::apps::is_app(pid) {
             platform::os::apps::activate_pid(pid);
+            log(format!("hooks: Open brought the agent's app forward (pid {pid}, {up} up from the hook)"));
             return;
         }
-        let out = std::process::Command::new("/bin/ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output();
-        pid = out.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok()).unwrap_or(0);
+        pid = platform::process::parent_of(pid).unwrap_or(0);
     }
+    log(format!("hooks: Open found no app with a window above the hook (from pid {ppid})"));
+}
+
+/// Paseo brought to the front (macOS opens it; on Windows a Paseo that's running comes forward).
+fn open_paseo() {
+    #[cfg(windows)]
+    if let Some(pid) = platform::os::apps::pid_of("Paseo.exe") {
+        platform::os::apps::activate_pid(pid);
+    }
+    #[cfg(not(windows))]
+    let _ = std::process::Command::new("/usr/bin/open").args(["-b", "sh.paseo.desktop"]).status();
 }
 
 fn settings_file() -> std::path::PathBuf {
@@ -174,7 +186,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         };
         if let Some(p) = found {
             if choice == "open" {
-                bring_forward(p.ppid);
+                bring_forward(&h, p.ppid);
             }
             if let Some(tx) = p.answer {
                 let _ = tx.send((choice, picks, texts));
@@ -204,7 +216,7 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
     let h = app.clone();
     reg.add("paseo.status", Box::new(move |_, _| Ok(paseo_status(&h))));
     reg.add("paseo.open", Box::new(|_, _| {
-        let _ = std::process::Command::new("/usr/bin/open").args(["-b", "sh.paseo.desktop"]).status();
+        open_paseo();
         Ok(Value::Null)
     }));
     let h = app.clone();
@@ -327,7 +339,7 @@ fn paseo_answer(app: &AppHandle, id: &str, choice: &str, picks: Option<Value>, t
     h.paseo.lock().unwrap().retain(|i| i["id"] != id);
     send(app, false);
     if choice == "open" {
-        let _ = std::process::Command::new("/usr/bin/open").args(["-b", "sh.paseo.desktop"]).status();
+        open_paseo();
         return;
     }
     let Some((agent, request)) = request else { return };

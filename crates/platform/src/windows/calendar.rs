@@ -40,6 +40,36 @@ pub fn access() -> bool {
     store().is_some()
 }
 
+/// Opens the calendar app at today: the one Windows shows appointments in (Calendar, Outlook), else `outlookcal:`
+/// when an app takes it. Nothing when there's neither. It waits on WinRT: not on a UI thread.
+pub fn open_app() {
+    super::mta();
+    let unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+    let now = DateTime { UniversalTime: (unix_ms + FROM_1601_MS) * 10_000 };
+    let day = TimeSpan { Duration: 24 * 60 * 60 * 10_000_000 };
+    if AppointmentManager::ShowTimeFrameAsync(now, day).and_then(|op| op.join()).is_ok() {
+        return;
+    }
+    if scheme_taken("outlookcal") {
+        super::shell::open("outlookcal:");
+    }
+}
+
+/// Whether an app is registered for the link scheme `scheme:`.
+fn scheme_taken(scheme: &str) -> bool {
+    use windows_sys::Win32::System::Registry::{RegCloseKey, RegOpenKeyExW, HKEY, HKEY_CLASSES_ROOT, KEY_READ};
+    let name = super::shell::wide(scheme);
+    let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name; the key, when opened, is closed at once
+    unsafe {
+        let ok = RegOpenKeyExW(HKEY_CLASSES_ROOT, name.as_ptr(), 0, KEY_READ, &mut key) == 0;
+        if ok {
+            RegCloseKey(key);
+        }
+        ok
+    }
+}
+
 fn ms(d: DateTime) -> i64 {
     d.UniversalTime / 10_000 - FROM_1601_MS
 }

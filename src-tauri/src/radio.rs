@@ -33,9 +33,9 @@ fn region() -> String {
     R.get_or_init(region_now).clone()
 }
 
+/// The country set for the system (two letters), for the stations near it.
 fn region_now() -> String {
-    std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLocale"]).output().ok()
-        .map(|o| services::radio::region(String::from_utf8_lossy(&o.stdout).trim())).unwrap_or_default()
+    platform::os::system::region()
 }
 
 fn state(app: &AppHandle) -> Value {

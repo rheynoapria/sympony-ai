@@ -199,6 +199,35 @@ pub fn computer_name() -> String {
     Some(name).filter(|n| !n.trim().is_empty()).or_else(|| std::env::var("COMPUTERNAME").ok().filter(|n| !n.trim().is_empty())).unwrap_or_else(|| "PC".into())
 }
 
+/// The display languages in the order set in Settings → Time & language → Language & region, first first:
+/// "en-US", "id-ID".
+pub fn languages() -> Vec<String> {
+    use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
+    let (mut n, mut len) = (0u32, 0u32);
+    // SAFETY: first asked how long the list is (no buffer), then given a buffer that long; it's NUL-separated
+    unsafe {
+        if GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut n, std::ptr::null_mut(), &mut len) == 0 || len == 0 {
+            return vec![];
+        }
+        let mut buf = vec![0u16; len as usize];
+        if GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut n, buf.as_mut_ptr(), &mut len) == 0 {
+            return vec![];
+        }
+        buf.split(|c| *c == 0).filter(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
+    }
+}
+
+/// The country or region set in Settings → Time & language → Region, as two letters ("ID"); "" when it's not a
+/// country (a wider region, "Latin America").
+pub fn region() -> String {
+    use windows_sys::Win32::Globalization::GetUserDefaultGeoName;
+    let mut buf = [0u16; 16];
+    // SAFETY: a buffer of the length given; it says how much it wrote, the NUL included
+    let n = unsafe { GetUserDefaultGeoName(buf.as_mut_ptr(), buf.len() as i32) };
+    let s = if n > 1 { String::from_utf16_lossy(&buf[..(n as usize - 1).min(buf.len())]) } else { String::new() };
+    if s.len() == 2 && s.chars().all(|c| c.is_ascii_uppercase()) { s } else { String::new() }
+}
+
 /// Whether this session's screen is locked (Win+L, or the lock screen after sleep).
 pub fn screen_locked() -> bool {
     use windows_sys::Win32::System::RemoteDesktop::{WTSFreeMemory, WTSQuerySessionInformationW, WTSSessionInfoEx, WTSINFOEXW, WTS_CURRENT_SESSION, WTS_SESSIONSTATE_LOCK};
@@ -224,5 +253,24 @@ mod tests {
         let host = std::process::Command::new("hostname").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
         assert!(!host.is_empty());
         assert_eq!(computer_name(), host);
+    }
+
+    #[test]
+    fn the_first_language_is_the_one_windows_shows() {
+        let langs = languages();
+        assert!(!langs.is_empty() && langs.iter().all(|l| l.len() >= 2 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')), "{langs:?}");
+        let ui = std::process::Command::new("powershell").args(["-NoProfile", "-Command", "(Get-UICulture).Name"]).output().unwrap();
+        assert!(langs[0].eq_ignore_ascii_case(String::from_utf8_lossy(&ui.stdout).trim()), "{langs:?}");
+    }
+
+    #[test]
+    fn the_region_is_the_country_set_in_windows() {
+        let out = std::process::Command::new("reg").args(["query", r"HKCU\Control Panel\International\Geo", "/v", "Name"]).output().unwrap();
+        let set = String::from_utf8_lossy(&out.stdout).split_whitespace().last().unwrap_or("").to_string();
+        let r = region();
+        assert!(r.is_empty() || (r.len() == 2 && r.chars().all(|c| c.is_ascii_uppercase())), "{r}");
+        if set.len() == 2 {
+            assert_eq!(r, set);
+        }
     }
 }

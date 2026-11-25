@@ -113,8 +113,69 @@ pub fn parent_pid() -> i32 {
     }
     #[cfg(windows)]
     {
-        // (Windows keeps no parent link a process can ask for cheaply; the hook's terminal isn't brought forward yet)
-        0
+        parent_of(std::process::id() as i32).unwrap_or(0)
+    }
+}
+
+/// The process that started `pid` (None: `pid` isn't running, or its parent isn't any more). On Windows a parent
+/// that's gone leaves its number behind, which a later process may have taken: one started after `pid` isn't it.
+pub fn parent_of(pid: i32) -> Option<i32> {
+    if pid <= 0 {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        let out = Command::new("/bin/ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output().ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().parse().ok().filter(|p: &i32| *p > 0)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+        // SAFETY: the snapshot is checked, walked with a correctly sized entry and closed
+        let parent = unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap == INVALID_HANDLE_VALUE {
+                return None;
+            }
+            let mut e: PROCESSENTRY32W = std::mem::zeroed();
+            e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut found = None;
+            let mut more = Process32FirstW(snap, &mut e) != 0;
+            while more {
+                if e.th32ProcessID == pid as u32 {
+                    found = Some(e.th32ParentProcessID as i32);
+                    break;
+                }
+                more = Process32NextW(snap, &mut e) != 0;
+            }
+            CloseHandle(snap);
+            found
+        }?;
+        // (a number reused since: that process started after this one; when either can't be asked, it's taken)
+        match (started(parent), started(pid)) {
+            (Some(p), Some(c)) if p > c => None,
+            _ => Some(parent).filter(|p| *p > 0),
+        }
+    }
+}
+
+/// When process `pid` started (Windows' 100 ns ticks), when this account may ask.
+#[cfg(windows)]
+fn started(pid: i32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: a query-only handle, closed before returning; GetProcessTimes fills four FILETIMEs
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32);
+        if h.is_null() {
+            return None;
+        }
+        let z = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let (mut created, mut exited, mut kernel, mut user) = (z, z, z, z);
+        let ok = GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user) != 0;
+        CloseHandle(h);
+        ok.then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 }
 
@@ -144,5 +205,31 @@ pub fn alive(pid: i32) -> bool {
             CloseHandle(h);
             ok && code == STILL_ACTIVE as u32
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_child_s_parent_is_the_process_that_started_it() {
+        let mut cmd = if cfg!(windows) { Command::new("ping") } else { Command::new("sleep") };
+        if cfg!(windows) {
+            cmd.args(["-n", "3", "127.0.0.1"]);
+        } else {
+            cmd.arg("2");
+        }
+        let mut child = cmd.stdout(std::process::Stdio::null()).spawn().unwrap();
+        assert_eq!(parent_of(child.id() as i32), Some(std::process::id() as i32));
+        let _ = child.kill();
+        let _ = child.wait();
+        // this process's own parent (cargo's test runner, or a shell): known, and what parent_pid says
+        let mine = parent_of(std::process::id() as i32);
+        assert!(mine.is_some_and(|p| p > 0), "{mine:?}");
+        assert_eq!(Some(parent_pid()), mine);
+        // nothing there: none
+        assert_eq!(parent_of(-5), None);
+        assert_eq!(parent_of(0), None);
     }
 }

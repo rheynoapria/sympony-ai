@@ -93,6 +93,14 @@ pub fn downloads() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Downloads")
 }
 
+/// A file that came from the network marked as a download (the quarantine flag, naming `by`), so Finder asks
+/// before opening it.
+pub fn mark_downloaded(path: &std::path::Path, by: &str) {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let flag = format!("0081;{secs:x};{by};");
+    let _ = std::process::Command::new("/usr/bin/xattr").args(["-w", "com.apple.quarantine", &flag]).arg(path).status();
+}
+
 /// Into the Trash (Finder's Put Back works).
 pub fn trash(path: &str) -> Result<(), String> {
     objc2::rc::autoreleasepool(|_| {

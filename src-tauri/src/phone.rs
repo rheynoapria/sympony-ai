@@ -241,9 +241,8 @@ fn save_upload(dir: &Path, name: &str, body: &mut dyn Read, len: u64) -> Result<
         }
     }
     let _ = std::fs::remove_file(&part);
-    // (from the network: Finder asks before opening it, as for a download)
-    let flag = format!("0081;{:x};Sympony;", chrono::Utc::now().timestamp());
-    let _ = std::process::Command::new("/usr/bin/xattr").args(["-w", "com.apple.quarantine", &flag]).arg(&target).status();
+    // (from the network: marked as a download, so Finder or Windows asks before opening or running it)
+    platform::os::files::mark_downloaded(&target, "Sympony");
     Ok(target)
 }
 
