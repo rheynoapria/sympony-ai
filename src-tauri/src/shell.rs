@@ -59,8 +59,14 @@ pub fn opened(app: &AppHandle, open: bool, seq: u64) {
     }
 }
 
+/// Whether the page has the keyboard now (its last `focus` ask), for a share that brought the notch forward.
+#[cfg(windows)]
+static KEYS: AtomicBool = AtomicBool::new(false);
+
 /// `true`: the notch window takes the keyboard (a field was clicked); `false`: it gives it back.
 pub fn focus(app: &AppHandle, want: bool) {
+    #[cfg(windows)]
+    KEYS.store(want, Ordering::SeqCst);
     if want && DRIVING.load(Ordering::SeqCst) {
         return;
     }
@@ -86,6 +92,39 @@ pub fn focus(app: &AppHandle, want: bool) {
             }) {
                 apps::activate_pid(pid);
             }
+        }
+    });
+}
+
+/// Windows shows its Share window only over the window in front, and the notch doesn't come to the front by itself:
+/// it's unfocusable, so a click in it leaves the keyboard with your app (only a text field or the arrow keys take
+/// it, and not on the drop page, where files land on the Share tile). For a share from it, the notch comes to the
+/// front as for typing. Once the Share window has taken the front (or the notch lost it some other way) it's
+/// unfocusable again, so closing the Share window gives the keyboard back to your app, unless the page has taken
+/// the keyboard meanwhile. Main thread.
+#[cfg(windows)]
+pub fn front_for_share(app: &AppHandle, w: &tauri::WebviewWindow) {
+    if w.label() != LABEL || w.is_focused().unwrap_or(false) {
+        return;
+    }
+    let _ = w.set_focusable(true);
+    let _ = w.set_focus();
+    let a = app.clone();
+    std::thread::spawn(move || {
+        // (up to two minutes: then it's left as it is)
+        for _ in 0..240 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let front = a.get_webview_window(LABEL).and_then(|w| w.is_focused().ok()).unwrap_or(false);
+            if front {
+                continue;
+            }
+            let b = a.clone();
+            let _ = a.run_on_main_thread(move || {
+                if let Some(w) = b.get_webview_window(LABEL).filter(|_| !KEYS.load(Ordering::SeqCst)) {
+                    let _ = w.set_focusable(false);
+                }
+            });
+            return;
         }
     });
 }

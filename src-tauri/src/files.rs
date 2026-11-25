@@ -189,11 +189,16 @@ pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<Stri
         log.line(&format!("share: nothing to share, the {asked} item(s) are gone"));
         return;
     }
+    #[cfg(windows)]
+    let h = app.clone();
     on_main(app, move || {
         let Some(v) = crate::native::view(&w) else {
             log.line("share: no window to share from");
             return;
         };
+        // (Windows shows the Share window only over the window in front: the notch comes forward for it)
+        #[cfg(windows)]
+        crate::shell::front_for_share(&h, &w);
         // SAFETY: the window's own NSView (HWND on Windows), on the main thread
         unsafe { platform::os::files::share(v, &paths) };
         match platform::os::files::share_failed() {
