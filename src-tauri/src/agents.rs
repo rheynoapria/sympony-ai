@@ -1084,7 +1084,7 @@ fn chat_local_image(raw: &str) -> Value {
         } else {
             dec
         }
-    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+    } else if let Some(rest) = trimmed.strip_prefix("~/").or_else(|| trimmed.strip_prefix("~\\")) {
         let base = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from)
@@ -1100,7 +1100,8 @@ fn chat_local_image(raw: &str) -> Value {
     let Ok(canon) = std::fs::canonicalize(&path) else {
         return json!({"ok": false, "error": "not found"});
     };
-    let canon_str = canon.to_string_lossy().into_owned();
+    let raw_canon = canon.to_string_lossy();
+    let canon_str = raw_canon.strip_prefix(r"\\?\").unwrap_or(&raw_canon).to_string();
     if services::exec::secret_place(&canon_str).is_some() {
         return json!({"ok": false, "error": "blocked path"});
     }

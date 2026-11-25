@@ -540,31 +540,31 @@
       return hold(`<code>${escMdHtml(trimmed)}</code>`);
     });
 
-    // 2. Protect backslash-escaped punctuation (\*, \_, \~, \`, \|, \[, \])
-    s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|~>])/g, (m, ch) => hold(escMdHtml(ch)));
-
     const isSafeDataImageUrl = (u) => /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[a-z0-9+/=\s]+$/i.test(String(u || '').trim());
     const isLocalImagePath = (u) => {
       const t = String(u || '').trim();
       if (!t || /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(t)) return false;
-      const isLoc = /^file:\/\/\//i.test(t) || t.startsWith('/') || t.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(t);
+      const isLoc = /^file:\/\/\//i.test(t) || t.startsWith('/') || /^~[\\/]/.test(t) || /^[A-Za-z]:[\\/]/.test(t);
       return isLoc && /\.(png|jpe?g|gif|webp|bmp)(?:[?#][^\s]*)?$/i.test(t);
     };
 
-    // 2.5. Markdown images ![alt](src "title") — safe http(s), raster data:image/*;base64, or local raster image path
-    s = s.replace(/!\[([^\]\n]*)\]\((<[^>\n]+>|(?:[^()\s]+|\([^()\s]*\))+)(?:\s+"([^"\n]*)")?\)/g, (m, alt, rawSrc, title) => {
+    // 2. Markdown images ![alt](src "title") BEFORE backslash-escape so Windows paths (C:\Users\...\img_1.png) stay intact
+    s = s.replace(/(^|[^\\])!\[([^\]\n]*)\]\((<[^>\n]+>|(?:[^()\s]+|\([^()\s]*\))+)(?:\s+"([^"\n]*)")?\)/g, (m, pre, alt, rawSrc, title) => {
       const src = rawSrc.startsWith('<') && rawSrc.endsWith('>') ? rawSrc.slice(1, -1).trim() : rawSrc.trim();
       const altEsc = escMdHtml(alt);
       const cap = (title || alt || '').trim();
       const capHtml = cap ? `<figcaption class="md-img-cap">${escMdHtml(cap)}</figcaption>` : '';
       if (isSafeHttpUrl(src) || isSafeDataImageUrl(src)) {
-        return hold(`<figure class="md-img-wrap"><img class="md-img" src="${escMdHtml(src)}" alt="${altEsc}" loading="lazy" referrerpolicy="no-referrer" data-img-src="${escMdHtml(src)}">${capHtml}</figure>`);
+        return pre + hold(`<figure class="md-img-wrap"><img class="md-img" src="${escMdHtml(src)}" alt="${altEsc}" loading="lazy" referrerpolicy="no-referrer" data-img-src="${escMdHtml(src)}">${capHtml}</figure>`);
       }
       if (isLocalImagePath(src)) {
-        return hold(`<figure class="md-img-wrap loading" data-local-img="${escMdHtml(src)}" data-img-alt="${altEsc}"><img class="md-img" alt="${altEsc}" hidden><span class="md-img-skel">Loading image…</span>${capHtml}</figure>`);
+        return pre + hold(`<figure class="md-img-wrap loading" data-local-img="${escMdHtml(src)}" data-img-alt="${altEsc}"><img class="md-img" alt="${altEsc}" hidden><span class="md-img-skel">Loading image…</span>${capHtml}</figure>`);
       }
       return m;
     });
+
+    // 2.5. Protect backslash-escaped punctuation (\*, \_, \~, \`, \|, \[, \], \!)
+    s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|~>])/g, (m, ch) => hold(escMdHtml(ch)));
 
     // 3. Markdown links [label](https://...) — only allow http/https URLs (supports balanced parens in URLs)
     s = s.replace(/\[([^\]\n]+)\]\(((?:[^()\s]+|\([^()\s]*\))+)(?:\s+"([^"\n]*)")?\)/g, (m, label, url, title) => {

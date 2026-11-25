@@ -46,7 +46,26 @@ pub fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
-    if let Err(e) = std::fs::rename(&tmp, path) {
+    let mut rename_err = None;
+    for attempt in 0..4 {
+        match std::fs::rename(&tmp, path) {
+            Ok(()) => {
+                rename_err = None;
+                break;
+            }
+            Err(e) => {
+                rename_err = Some(e);
+                #[cfg(windows)]
+                if attempt < 3 {
+                    std::thread::sleep(std::time::Duration::from_millis(15 * (attempt + 1)));
+                    continue;
+                }
+                let _ = attempt;
+                break;
+            }
+        }
+    }
+    if let Some(e) = rename_err {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }

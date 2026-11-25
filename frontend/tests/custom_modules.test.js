@@ -66,13 +66,23 @@ describe('Custom Modules Declarative OLED Engine', () => {
     const local = NotchKit.renderMarkdown('![Plot](/Users/me/plot.png)');
     expect(local).toContain('data-local-img="/Users/me/plot.png"');
 
-    // XSS & SVG data-URI & path traversal must be blocked
+    // Windows local paths with backslashes + underscore/hyphen/tilde & file:///C:/... must stay intact
+    const winLocal = NotchKit.renderMarkdown('![WinChart](C:\\Users\\Ery\\Pictures\\_chart-1.png)');
+    expect(winLocal).toContain('data-local-img="C:\\Users\\Ery\\Pictures\\_chart-1.png"');
+    const winTilde = NotchKit.renderMarkdown('![Pet](~\\Pictures\\mochi.png)');
+    expect(winTilde).toContain('data-local-img="~\\Pictures\\mochi.png"');
+    const winFile = NotchKit.renderMarkdown('![Shot](file:///C:/Users/Ery/shot.png)');
+    expect(winFile).toContain('data-local-img="file:///C:/Users/Ery/shot.png"');
+
+    // XSS & SVG data-URI & path traversal (Unix + Windows) must be blocked
     const xssJs = NotchKit.renderMarkdown('![x](javascript:alert(1))');
     expect(xssJs).not.toContain('<img');
     const xssSvg = NotchKit.renderMarkdown('![x](data:image/svg+xml;base64,PHN2Zz4=)');
     expect(xssSvg).not.toContain('<img');
     const trav = NotchKit.renderMarkdown('![x](/Users/me/../secret.png)');
     expect(trav).not.toContain('data-local-img');
+    const winTrav = NotchKit.renderMarkdown('![x](C:\\Users\\Ery\\..\\secret.png)');
+    expect(winTrav).not.toContain('data-local-img');
   });
 
   test('Phase 2: threshold pipe and local multi-step animated pet actions work deterministically', () => {
