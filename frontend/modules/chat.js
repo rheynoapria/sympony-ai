@@ -893,7 +893,10 @@
         : a.tool === 'save_custom_module' ? 'cubes'
         : a.tool === 'delete_custom_module' ? 'trash'
         : 'folder';
-      return `<div class="ap-file">${fa(ico)}<span dir="ltr">${esc(who)}</span></div>${lines ? `<div class="ap-code ap-lines">${lines}</div>` : ''}${note}`;
+      const preview = a.tool === 'save_custom_module' && a.manifest
+        ? customPreviewHtml(a.manifest, 'ap')
+        : '';
+      return `<div class="ap-file">${fa(ico)}<span dir="ltr">${esc(who)}</span></div>${preview}${lines ? `<div class="ap-code ap-lines">${lines}</div>` : ''}${note}`;
     }
     if (a.tool === 'run_command' || a.tool === 'delete') return `<div class="ap-code"><span class="pr">$</span><span class="ln">${esc(d)}</span></div>`;
     const [path, ...rest] = d.split('\n');
@@ -1152,16 +1155,43 @@
     });
   }
 
+  // ---- Live Interactive OLED Custom Module Previews inside Chat bubbles & approval cards
+  const previewRegistry = new Map();
+  let previewSeq = 0;
+  function customPreviewHtml(manifest, tag) {
+    if (!manifest || !manifest.view || !manifest.view.compact) return '';
+    const pid = `cmp_${tag}_${++previewSeq}`;
+    if (previewRegistry.size > 30) previewRegistry.clear();
+    previewRegistry.set(pid, manifest);
+    const sz = manifest.defaultSize || '2x1';
+    const name = manifest.name || manifest.slug || 'Custom Module';
+    return `<div class="ch-cm-preview">`
+      + `<div class="ch-cmp-hd"><span class="ch-cmp-dot"></span><b>${esc(_t('Live Preview'))}</b><span class="ch-cmp-meta">${esc(name)} · ${esc(sz.replace('x', '×'))}</span><span class="ch-cmp-hint">${esc(_t('Interactive'))}</span></div>`
+      + `<div class="ch-cmp-stage" data-cm-preview="${esc(pid)}"></div>`
+      + `</div>`;
+  }
+  function hydrateCustomPreviews(root) {
+    if (!root || !window.CustomModEngine || typeof window.CustomModEngine.renderPreview !== 'function') return;
+    $$('[data-cm-preview]', root).forEach((stage) => {
+      if (stage.dataset.cmMounted === '1') return;
+      const manifest = previewRegistry.get(stage.dataset.cmPreview);
+      if (!manifest) return;
+      stage.dataset.cmMounted = '1';
+      window.CustomModEngine.renderPreview(stage, manifest);
+    });
+  }
+
   let thinkTimer = 0;
   function syncThink() {
     const box = page && $('.ch-think', page);
     if (!box || !pending) { clearInterval(thinkTimer); thinkTimer = 0; return; }
-    box.innerHTML = thinkHtml();
+    box.innerHTML = thinkHtml() + (tool && tool.previewManifest ? customPreviewHtml(tool.previewManifest, 'live') : '');
     box.classList.toggle('live', !!(tool && tool.live && tool.live.text));
     avaMood();
     $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
     $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
     hydrateChatImages(box);
+    hydrateCustomPreviews(box);
     const lv = $('.ch-live', box);
     if (lv && tool && tool.live) tool.live.words = wordsIn(lv, tool.live.words || 0);
     if (tool) tool.steps.forEach((s) => { s.fresh = false; });
@@ -1285,7 +1315,7 @@
           ? (m.kind === 'answer'
             ? renderAnswerBubble(m, i)
             : userBubble(m, i))
-          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:95%">${agentIco}<div class="bub" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
+          : `<div class="row ch-msg ai${m.error ? ' err' : ''}" data-i="${i}" style="align-items:flex-start;gap:8px;max-width:95%">${agentIco}<div class="bub" dir="auto">${m.error ? `${fa('circle-exclamation')} ${esc(m.content)}` : workHtml(m, i) + (m.seen ? seenLine(m.seen) : '') + (m.previewManifest ? customPreviewHtml(m.previewManifest, `m${i}`) : '') + (m.stopped && m.content === _t('Stopped') ? '' : answerHtml(m, i)) + (m.stopped ? `<div class="ch-stopped">${fa('circle-stop')} ${esc(_t('Stopped'))}</div>` : '')}</div>`
             + `${m.error ? '' : copyBtn(i)}</div>`)).join('')
           + (pending && searching ? `<div class="row" style="gap:8px">${thinkingIco}<div style="padding:8px 12px;border-radius:14px;background:var(--tile);font-size:12px;color:var(--dim)">${fa('globe')} ${esc(_t('Searching the web for “{query}”…', { query: searching }))}</div></div>`
             : pending ? `<div class="row" style="gap:8px;align-items:flex-start">${thinkingIco}<div class="ch-think">${thinkHtml()}</div></div>` : '')
@@ -1303,6 +1333,7 @@
         $$('.ch-copy', box).forEach((b) => { b.onclick = () => { const c = b.closest('.md-code, pre')?.querySelector('code'); if (c) { navigator.clipboard.writeText(c.textContent); N.toast(fa('copy', 'regular'), _t('Code copied')); } }; });
         $$('a[data-href]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); api.openExternal(a.dataset.href); }; });
         hydrateChatImages(box);
+        hydrateCustomPreviews(box);
         bindSuggest(box);
         $$('[data-tab]', box).forEach((b) => { b.onclick = () => N.openModule(b.dataset.tab); });
         $$('[data-ai]', box).forEach((b) => { b.onclick = () => { api.openSettings('ai'); if (!N.isFloatingChat && N.closeNotch) N.closeNotch(); }; });
@@ -1486,6 +1517,7 @@
     const done = tool.actions;
     const wasStopped = !!tool.stopped;
     const work = tool.steps.length ? { secs: Math.max(1, Math.round((Date.now() - tool.start) / 1000)), steps: tool.steps.map(({ kind, detail, sources }) => ({ kind, detail, ...(sources ? { sources } : {}) })) } : null;
+    const previewManifest = tool && tool.previewManifest ? tool.previewManifest : null;
     tool = null;
     approval = null;
     pending = false;
@@ -1497,7 +1529,7 @@
       ...(r.suggest ? { suggest: r.suggest } : {}),
       ...(r.searchNote ? { searchNote: r.searchNote, ...(r.searchFix ? { searchFix: true } : {}) } : {}),
     } : {};
-    const seen = { ...(imgs.length || txts.length ? { seen: { img: imgs.length, txt: txts.length } } : {}), ...(work ? { work } : {}), ...(wasStopped ? { stopped: true } : {}) };
+    const seen = { ...(imgs.length || txts.length ? { seen: { img: imgs.length, txt: txts.length } } : {}), ...(work ? { work } : {}), ...(previewManifest ? { previewManifest } : {}), ...(wasStopped ? { stopped: true } : {}) };
     const answer = r && r.ok ? (await (async () => { const a = { role: 'assistant', ...(await takeActions(r.text)), ...web, ...seen }; a.actions = [...done, ...(a.actions || [])]; return a; })())
       // (an error after the agent already did something: what it did stays, with its Undo)
       : done.length ? { role: 'assistant', content: r && r.error === 'stopped' ? _t('Stopped') : `${(r && r.error) || _t('No answer')}`, actions: done, ...(r && r.error === 'stopped' ? { stopped: true } : {}) }
@@ -1760,6 +1792,13 @@
     avaMood();
     // (the notch is closed: say so, a click opens the chat with the card)
     showInNotch();
+  });
+  api.on('custommod:preview', (d) => {
+    if (!d || !d.manifest) return;
+    if (tool && (!d.session || d.session === tool.session)) {
+      tool.previewManifest = d.manifest;
+      syncThink();
+    }
   });
   // An agent Pony started finished: a line in the chat, and the notch comes down on Pony when it's closed
   api.on('pony:agentDone', (d) => {

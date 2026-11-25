@@ -717,6 +717,7 @@ function sideWidth(act) {
     case 'brief': return 100;
     case 'tele': return teleSide();
     case 'voice': return 110;
+    case 'custom-mod': return 96;
     default: return 60;
   }
 }
@@ -2034,6 +2035,10 @@ function persistentActivities() {
   const tasks = dueSoonTodos();
   if (tasks.length === 1) out.push({ kind: 'todo-due', data: tasks[0] });
   else if (tasks.length > 1) out.push({ kind: 'todo-sum', data: tasks });
+  if (window.N && typeof N.customModPillActivity === 'function') {
+    const cmPill = N.customModPillActivity();
+    if (cmPill) out.push({ kind: 'custom-mod', data: cmPill });
+  }
   return out;
 }
 
@@ -2756,6 +2761,9 @@ function renderBubble(act) {
     case 'todo-sum':
       html = `<span style="color:var(--amber);font-size:12px">${fa('clock', 'regular')}</span>`;
       break;
+    case 'custom-mod':
+      html = `<span style="color:${esc((act.data && act.data.accent) || 'var(--emerald)')};display:inline-flex">${(window.N && N.customModIcon ? N.customModIcon(act.data && act.data.id, 'width:13px;height:13px') : fa('cubes'))}</span>`;
+      break;
     default:
       html = `<span style="color:var(--dim);font-size:12px">${fa('circle-dot')}</span>`;
   }
@@ -3189,6 +3197,14 @@ function renderClosed(animate) {
         const d = dueText(act.data[0]);
         L = `<div class="act-icon" style="color:var(--amber)">${fa('clock', 'regular')}</div><span class="act-text">${_t('{n} tasks', { n: act.data.length })}</span>`;
         R = `<span class="${d.color ? 'act-text' : 'act-num'}" style="color:${d.color || 'inherit'}">${esc(d.text)}</span>`;
+        break;
+      }
+      case 'custom-mod': {
+        const cm = act.data || {};
+        const col = cm.accent || 'var(--emerald)';
+        const ico = (window.N && N.customModIcon) ? N.customModIcon(cm.id, 'width:13px;height:13px') : fa('cubes');
+        L = `<div class="act-icon" style="color:${esc(col)}">${ico}</div><span class="act-text">${esc(cm.text || cm.name || '')}</span>`;
+        R = cm.right ? `<span class="act-num" style="color:${esc(col)}">${esc(cm.right)}</span>` : '';
         break;
       }
       case 'adhan':

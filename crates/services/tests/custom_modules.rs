@@ -222,3 +222,49 @@ fn backup_import_disarms_custom_module_approved_domains() {
     assert!(!services::backup::allowed_entry("custom-modules/home/module.json"));
     assert!(!services::backup::allowed_entry("custom-modules/../secrets.json"));
 }
+
+#[test]
+fn validates_animated_tamagotchi_sprites_multi_actions_tick_pill_and_bundle_roundtrip() {
+    let tpls = services::custom_modules::starter_templates();
+    assert!(tpls.len() >= 3);
+    for tpl in &tpls {
+        let clean = validate_manifest(tpl).expect("every starter template must validate cleanly");
+        assert!(clean["view"]["compact"].is_object());
+    }
+
+    let pet = tpls.iter().find(|t| t["slug"] == "mochi-pet").unwrap();
+    let valid_pet = validate_manifest(pet).unwrap();
+    assert_eq!(valid_pet["tick"]["action"], "decay");
+    assert_eq!(valid_pet["view"]["pill"]["icon"], "Heart");
+    assert_eq!(services::custom_modules::action_effect(&valid_pet, "feed"), Some("hearts"));
+
+    // Multi-step compound action ("feed") increments hunger/happy/xp and updates speech atomically
+    let init = valid_pet["initialState"].clone();
+    let after_feed = apply_action(&valid_pet, &init, "feed", &json!({}), 1000).unwrap();
+    assert_eq!(after_feed["hunger"], 100);
+    assert_eq!(after_feed["happy"], 96);
+    assert_eq!(after_feed["xp"], 17);
+    assert_eq!(after_feed["speech"], "Yum! ♥");
+
+    // Reject dangerous vector tags / bad sprite colors / invalid motions
+    let mut bad_vec = pet.clone();
+    bad_vec["view"]["compact"] = json!({
+        "type": "sprite",
+        "kind": "vector",
+        "shapes": [{ "tag": "script", "fill": "#fff" }]
+    });
+    assert!(validate_manifest(&bad_vec).is_err());
+
+    let mut bad_motion = pet.clone();
+    bad_motion["view"]["compact"]["motion"] = json!("javascript:alert(1)");
+    assert!(validate_manifest(&bad_motion).is_err());
+
+    // Bundle export/import roundtrip
+    let dir = std::env::temp_dir().join(format!("sympony-cm-p2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let bundle = services::custom_modules::export_bundle(&valid_pet);
+    assert_eq!(bundle["format"], "sympony-custom-module");
+    let imported = services::custom_modules::import_bundle(&dir, &bundle, false).unwrap();
+    assert_eq!(imported["slug"], "mochi-pet");
+    let _ = std::fs::remove_dir_all(&dir);
+}

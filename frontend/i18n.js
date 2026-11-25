@@ -2383,6 +2383,20 @@
     'Ask anything & desktop tools': 'Tanya apa saja & alat desktop',
     'Build local OLED Notch modules': 'Buat modul OLED lokal di Notch',
     'Operate UI without asking': 'Operasikan UI tanpa konfirmasi',
+    'Live Preview': 'Pratinjau Langsung',
+    'Interactive': 'Interaktif',
+    'Starter templates': 'Templat siap pakai',
+    'Install': 'Pasang',
+    'Import JSON': 'Impor JSON',
+    'Export JSON': 'Ekspor JSON',
+    'Pin to closed notch': 'Sematkan ke notch tertutup',
+    'Pinned in closed notch': 'Disematkan di notch tertutup',
+    'Animated OLED Pet': 'Hewan Pixel OLED',
+    'Animated pixel Tamagotchi pet': 'Hewan Tamagotchi pixel animasi',
+    'Ring progress, steppers & checklist': 'Cincin progres, stepper & ceklis',
+    'Live BTC & ETH prices with 24h delta': 'Harga BTC & ETH live dengan delta 24j',
+    'Exported JSON copied to clipboard': 'JSON ekspor disalin ke papan klip',
+    'Imported custom module': 'Modul kustom berhasil diimpor',
   };
   const extra = window.SYMPONY_LANG === 'id' ? EXTRA_ID : null;
   // Overrides downloaded table wording where needed for macOS

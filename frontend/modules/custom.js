@@ -177,6 +177,27 @@
         return String(val).toUpperCase();
       case 'lower':
         return String(val).toLowerCase();
+      case 'threshold': {
+        const n = Number(val);
+        if (!Number.isFinite(n) || !arg) return String(val);
+        const pairs = arg
+          .split(',')
+          .map((seg) => {
+            const idx = seg.indexOf(':');
+            if (idx < 0) return null;
+            const min = Number(seg.slice(0, idx).trim());
+            const lbl = seg.slice(idx + 1).trim();
+            return Number.isFinite(min) && lbl ? { min, lbl } : null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.min - b.min);
+        if (!pairs.length) return String(val);
+        let picked = pairs[0].lbl;
+        for (const p of pairs) {
+          if (n >= p.min) picked = p.lbl;
+        }
+        return picked;
+      }
       default:
         return val;
     }
@@ -276,6 +297,95 @@
     }
   }
 
+  const ALLOWED_MOTIONS = new Set(['none', 'bounce', 'float', 'breathe', 'wiggle', 'walk', 'spin', 'pulse', 'shake']);
+  const ALLOWED_VECTOR_TAGS = new Set(['circle', 'rect', 'ellipse', 'line', 'polygon', 'path']);
+  const EFFECT_GLYPHS = {
+    hearts: { chars: ['♥', '♡', '♥'], colors: ['#fb7185', '#f472b6', '#fda4af'] },
+    sparkles: { chars: ['✦', '✧', '·'], colors: ['#7dd3fc', '#fde68a', '#ffffff'] },
+    stars: { chars: ['★', '✦', '★'], colors: ['#fbbf24', '#fde047', '#38bdf8'] },
+    confetti: { chars: ['●', '■', '▲'], colors: ['#30d158', '#38bdf8', '#fb7185', '#fbbf24', '#a78bfa'] },
+    zzz: { chars: ['z', 'Z', 'z'], colors: ['#93c5fd', '#c4b5fd', '#e0f2fe'] },
+    water: { chars: ['💧', '◦', '•'], colors: ['#38bdf8', '#7dd3fc', '#bae6fd'] },
+  };
+
+  function safeSpriteColor(raw) {
+    if (typeof raw !== 'string') return '';
+    const t = raw.trim();
+    if (/^(transparent|none|currentcolor)$/i.test(t)) return t;
+    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(t) ? t : '';
+  }
+
+  function applySingleOpLocal(manifest, next, op, payload) {
+    const kind = op && op.kind;
+    const sk = op && op.stateKey;
+    if (kind === 'resetState') {
+      return Object.assign({}, manifest.initialState || {});
+    }
+    if (!sk || BLOCKED_KEYS.has(sk)) return next;
+    if (kind === 'increment') {
+      const delta = Number((payload && payload.delta != null) ? payload.delta : (op.delta != null ? op.delta : 1)) || 0;
+      let v = (Number(next[sk]) || 0) + delta;
+      if (op.min != null && Number.isFinite(Number(op.min))) v = Math.max(Number(op.min), v);
+      if (op.max != null && Number.isFinite(Number(op.max))) v = Math.min(Number(op.max), v);
+      next[sk] = Math.round(v * 1000) / 1000;
+    } else if (kind === 'toggleState') {
+      if (payload && Number.isInteger(payload.index) && Array.isArray(next[sk]) && next[sk][payload.index]) {
+        next[sk] = next[sk].map((it, idx) => (idx === payload.index ? { ...it, done: !it.done } : it));
+      } else {
+        next[sk] = !next[sk];
+      }
+    } else if (kind === 'setState') {
+      const inp = String((payload && payload.input) || '').trim();
+      next[sk] = (typeof op.value === 'string' && op.value.trim() === '{{input}}') ? inp : (op.value !== undefined ? op.value : inp);
+    } else if (kind === 'appendItem') {
+      const text = String((payload && payload.input) || op.value || '').trim();
+      if (text) {
+        const arr = Array.isArray(next[sk]) ? next[sk].slice() : [];
+        arr.unshift({ id: `p_${Date.now()}_${arr.length}`, title: text.slice(0, 200), done: false, at: Date.now() });
+        next[sk] = arr.slice(0, Math.max(1, Math.min(100, Number(op.maxItems) || 50)));
+      }
+    } else if (kind === 'removeItem' && Array.isArray(next[sk])) {
+      if (payload && payload.id) next[sk] = next[sk].filter((it) => it && it.id !== payload.id);
+      else if (payload && Number.isInteger(payload.index)) next[sk] = next[sk].filter((_, i) => i !== payload.index);
+    }
+    return next;
+  }
+
+  /** Pure client-side deterministic state transition used for live interactive Pony Chat previews & tests. */
+  function applyActionLocal(manifest, curState, actionName, payload) {
+    let next = Object.assign({}, curState || {});
+    if (typeof actionName !== 'string' || !actionName) return { state: next, effect: null };
+    if (actionName.startsWith('__step:')) {
+      const k = actionName.slice(7);
+      if (!BLOCKED_KEYS.has(k)) {
+        let v = (Number(next[k]) || 0) + (Number(payload && payload.delta) || 1);
+        if (payload && payload.min != null) v = Math.max(Number(payload.min), v);
+        if (payload && payload.max != null) v = Math.min(Number(payload.max), v);
+        next[k] = Math.round(v * 1000) / 1000;
+      }
+      return { state: next, effect: null };
+    }
+    if (actionName.startsWith('__toggle:')) {
+      const k = actionName.slice(9);
+      if (!BLOCKED_KEYS.has(k)) next[k] = !next[k];
+      return { state: next, effect: null };
+    }
+    if (actionName.startsWith('__tab:')) {
+      const k = actionName.slice(6);
+      if (!BLOCKED_KEYS.has(k) && payload && payload.value) next[k] = String(payload.value).slice(0, 32);
+      return { state: next, effect: null };
+    }
+    const def = manifest && manifest.actions && manifest.actions[actionName];
+    if (!def) return { state: next, effect: null };
+    if (def.kind === 'multi' && Array.isArray(def.steps)) {
+      for (const step of def.steps) next = applySingleOpLocal(manifest, next, step, payload);
+    } else {
+      next = applySingleOpLocal(manifest, next, def, payload);
+    }
+    const eff = typeof def.effect === 'string' && EFFECT_GLYPHS[def.effect] ? def.effect : null;
+    return { state: next, effect: eff };
+  }
+
   const Engine = {
     ACCENT_HEX,
     ICON_PATHS,
@@ -287,6 +397,7 @@
     resolveExpr,
     resolveValue,
     buildSparklinePoints,
+    applyActionLocal,
   };
 
   if (typeof module === 'object' && module && module.exports) {
@@ -352,15 +463,127 @@
     }
   }
 
-  async function runAction(slug, actionName, payload, itemCtx) {
-    const rec = registry.get(slug);
+  // Shared visibility-aware pixel sprite animator (single rAF loop; auto-prunes disconnected canvases,
+  // pauses when notch is closed unless inside an active chat preview, respects prefers-reduced-motion).
+  const activeSprites = new Set();
+  let spriteRaf = 0;
+  function reducedMotion() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  function drawPixelFrame(cv, frame, palette, sizePx) {
+    const rows = Array.isArray(frame) ? frame : [];
+    const hCells = rows.length || 1;
+    const wCells = Math.max(1, ...rows.map((r) => String(r || '').length));
+    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    const cell = Math.max(2, Math.floor((sizePx * dpr) / Math.max(wCells, hCells)));
+    const cw = cell * wCells;
+    const ch = cell * hCells;
+    if (cv.width !== cw || cv.height !== ch) {
+      cv.width = cw;
+      cv.height = ch;
+    }
+    cv.style.width = `${Math.round(cw / dpr)}px`;
+    cv.style.height = `${Math.round(ch / dpr)}px`;
+    const g = cv.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, cw, ch);
+    g.imageSmoothingEnabled = false;
+    for (let y = 0; y < rows.length; y++) {
+      const row = String(rows[y] || '');
+      for (let x = 0; x < row.length; x++) {
+        const tok = row[x];
+        const col = safeSpriteColor(palette[tok]);
+        if (!col || col === 'transparent' || col === 'none') continue;
+        g.fillStyle = col === 'currentColor' ? '#ffffff' : col;
+        g.fillRect(x * cell, y * cell, cell, cell);
+      }
+    }
+  }
+  function stepSprites(now) {
+    spriteRaf = 0;
+    const reduced = reducedMotion();
+    for (const s of Array.from(activeSprites)) {
+      if (!s.cv.isConnected) {
+        activeSprites.delete(s);
+        continue;
+      }
+      if (reduced || (!s.isPreview && !st.open)) continue;
+      if (s.frames.length > 1 && now - s.last >= s.intervalMs) {
+        s.last = now;
+        s.idx = (s.idx + 1) % s.frames.length;
+        drawPixelFrame(s.cv, s.frames[s.idx], s.palette, s.sizePx);
+      }
+    }
+    if (activeSprites.size > 0) {
+      spriteRaf = requestAnimationFrame(stepSprites);
+    }
+  }
+  function registerSpriteCanvas(cv, frames, palette, sizePx, fps, isPreview) {
+    drawPixelFrame(cv, frames[0], palette, sizePx);
+    if (!frames || frames.length <= 1) return;
+    activeSprites.add({
+      cv,
+      frames,
+      palette,
+      sizePx,
+      intervalMs: Math.round(1000 / Math.max(1, Math.min(12, Number(fps) || 3))),
+      idx: 0,
+      last: performance.now(),
+      isPreview: !!isPreview,
+    });
+    if (!spriteRaf) spriteRaf = requestAnimationFrame(stepSprites);
+  }
+
+  function spawnParticles(rootHost, effectName, isSpriteHost) {
+    const spec = EFFECT_GLYPHS[effectName];
+    if (!spec || !rootHost || !rootHost.isConnected || reducedMotion()) return;
+    const layer = el('div', 'cm-fx-layer');
+    for (let i = 0; i < 7; i++) {
+      const p = el('span', 'cm-pt', spec.chars[i % spec.chars.length]);
+      p.style.color = spec.colors[i % spec.colors.length];
+      p.style.left = isSpriteHost ? `${16 + Math.round((i / 6) * 68)}%` : `${22 + Math.round(Math.random() * 56)}%`;
+      p.style.bottom = isSpriteHost ? `${44 + (i % 3) * 10}%` : `${26 + Math.round(Math.random() * 24)}%`;
+      p.style.setProperty('--dx', `${Math.round(((i % 2 === 0 ? -1 : 1) * (8 + (i % 3) * 7)))}px`);
+      p.style.setProperty('--dy', `${-26 - (i % 3) * 12}px`);
+      p.style.animationDelay = `${i * 45}ms`;
+      layer.appendChild(p);
+    }
+    rootHost.appendChild(layer);
+    setTimeout(() => { if (layer.parentNode) layer.remove(); }, 1150);
+  }
+
+  function spawnEffectOnRecord(rec, effectName) {
+    if (!effectName || !EFFECT_GLYPHS[effectName]) return;
+    for (const host of [...rec.cards, ...rec.pages]) {
+      const spriteHost = host && host.querySelector('.cm-sprite-stage');
+      if (spriteHost) {
+        spawnParticles(spriteHost, effectName, true);
+      } else {
+        const root = host && host.querySelector('.cm-root');
+        if (root) spawnParticles(root, effectName, false);
+      }
+    }
+  }
+
+  async function runAction(slug, actionName, payload, itemCtx, recOverride) {
+    const rec = recOverride || registry.get(slug);
     if (!rec || !actionName) return;
 
-    if (actionName.startsWith('__step:') || actionName.startsWith('__toggle:')) {
+    // Sandboxed interactive preview mode (Pony Chat Live Preview) — local in-memory state only!
+    if (rec.isPreview) {
+      const res = applyActionLocal(rec.manifest, rec.state, actionName, payload || {});
+      rec.state = res.state;
+      rerenderRecord(rec);
+      if (res.effect) spawnEffectOnRecord(rec, res.effect);
+      return;
+    }
+
+    if (actionName.startsWith('__step:') || actionName.startsWith('__toggle:') || actionName.startsWith('__tab:')) {
       const r = await api.svc('custommod', 'action', slug, actionName, payload || {});
       if (r && r.ok && r.state) {
         rec.state = r.state;
         rerenderRecord(rec);
+        if (rec.pinnedPill && typeof N.renderClosed === 'function') N.renderClosed();
       }
       return;
     }
@@ -395,13 +618,15 @@
         if (r && r.ok && r.state) {
           rec.state = r.state;
           rerenderRecord(rec);
+          if (r.effect || def.effect) spawnEffectOnRecord(rec, r.effect || def.effect);
+          if (rec.pinnedPill && typeof N.renderClosed === 'function') N.renderClosed();
         }
       }
     }
   }
 
   function toneClass(tone) {
-    if (tone === 'ok' || tone === 'warn' || tone === 'err' || tone === 'accent') return `t-${tone}`;
+    if (tone === 'ok' || tone === 'warn' || tone === 'err' || tone === 'accent' || tone === 'rose') return `t-${tone}`;
     return '';
   }
 
@@ -481,7 +706,7 @@
         if (node.rightAction) {
           const btn = el('button', 'cm-hd-btn', node.rightLabel ? resolveExpr(node.rightLabel, ctx) : '↻');
           btn.type = 'button';
-          btn.onclick = (e) => { e.stopPropagation(); runAction(slug, node.rightAction, {}, ctx); };
+          btn.onclick = (e) => { e.stopPropagation(); runAction(slug, node.rightAction, {}, ctx, rec); };
           h.appendChild(btn);
         }
         return h;
@@ -641,7 +866,7 @@
           }
           return wrap;
         }
-        const box = el('div', 'cm-prog');
+        const box = el('div', `cm-prog ${toneClass(node.tone)}`.trim());
         if (node.label || node.showPercent !== false) {
           const top = el('div', 'cm-prog-top');
           top.appendChild(el('span', 'cm-prog-lbl', node.label ? resolveExpr(node.label, ctx) : ''));
@@ -654,6 +879,128 @@
         track.appendChild(fill);
         box.appendChild(track);
         return box;
+      }
+
+      case 'barChart': {
+        const raw = resolveValue(node.data, ctx);
+        const nums = (Array.isArray(raw) ? raw : []).map(Number).filter(Number.isFinite).slice(0, 16);
+        const rawLabels = node.labels ? resolveValue(node.labels, ctx) : null;
+        const labels = Array.isArray(rawLabels) ? rawLabels : [];
+        const hPx = Math.max(24, Math.min(72, Number(node.height) || 40));
+        const wrap = el('div', `cm-bars ${toneClass(node.tone || 'accent')}`);
+        if (!nums.length) {
+          wrap.appendChild(el('span', 'cm-muted', '—'));
+          return wrap;
+        }
+        const max = Math.max(1e-6, ...nums.map((n) => Math.max(0, n)));
+        const cols = el('div', 'cm-bars-cols');
+        cols.style.height = `${hPx}px`;
+        nums.forEach((v, i) => {
+          const col = el('div', 'cm-bar-col');
+          col.title = `${labels[i] ? `${labels[i]}: ` : ''}${v}`;
+          const bar = el('div', 'cm-bar-fill');
+          const pct = Math.max(8, Math.min(100, (Math.max(0, v) / max) * 100));
+          bar.style.height = `${pct.toFixed(1)}%`;
+          col.appendChild(bar);
+          cols.appendChild(col);
+        });
+        wrap.appendChild(cols);
+        if (labels.length) {
+          const lrow = el('div', 'cm-bars-lbls');
+          nums.forEach((_, i) => lrow.appendChild(el('span', 'cm-bar-lbl', String(labels[i] ?? '').slice(0, 6))));
+          wrap.appendChild(lrow);
+        }
+        return wrap;
+      }
+
+      case 'sprite': {
+        const kind = node.kind === 'vector' ? 'vector' : 'pixel';
+        const sizePx = Math.max(28, Math.min(112, Number(node.size) || 56));
+        let activeDef = node;
+        if (node.states && typeof node.states === 'object') {
+          const want = node.activeState ? String(resolveExpr(node.activeState, ctx)).trim() : '';
+          activeDef = node.states[want] || Object.values(node.states)[0] || node;
+        }
+        const motion = ALLOWED_MOTIONS.has(activeDef.motion)
+          ? activeDef.motion
+          : (ALLOWED_MOTIONS.has(node.motion) ? node.motion : 'none');
+
+        const stage = el('div', `cm-sprite-stage${node.stage ? ' has-stage' : ''}${node.glow ? ' has-glow' : ''}${node.onClick ? ' clickable' : ''}`);
+        stage.style.setProperty('--cm-sprite-sz', `${sizePx}px`);
+        if (node.speech) {
+          const spTxt = resolveExpr(node.speech, ctx).trim();
+          if (spTxt) stage.appendChild(el('div', 'cm-speech', spTxt));
+        }
+        const mover = el('div', `cm-sprite-mover${motion !== 'none' ? ` cm-mot-${motion}` : ''}`);
+        if (kind === 'pixel') {
+          const frames = Array.isArray(activeDef.frames) ? activeDef.frames : (Array.isArray(node.frames) ? node.frames : []);
+          const palette = (node.palette && typeof node.palette === 'object') ? node.palette : {};
+          const cv = document.createElement('canvas');
+          cv.className = 'cm-sprite-cv';
+          if (frames.length) {
+            registerSpriteCanvas(cv, frames, palette, sizePx, activeDef.fps || node.fps || 3, !!rec.isPreview);
+          }
+          mover.appendChild(cv);
+        } else {
+          const shapes = Array.isArray(activeDef.shapes) ? activeDef.shapes : (Array.isArray(node.shapes) ? node.shapes : []);
+          const svgNS = 'http://www.w3.org/2000/svg';
+          const vw = Math.max(16, Math.min(120, Number(node.viewBoxWidth) || 64));
+          const vh = Math.max(16, Math.min(120, Number(node.viewBoxHeight) || 64));
+          const svg = document.createElementNS(svgNS, 'svg');
+          svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+          svg.setAttribute('class', 'cm-sprite-svg');
+          svg.style.width = `${sizePx}px`;
+          svg.style.height = `${sizePx}px`;
+          const NUM_ATTRS = ['cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'stroke-width', 'opacity'];
+          for (const sh of shapes.slice(0, 24)) {
+            if (!sh || !ALLOWED_VECTOR_TAGS.has(sh.tag)) continue;
+            const sEl = document.createElementNS(svgNS, sh.tag);
+            for (const a of NUM_ATTRS) {
+              if (sh[a] != null && Number.isFinite(Number(sh[a]))) sEl.setAttribute(a, String(Number(sh[a])));
+            }
+            if (sh.fill) { const c = safeSpriteColor(sh.fill); if (c) sEl.setAttribute('fill', c); }
+            if (sh.stroke) { const c = safeSpriteColor(sh.stroke); if (c) sEl.setAttribute('stroke', c); }
+            if (sh.d && typeof sh.d === 'string' && /^[0-9a-zA-Z.,\s+-]{1,512}$/.test(sh.d)) sEl.setAttribute('d', sh.d);
+            if (sh.points && typeof sh.points === 'string' && /^[0-9.,\s+-]{1,512}$/.test(sh.points)) sEl.setAttribute('points', sh.points);
+            svg.appendChild(sEl);
+          }
+          mover.appendChild(svg);
+        }
+        stage.appendChild(mover);
+        if (node.stage) stage.appendChild(el('div', 'cm-stage-shadow'));
+        if (node.onClick) {
+          stage.setAttribute('role', 'button');
+          stage.setAttribute('tabindex', '0');
+          stage.onclick = (e) => {
+            e.stopPropagation();
+            runAction(slug, node.onClick, {}, ctx, rec);
+          };
+        }
+        return stage;
+      }
+
+      case 'tabs': {
+        const sk = node.stateKey;
+        const tabs = Array.isArray(node.tabs) ? node.tabs : [];
+        if (!tabs.length) return null;
+        const curId = String((rec.state || {})[sk] || tabs[0].id);
+        const activeTab = tabs.find((t) => String(t.id) === curId) || tabs[0];
+        const wrap = el('div', 'cm-tabs');
+        const bar = el('div', 'cm-tabs-bar');
+        for (const t of tabs) {
+          const isOn = String(t.id) === String(activeTab.id);
+          const b = el('button', `cm-tab-btn${isOn ? ' on' : ''}`, resolveExpr(t.label || t.id, ctx));
+          b.type = 'button';
+          b.onclick = (e) => {
+            e.stopPropagation();
+            runAction(slug, `__tab:${sk}`, { value: String(t.id) }, ctx, rec);
+          };
+          bar.appendChild(b);
+        }
+        wrap.appendChild(bar);
+        const body = renderNode(activeTab.node, rec, ctx, depth + 1);
+        if (body) wrap.appendChild(body);
+        return wrap;
       }
 
       case 'list': {
@@ -741,7 +1088,7 @@
       case 'button': {
         const b = el('button', `cm-btn v-${node.variant || 'ghost'} sz-${node.size || 'sm'}`, resolveExpr(node.label || '', ctx));
         b.type = 'button';
-        b.onclick = (e) => { e.stopPropagation(); runAction(slug, node.action, {}, ctx); };
+        b.onclick = (e) => { e.stopPropagation(); runAction(slug, node.action, {}, ctx, rec); };
         return b;
       }
 
@@ -756,14 +1103,14 @@
         minus.type = 'button';
         minus.onclick = (e) => {
           e.stopPropagation();
-          runAction(slug, `__step:${sk}`, { delta: -step, min: node.min, max: node.max }, ctx);
+          runAction(slug, `__step:${sk}`, { delta: -step, min: node.min, max: node.max }, ctx, rec);
         };
         const val = el('span', 'cm-step-val', node.unit ? `${cur} ${node.unit}` : String(cur));
         const plus = el('button', 'cm-step-btn cm-step-plus', '+');
         plus.type = 'button';
         plus.onclick = (e) => {
           e.stopPropagation();
-          runAction(slug, `__step:${sk}`, { delta: step, min: node.min, max: node.max }, ctx);
+          runAction(slug, `__step:${sk}`, { delta: step, min: node.min, max: node.max }, ctx, rec);
         };
         ctrls.append(minus, val, plus);
         box.appendChild(ctrls);
@@ -780,7 +1127,7 @@
         row.appendChild(el('span', 'cm-toggle-lbl', resolveExpr(node.label || sk, ctx)));
         row.onclick = (e) => {
           e.stopPropagation();
-          runAction(slug, `__toggle:${sk}`, {}, ctx);
+          runAction(slug, `__toggle:${sk}`, {}, ctx, rec);
         };
         return row;
       }
@@ -801,7 +1148,7 @@
           const val = inp.value.trim();
           if (!val) return;
           inp.value = '';
-          runAction(slug, node.action, { input: val }, ctx);
+          runAction(slug, node.action, { input: val }, ctx, rec);
         };
         form.append(inp, btn);
         return form;
@@ -938,6 +1285,17 @@
     rec.config = summary.config || {};
     rec.approvedDomains = summary.approvedDomains || [];
     rec.missingDomains = summary.missingDomains || [];
+    if (rec.tickTimer) {
+      clearInterval(rec.tickTimer);
+      rec.tickTimer = null;
+    }
+    if (rec.manifest.tick && rec.manifest.tick.action) {
+      const tickSec = Math.max(30, Math.min(86400, Number(rec.manifest.tick.intervalSeconds) || 300));
+      rec.tickTimer = setInterval(() => {
+        runAction(slug, rec.manifest.tick.action, {}, null);
+      }, tickSec * 1000);
+    }
+    rec.pinnedPill = !!summary.pinnedPill;
     registry.set(slug, rec);
 
     N.register({
@@ -994,6 +1352,7 @@
     for (const [slug, rec] of Array.from(registry.entries())) {
       if (!nextSlugs.has(slug)) {
         stopPoll(rec);
+        if (rec.tickTimer) { clearInterval(rec.tickTimer); rec.tickTimer = null; }
         registry.delete(slug);
         if (typeof N.unregister === 'function') N.unregister(`custom:${slug}`);
         structureChanged = true;
@@ -1003,9 +1362,11 @@
       if (!registry.has(item.slug)) structureChanged = true;
       registerOne(item);
     }
-    if (structureChanged || (evt && (evt.reason === 'created' || evt.reason === 'updated' || evt.reason === 'deleted'))) {
+    if (structureChanged || (evt && (evt.reason === 'created' || evt.reason === 'updated' || evt.reason === 'deleted' || evt.reason === 'imported'))) {
       if (N.carousel && typeof N.carousel.rebuild === 'function') N.carousel.rebuild();
     }
+    if (typeof N.renderClosed === 'function') N.renderClosed();
+    if (typeof N.layout === 'function') N.layout();
     if (evt && evt.slug && (evt.reason === 'created' || evt.reason === 'updated' || evt.reason === 'permissions' || evt.reason === 'config')) {
       const rec = registry.get(evt.slug);
       if (rec) {
@@ -1034,6 +1395,47 @@
       out[`custom:${slug}`] = rec.manifest.defaultSize || '2x1';
     }
     return out;
+  };
+  N.customModPillActivity = () => {
+    for (const [slug, rec] of registry.entries()) {
+      if (!rec.pinnedPill || !rec.manifest || !rec.manifest.view || !rec.manifest.view.pill) continue;
+      const p = rec.manifest.view.pill;
+      const ctx = buildContext(rec);
+      const text = resolveExpr(p.text || rec.manifest.name, ctx).trim();
+      if (!text) continue;
+      return {
+        slug,
+        id: `custom:${slug}`,
+        name: rec.manifest.name,
+        icon: p.icon || rec.manifest.icon || 'Boxes',
+        accent: accentColor(rec.manifest.accent),
+        text,
+        right: p.right ? resolveExpr(p.right, ctx).trim() : '',
+        tone: p.tone || 'accent',
+      };
+    }
+    return null;
+  };
+
+  /** Mounts a live, animated, interactive sandboxed OLED preview widget inside any host (e.g. Pony Chat bubble). */
+  Engine.renderPreview = (host, manifest, opts = {}) => {
+    if (!host || !manifest || !manifest.view || !manifest.view.compact) return null;
+    const rec = {
+      isPreview: true,
+      manifest,
+      state: Object.assign({}, manifest.initialState || {}),
+      config: {},
+      data: opts.data || {},
+      errors: {},
+      approvedDomains: [],
+      missingDomains: [],
+      cards: new Set([host]),
+      pages: new Set(),
+    };
+    host.classList.add('cm-preview-canvas');
+    host.dataset.cmSize = manifest.defaultSize === '2x2' ? 'l' : (manifest.defaultSize === '1x1' ? 's' : 'm');
+    renderInto(host, rec, 'compact');
+    return rec;
   };
 
   if (api && typeof api.on === 'function') {

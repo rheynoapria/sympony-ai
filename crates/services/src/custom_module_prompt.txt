@@ -19,22 +19,28 @@ Manifest v1 schema summary:
 - `dataSources[]`: `{ id, kind: "http"|"rss", method?: "GET"|"POST", url: "https://...", headers?: { ... }, body?: any, pollSeconds?: 30..86400, limit?: 1..20 (for rss), extract?: { key: "dot.path.or.items.*.field" } }`.
   - URL MUST be `https://` with a static host listed in `permissions.httpDomains`. You may use `{{config.key}}` in URL path/query and `{{secret.key}}` ONLY in `headers`.
   - For `kind: "rss"`, extracted shape is automatically `{ items: [{ title, subtitle, url, age, source }], count }`.
-- `actions` map (`name -> action`):
+- `actions` map (`name -> action`, optional `effect?: "hearts"|"sparkles"|"stars"|"confetti"|"zzz"|"water"` triggers OLED floating particle bursts!):
   - `refresh`: `{ kind: "refresh" }`
   - `increment`: `{ kind: "increment", stateKey, delta?: 1, min?: 0, max?: 100 }`
   - `toggleState`: `{ kind: "toggleState", stateKey }`
   - `setState`: `{ kind: "setState", stateKey, value }` (supports `"{{input}}"`)
+  - `multi` (ideal for virtual pets/games!): `{ kind: "multi", effect?: "hearts"|"sparkles"|"stars"|"confetti"|"zzz"|"water", steps: [ ...1-6 local state ops... ] }`
   - `appendItem`: `{ kind: "appendItem", stateKey, maxItems?: 50 }` (uses `"{{input}}"` or `value`)
   - `removeItem`: `{ kind: "removeItem", stateKey }` (uses clicked list item id/index)
   - `resetState`: `{ kind: "resetState" }`
   - `copyText`: `{ kind: "copyText", text: "{{...}}" }`
   - `openUrl`: `{ kind: "openUrl", url: "https://..." }`
   - `askPony`: `{ kind: "askPony", prompt: "..." }`
-- View nodes (`type`):
-  - Layout: `stack` (`dir: "row"|"col"`, `gap?: "xs"|"sm"|"md"`, `align?`, `justify?`, `children`), `grid` (`cols: 2|3`, `gap?`, `children`), `scroll` (`maxHeight?`, `children`), `divider`.
-  - Display: `header` (`title`, `subtitle?`, `rightAction?`, `rightLabel?`), `metric` (`label`, `value`, `unit?`, `delta?`, `tone?: "default"|"accent"|"ok"|"warn"|"err"`), `sparkline` (`data: "{{src.series}}"`, `height?`, `tone?`), `progress` (`label?`, `value`, `max`, `variant?: "bar"|"ring"`, `showPercent?`), `list` (`items: "{{src.items}}"`, `maxItems?`, `item: { title, subtitle?, right?, badge?, checked?, onClick?, onRemove? }`, `emptyText?`), `kv` (`rows: [{ key, value, tone? }]`), `badge` (`text`, `tone?`), `text` (`value`, `size?: "xs"|"sm"|"md"`, `weight?`, `mono?`, `muted?`, `lines?`), `empty` (`text`).
+- Optional root `tick`: `{ intervalSeconds: 30..86400, action: "<local state action>" }` for passive pet hunger/energy decay or timers!
+- Optional `view.pill`: `{ icon?, text: "{{...}}", right?: "{{...}}", tone?: "default"|"accent"|"ok"|"warn"|"err" }` lets users pin the module to the closed-notch Live Activity pill!
+- View nodes (`type`, any node may include `motion?: "none"|"bounce"|"float"|"breathe"|"wiggle"|"walk"|"spin"|"pulse"|"shake"`):
+  - Layout: `stack` (`dir: "row"|"col"`, `gap?: "xs"|"sm"|"md"`, `align?`, `justify?`, `children`), `grid` (`cols: 2|3`, `gap?`, `children`), `scroll` (`maxHeight?`, `children`), `tabs` (`stateKey`, `tabs: [{ id, label, node }]` 2-4 tabs), `divider`.
+  - Display & Animation: `header` (`title`, `subtitle?`, `rightAction?`, `rightLabel?`), `metric` (`label`, `value`, `unit?`, `delta?`, `tone?`), `sparkline` (`data`, `height?`, `tone?`), `barChart` (`data`, `labels?`, `height?`, `tone?`), `progress` (`label?`, `value`, `max`, `variant?: "bar"|"ring"`, `showPercent?`), `sprite` (animated pixel-art or vector pet/motion! `kind: "pixel"|"vector"`, `size?: 28..112`, `stage?: true`, `glow?: true`, `onClick?: "<action>"`, `speech?: "{{state.speech}}"`, `activeState?: "{{state.hunger | threshold:\"0:hungry,35:idle,75:happy\"}}"`, `palette: { ".": "transparent", "1": "#7dd3fc", ... }` for pixel, `states: { happy: { fps: 4, motion: "bounce", frames: [["..11..", ...], ...] } }` or `shapes: [{ tag: "circle"|"rect"|"ellipse"|"line"|"polygon"|"path", ... }]` for vector), `list`, `kv`, `badge`, `text`, `empty`.
   - Interactive: `button` (`label`, `icon?`, `action`, `variant?: "ghost"|"solid"|"accent"|"danger"`, `size?: "xs"|"sm"`), `stepper` (`label`, `stateKey`, `step?`, `min?`, `max?`, `unit?`), `toggleRow` (`label`, `stateKey`), `quickInput` (`placeholder`, `action`, `buttonLabel?`).
-- Expressions: `{{ns.path | pipe:arg}}` where pipes are `number:N`, `currency:USD|IDR|EUR`, `compact`, `percent:N`, `signedPercent:N`, `timeago`, `truncate:N`, `upper`, `lower`, `fallback:"—"`.
+- Expressions: `{{ns.path | pipe:arg}}` where pipes are `number:N`, `currency:USD|IDR|EUR`, `compact`, `percent:N`, `signedPercent:N`, `timeago`, `truncate:N`, `upper`, `lower`, `threshold:"0:hungry,35:idle,75:happy"`, `fallback:"—"`.
+
+Golden example 3 (Animated OLED Pixel Tamagotchi Pet, 2x2, zero HTTP permissions — supports multi-frame pixel animation, walking/bouncing motion, particle bursts, speech bubble, passive tick, and closed-notch pill!):
+Use `type: "sprite"` with `kind: "pixel"`, `palette`, `states` (`happy` with `motion: "bounce"`, `idle` with `motion: "walk"`, `hungry` with `motion: "shake"`), `activeState: "{{state.hunger | threshold:\"0:hungry,35:idle,75:happy\"}}"`, `onClick: "pet"`, `multi` actions with `effect: "hearts"|"sparkles"|"stars"|"zzz"`, `tick` for gentle passive decay, and `view.pill` for closed-notch status!
 
 Golden example 1 (Local Habit Tracker, 2x1, zero HTTP permissions):
 ```json

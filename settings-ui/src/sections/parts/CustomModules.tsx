@@ -1,5 +1,14 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Globe, KeyRound, RotateCw, Sparkles, Trash2 } from "@/components/icons";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, Globe, KeyRound, RotateCw, Sparkles, Trash2, Upload } from "@/components/icons";
+
+function ThumbtackIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}
 import { PanelCard } from "@/components/shell/PanelCard";
 import { groupIcon } from "@/components/shell/groupIcons";
 import { Button } from "@/components/ui/knowns/button";
@@ -121,6 +130,7 @@ export interface CustomModuleManifest {
   defaultSize?: string;
   permissions?: { httpDomains?: string[] };
   configSchema?: CustomConfigField[];
+  view?: { pill?: unknown };
 }
 
 export interface CustomModuleSummary {
@@ -131,9 +141,20 @@ export interface CustomModuleSummary {
   missingDomains: string[];
   secretKeysConfigured: string[];
   config: Record<string, unknown>;
+  pinnedPill?: boolean;
 }
 
+const STARTER_GALLERY = [
+  { slug: "mochi-pet", name: "Mochi Pet", size: "2×2", desc: "Animated pixel Tamagotchi pet", icon: "Heart", accent: "sky" },
+  { slug: "daily-habits", name: "Daily Habits", size: "2×2", desc: "Ring progress, steppers & checklist", icon: "Flame", accent: "sky" },
+  { slug: "crypto-pulse", name: "Crypto & FX Pulse", size: "2×1", desc: "Live BTC & ETH prices with 24h delta", icon: "TrendingUp", accent: "emerald" },
+] as const;
+
 const STARTERS = [
+  {
+    label: "Animated OLED Pet",
+    prompt: "Create a 2x2 animated OLED pixel Tamagotchi pet module I can feed, pet, and play with (with bounce/walk motion and heart particles).",
+  },
   {
     label: "Crypto & FX ticker",
     prompt: "Create a 2x1 OLED custom module that shows live BTC, ETH, and USD/IDR prices with 24h change badges.",
@@ -245,7 +266,14 @@ export function CustomModulesPanel({
 }) {
   const [openSlug, setOpenSlug] = useState<string | null>(null);
   const [busySlug, setBusySlug] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({});
+  const importRef = useRef<HTMLInputElement>(null);
+
+  const flashNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice((cur) => (cur === msg ? null : cur)), 3200);
+  };
 
   const openCreator = (prompt = "") => {
     void notch.svc("custommod", "openCreator", prompt);
@@ -309,23 +337,105 @@ export function CustomModulesPanel({
     }
   };
 
+  const togglePinPill = async (m: CustomModuleSummary) => {
+    setBusySlug(m.slug);
+    try {
+      await notch.svc("custommod", "pinPill", m.pinnedPill ? "" : m.slug);
+      await onChanged();
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  const exportMod = async (slug: string) => {
+    setBusySlug(slug);
+    try {
+      const res = (await notch.svc("custommod", "export", slug)) as { ok?: boolean; bundle?: unknown } | null;
+      if (res && res.ok && res.bundle) {
+        const text = JSON.stringify(res.bundle, null, 2);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          flashNotice(t("Exported JSON copied to clipboard"));
+        }
+      }
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    setBusySlug("__import");
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const res = (await notch.svc("custommod", "import", parsed, true)) as { ok?: boolean; error?: string } | null;
+      if (res && res.ok) {
+        await onChanged();
+        flashNotice(t("Imported custom module"));
+      } else if (res && res.error) {
+        flashNotice(res.error);
+      }
+    } catch (e) {
+      flashNotice(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusySlug(null);
+      if (importRef.current) importRef.current.value = "";
+    }
+  };
+
+  const installTemplate = async (slug: string) => {
+    setBusySlug(slug);
+    try {
+      const res = (await notch.svc("custommod", "installTemplate", slug)) as { ok?: boolean } | null;
+      if (res && res.ok) await onChanged();
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  const installedSlugs = new Set(items.map((x) => x.slug));
+  const availableTemplates = STARTER_GALLERY.filter((tpl) => !installedSlugs.has(tpl.slug));
+
   return (
     <PanelCard
       title={t("Custom Modules")}
       icon={groupIcon("Custom Modules")}
       description={t("Local OLED widgets created by Pony. Built-in modules stay protected and unchanged.")}
       action={
-        <Button
-          size="sm"
-          variant="primary"
-          icon={<Sparkles />}
-          className="bg-gradient-to-b from-blue-500 to-blue-600 shadow-[0_1px_2px_rgba(37,99,235,0.34),inset_0_1px_0_rgba(255,255,255,0.22)] hover:from-blue-500/95 hover:to-blue-600/95"
-          onClick={() => openCreator("")}
-        >
-          {t("Create with Pony")}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => void handleImportFile(e.target.files?.[0])}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Upload />}
+            disabled={busySlug === "__import"}
+            onClick={() => importRef.current?.click()}
+          >
+            {t("Import JSON")}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Sparkles />}
+            className="bg-gradient-to-b from-blue-500 to-blue-600 shadow-[0_1px_2px_rgba(37,99,235,0.34),inset_0_1px_0_rgba(255,255,255,0.22)] hover:from-blue-500/95 hover:to-blue-600/95"
+            onClick={() => openCreator("")}
+          >
+            {t("Create with Pony")}
+          </Button>
+        </div>
       }
     >
+      {notice && (
+        <div className="mb-3 rounded-[9px] border border-primary/25 bg-primary/[0.07] px-3 py-1.5 text-[12px] font-medium text-foreground">
+          {notice}
+        </div>
+      )}
       {items.length === 0 ? (
         <div className="space-y-3 py-1">
           <div className="text-[12.5px] text-muted-foreground">
@@ -383,6 +493,18 @@ export function CustomModulesPanel({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    {Boolean(m.manifest.view?.pill) && (
+                      <Button
+                        size="xs"
+                        variant={m.pinnedPill ? "secondary" : "ghost"}
+                        icon={<ThumbtackIcon />}
+                        disabled={busy}
+                        title={m.pinnedPill ? t("Pinned in closed notch") : t("Pin to closed notch")}
+                        aria-label={m.pinnedPill ? t("Pinned in closed notch") : t("Pin to closed notch")}
+                        className={m.pinnedPill ? "border-primary/35 bg-primary/10 text-primary" : ""}
+                        onClick={() => void togglePinPill(m)}
+                      />
+                    )}
                     <Button
                       size="xs"
                       variant="ghost"
@@ -402,6 +524,15 @@ export function CustomModulesPanel({
                     >
                       {t("Edit with Pony")}
                     </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      icon={<Download />}
+                      disabled={busy}
+                      title={t("Export JSON")}
+                      aria-label={t("Export JSON")}
+                      onClick={() => void exportMod(m.slug)}
+                    />
                     <Button
                       size="xs"
                       variant="ghost"
@@ -550,6 +681,44 @@ export function CustomModulesPanel({
               </div>
             );
           })}
+        </div>
+      )}
+      {availableTemplates.length > 0 && (
+        <div className={items.length > 0 ? "mt-3.5 border-t border-border/70 pt-3" : "mt-3 border-t border-border/70 pt-3"}>
+          <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">
+            {t("Starter templates")}
+          </div>
+          <div className={availableTemplates.length === 2 ? "grid grid-cols-1 gap-2.5 sm:grid-cols-2" : availableTemplates.length === 1 ? "grid grid-cols-1 gap-2.5" : "grid grid-cols-1 gap-2.5 sm:grid-cols-3"}>
+            {availableTemplates.map((tpl) => (
+              <div
+                key={tpl.slug}
+                className="flex items-center justify-between gap-2.5 rounded-[11px] border border-border/75 bg-muted/25 px-3 py-2.5"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <CustomModuleBadgeIcon icon={tpl.icon} accent={tpl.accent} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[12.5px] font-medium text-foreground">{tpl.name}</span>
+                      <span className="shrink-0 rounded border border-border/80 bg-background/80 px-1 py-0.2 font-mono text-[9.5px] text-muted-foreground">
+                        {tpl.size}
+                      </span>
+                    </div>
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {t(tpl.desc)}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={busySlug === tpl.slug}
+                  onClick={() => void installTemplate(tpl.slug)}
+                >
+                  {t("Install")}
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </PanelCard>

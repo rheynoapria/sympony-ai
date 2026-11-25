@@ -96,9 +96,32 @@ const ALLOWED_ACTION_KINDS: &[&str] = &[
     "appendItem",
     "removeItem",
     "resetState",
+    "multi",
     "copyText",
     "openUrl",
     "askPony",
+];
+
+const LOCAL_STATE_ACTION_KINDS: &[&str] = &[
+    "setState",
+    "increment",
+    "toggleState",
+    "appendItem",
+    "removeItem",
+    "resetState",
+    "multi",
+];
+
+pub const ALLOWED_MOTIONS: &[&str] = &[
+    "none", "bounce", "float", "breathe", "wiggle", "walk", "spin", "pulse", "shake",
+];
+
+pub const ALLOWED_EFFECTS: &[&str] = &[
+    "hearts", "sparkles", "stars", "confetti", "zzz", "water",
+];
+
+const ALLOWED_VECTOR_TAGS: &[&str] = &[
+    "circle", "rect", "ellipse", "line", "polygon", "path",
 ];
 
 const ALLOWED_NODE_TYPES: &[&str] = &[
@@ -109,7 +132,10 @@ const ALLOWED_NODE_TYPES: &[&str] = &[
     "header",
     "metric",
     "sparkline",
+    "barChart",
     "progress",
+    "sprite",
+    "tabs",
     "list",
     "kv",
     "badge",
@@ -179,7 +205,160 @@ fn is_valid_key(s: &str, max_len: usize) -> bool {
 }
 
 fn is_valid_hex_color(s: &str) -> bool {
-    s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+    (s.len() == 7 || s.len() == 4)
+        && s.starts_with('#')
+        && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_valid_sprite_color(s: &str) -> bool {
+    let t = s.trim();
+    t.eq_ignore_ascii_case("transparent")
+        || t.eq_ignore_ascii_case("none")
+        || t.eq_ignore_ascii_case("currentColor")
+        || is_valid_hex_color(t)
+}
+
+fn validate_motion_opt(obj: &Map<String, Value>, ctx: &str) -> Result<(), String> {
+    if let Some(m) = obj.get("motion").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+        if !ALLOWED_MOTIONS.contains(&m) {
+            return Err(format!(
+                "{ctx} has invalid motion '{m}'. Allowed: {}",
+                ALLOWED_MOTIONS.join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_pixel_frames(frames: &[Value], ctx: &str) -> Result<(), String> {
+    if frames.is_empty() || frames.len() > 8 {
+        return Err(format!("{ctx} requires 1–8 pixel frames"));
+    }
+    for (fi, frame) in frames.iter().enumerate() {
+        let rows = frame
+            .as_array()
+            .ok_or_else(|| format!("{ctx} frame[{fi}] must be an array of row strings"))?;
+        if rows.is_empty() || rows.len() > 24 {
+            return Err(format!("{ctx} frame[{fi}] must have 1–24 rows"));
+        }
+        for row in rows {
+            let s = row
+                .as_str()
+                .ok_or_else(|| format!("{ctx} frame[{fi}] rows must be strings"))?;
+            let len = s.chars().count();
+            if len == 0 || len > 24 {
+                return Err(format!("{ctx} frame[{fi}] row width must be 1–24 chars"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_vector_shapes(shapes: &[Value], ctx: &str) -> Result<(), String> {
+    if shapes.is_empty() || shapes.len() > 24 {
+        return Err(format!("{ctx} requires 1–24 vector shapes"));
+    }
+    for (si, sh) in shapes.iter().enumerate() {
+        let o = sh
+            .as_object()
+            .ok_or_else(|| format!("{ctx} shapes[{si}] must be an object"))?;
+        let tag = o.get("tag").and_then(Value::as_str).unwrap_or("");
+        if !ALLOWED_VECTOR_TAGS.contains(&tag) {
+            return Err(format!(
+                "{ctx} shapes[{si}] has unsupported tag '{tag}'. Allowed: {}",
+                ALLOWED_VECTOR_TAGS.join(", ")
+            ));
+        }
+        for color_key in ["fill", "stroke"] {
+            if let Some(c) = o.get(color_key).and_then(Value::as_str) {
+                if !is_valid_sprite_color(c) {
+                    return Err(format!("{ctx} shapes[{si}].{color_key} must be #hex, currentColor, or none"));
+                }
+            }
+        }
+        if let Some(d) = o.get("d").and_then(Value::as_str) {
+            if d.len() > 512
+                || !d
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b' ' | b',' | b'.' | b'-' | b'+'))
+            {
+                return Err(format!("{ctx} shapes[{si}].d contains invalid path characters"));
+            }
+        }
+        if let Some(pts) = o.get("points").and_then(Value::as_str) {
+            if pts.len() > 512
+                || !pts
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || matches!(b, b' ' | b',' | b'.' | b'-' | b'+'))
+            {
+                return Err(format!("{ctx} shapes[{si}].points contains invalid characters"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_sprite_node(obj: &Map<String, Value>) -> Result<(), String> {
+    let kind = obj.get("kind").and_then(Value::as_str).unwrap_or("pixel");
+    if !matches!(kind, "pixel" | "vector") {
+        return Err(format!("sprite.kind must be 'pixel' or 'vector' (got '{kind}')"));
+    }
+    if kind == "pixel" {
+        let pal = obj
+            .get("palette")
+            .and_then(Value::as_object)
+            .ok_or("pixel sprite requires a 'palette' object")?;
+        if pal.is_empty() || pal.len() > 16 {
+            return Err("sprite.palette must have 1–16 color entries".into());
+        }
+        for (k, v) in pal {
+            if k.chars().count() != 1 {
+                return Err(format!("sprite.palette key '{k}' must be a single character"));
+            }
+            let c = v.as_str().ok_or_else(|| format!("sprite.palette['{k}'] must be a string"))?;
+            if !is_valid_sprite_color(c) {
+                return Err(format!("sprite.palette['{k}'] has invalid color '{c}'"));
+            }
+        }
+    }
+
+    if let Some(states) = obj.get("states").and_then(Value::as_object) {
+        if states.is_empty() || states.len() > 6 {
+            return Err("sprite.states must define 1–6 animation states".into());
+        }
+        for (st_name, st_val) in states {
+            let so = st_val
+                .as_object()
+                .ok_or_else(|| format!("sprite.states['{st_name}'] must be an object"))?;
+            validate_motion_opt(so, &format!("sprite.states['{st_name}']"))?;
+            if kind == "pixel" {
+                let frames = so
+                    .get("frames")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| format!("sprite.states['{st_name}'] requires 'frames'"))?;
+                validate_pixel_frames(frames, &format!("sprite.states['{st_name}']"))?;
+            } else {
+                let shapes = so
+                    .get("shapes")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| format!("sprite.states['{st_name}'] requires 'shapes'"))?;
+                validate_vector_shapes(shapes, &format!("sprite.states['{st_name}']"))?;
+            }
+        }
+    } else if kind == "pixel" {
+        let frames = obj
+            .get("frames")
+            .and_then(Value::as_array)
+            .ok_or("pixel sprite requires 'frames' or 'states'")?;
+        validate_pixel_frames(frames, "sprite")?;
+    } else {
+        let shapes = obj
+            .get("shapes")
+            .and_then(Value::as_array)
+            .ok_or("vector sprite requires 'shapes' or 'states'")?;
+        validate_vector_shapes(shapes, "sprite")?;
+    }
+    Ok(())
 }
 
 /// Validates a public domain name for `permissions.httpDomains` (exact lowercase hostname, no wildcard/IP/localhost).
@@ -284,6 +463,7 @@ fn validate_node(
     if !ALLOWED_NODE_TYPES.contains(&ty) {
         return Err(format!("Unknown view node type '{ty}'"));
     }
+    validate_motion_opt(obj, &format!("Node '{ty}'"))?;
     let check_action = |key: &str| -> Result<(), String> {
         if let Some(a) = obj.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()) {
             if !action_names.contains(a) {
@@ -362,9 +542,33 @@ fn validate_node(
                 return Err("progress requires a 'value' string or expression".into());
             }
         }
-        "sparkline" => {
+        "sparkline" | "barChart" => {
             if obj.get("data").and_then(Value::as_str).unwrap_or("").is_empty() {
-                return Err("sparkline requires a 'data' array expression".into());
+                return Err(format!("{ty} requires a 'data' array expression"));
+            }
+        }
+        "sprite" => {
+            check_action("onClick")?;
+            validate_sprite_node(obj)?;
+        }
+        "tabs" => {
+            let sk = obj.get("stateKey").and_then(Value::as_str).unwrap_or("");
+            if !is_valid_key(sk, 32) {
+                return Err("tabs requires a valid 'stateKey'".into());
+            }
+            let tabs = obj.get("tabs").and_then(Value::as_array).ok_or("tabs requires a 'tabs' array")?;
+            if tabs.len() < 2 || tabs.len() > 4 {
+                return Err("tabs requires 2–4 tab items".into());
+            }
+            for tab in tabs {
+                let to = tab.as_object().ok_or("Each tab item must be an object")?;
+                if to.get("id").and_then(Value::as_str).map(str::trim).unwrap_or("").is_empty()
+                    || to.get("label").and_then(Value::as_str).map(str::trim).unwrap_or("").is_empty()
+                {
+                    return Err("Each tab item requires non-empty string 'id' and 'label'".into());
+                }
+                let tnode = to.get("node").ok_or("Each tab item requires a 'node' view")?;
+                validate_node(tnode, depth + 1, count, action_names)?;
             }
         }
         _ => {}
@@ -601,10 +805,45 @@ pub fn validate_manifest(raw: &Value) -> Result<Value, String> {
             if !ALLOWED_ACTION_KINDS.contains(&kind) {
                 return Err(format!("Action '{name}' has unsupported kind '{kind}'"));
             }
+            if let Some(eff) = d.get("effect").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                if !ALLOWED_EFFECTS.contains(&eff) {
+                    return Err(format!(
+                        "Action '{name}' has unsupported effect '{eff}'. Allowed: {}",
+                        ALLOWED_EFFECTS.join(", ")
+                    ));
+                }
+            }
             if kind == "openUrl" {
                 let u = d.get("url").and_then(Value::as_str).unwrap_or("").trim();
                 if !u.starts_with("https://") && !u.starts_with("{{") {
                     return Err(format!("openUrl action '{name}' must use an https:// URL or template"));
+                }
+            }
+            if kind == "multi" {
+                let steps = d
+                    .get("steps")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| format!("multi action '{name}' requires a 'steps' array"))?;
+                if steps.is_empty() || steps.len() > 6 {
+                    return Err(format!("multi action '{name}' must have 1–6 steps"));
+                }
+                for (si, step) in steps.iter().enumerate() {
+                    let so = step
+                        .as_object()
+                        .ok_or_else(|| format!("Action '{name}'.steps[{si}] must be an object"))?;
+                    let skind = so.get("kind").and_then(Value::as_str).unwrap_or("");
+                    if !matches!(
+                        skind,
+                        "setState" | "increment" | "toggleState" | "appendItem" | "removeItem" | "resetState"
+                    ) {
+                        return Err(format!("Action '{name}'.steps[{si}] has unsupported kind '{skind}'"));
+                    }
+                    if skind != "resetState" {
+                        let sk = so.get("stateKey").and_then(Value::as_str).unwrap_or("");
+                        if !is_valid_key(sk, 32) {
+                            return Err(format!("Action '{name}'.steps[{si}] ({skind}) requires a valid stateKey"));
+                        }
+                    }
                 }
             }
             if matches!(kind, "setState" | "increment" | "toggleState" | "appendItem" | "removeItem") {
@@ -615,6 +854,32 @@ pub fn validate_manifest(raw: &Value) -> Result<Value, String> {
             }
             action_names.insert(name.clone());
             actions_out.insert(name.clone(), def.clone());
+        }
+    }
+
+    // Optional passive tick (deterministic local state update for virtual pets / timers)
+    let mut tick_out = Value::Null;
+    if let Some(tick) = obj.get("tick") {
+        if !tick.is_null() {
+            let to = tick.as_object().ok_or("tick must be an object")?;
+            let act_name = to.get("action").and_then(Value::as_str).unwrap_or("").trim();
+            if act_name.is_empty() || !action_names.contains(act_name) {
+                return Err(format!("tick.action references unknown action '{act_name}'"));
+            }
+            let act_kind = actions_out
+                .get(act_name)
+                .and_then(|a| a.get("kind"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if !LOCAL_STATE_ACTION_KINDS.contains(&act_kind) {
+                return Err(format!("tick.action '{act_name}' must be a local state action"));
+            }
+            let secs = to
+                .get("intervalSeconds")
+                .and_then(Value::as_u64)
+                .unwrap_or(300)
+                .clamp(MIN_POLL_SECONDS, MAX_POLL_SECONDS);
+            tick_out = json!({ "intervalSeconds": secs, "action": act_name });
         }
     }
 
@@ -632,8 +897,40 @@ pub fn validate_manifest(raw: &Value) -> Result<Value, String> {
             view_out.insert("expanded".into(), expanded.clone());
         }
     }
+    if let Some(pill) = view.get("pill") {
+        if !pill.is_null() {
+            let po = pill.as_object().ok_or("view.pill must be an object")?;
+            let text = po.get("text").and_then(Value::as_str).map(str::trim).unwrap_or("");
+            if text.is_empty() || text.chars().count() > 120 {
+                return Err("view.pill.text must be 1–120 characters".into());
+            }
+            let mut norm_pill = Map::new();
+            norm_pill.insert("text".into(), Value::from(text));
+            if let Some(r) = po.get("right").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                if r.chars().count() > 80 {
+                    return Err("view.pill.right must be <= 80 characters".into());
+                }
+                norm_pill.insert("right".into(), Value::from(r));
+            }
+            if let Some(ic) = po.get("icon").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                let matched = ALLOWED_ICONS
+                    .iter()
+                    .find(|i| i.eq_ignore_ascii_case(ic))
+                    .copied()
+                    .ok_or_else(|| format!("view.pill.icon '{ic}' is not allowed"))?;
+                norm_pill.insert("icon".into(), Value::from(matched));
+            }
+            if let Some(t) = po.get("tone").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                if !matches!(t, "default" | "accent" | "ok" | "warn" | "err") {
+                    return Err(format!("view.pill.tone '{t}' is invalid"));
+                }
+                norm_pill.insert("tone".into(), Value::from(t));
+            }
+            view_out.insert("pill".into(), Value::Object(norm_pill));
+        }
+    }
 
-    Ok(json!({
+    let mut manifest_out = json!({
         "schemaVersion": SCHEMA_VERSION,
         "slug": slug,
         "id": custom_id(slug),
@@ -651,7 +948,11 @@ pub fn validate_manifest(raw: &Value) -> Result<Value, String> {
         "dataSources": data_sources_out,
         "actions": actions_out,
         "view": view_out,
-    }))
+    });
+    if !tick_out.is_null() {
+        manifest_out["tick"] = tick_out;
+    }
+    Ok(manifest_out)
 }
 
 /// Returns the list of declared `permissions.httpDomains` for a validated manifest.
@@ -839,8 +1140,122 @@ pub fn write_config(data_dir: &Path, slug: &str, manifest: &Value, patch: &Value
     Ok(val)
 }
 
-/// Deterministic state transition for declarative actions (`setState`, `increment`, `toggleState`, `appendItem`, `removeItem`, `resetState`).
-/// Also handles direct `stepper` / `toggleRow` updates via synthetic action names `__step:<stateKey>` and `__toggle:<stateKey>`.
+/// Returns the optional particle burst effect (`hearts`, `sparkles`, etc.) configured on a manifest action.
+pub fn action_effect<'a>(manifest: &'a Value, action_name: &str) -> Option<&'a str> {
+    manifest["actions"]
+        .get(action_name)
+        .and_then(|a| a.get("effect"))
+        .and_then(Value::as_str)
+        .filter(|e| ALLOWED_EFFECTS.contains(e))
+}
+
+fn apply_single_op(
+    manifest: &Value,
+    st: &mut Map<String, Value>,
+    op: &Map<String, Value>,
+    payload: &Value,
+    now_ms: i64,
+) {
+    let kind = op.get("kind").and_then(Value::as_str).unwrap_or("");
+    let state_key = op.get("stateKey").and_then(Value::as_str).unwrap_or("");
+
+    match kind {
+        "resetState" => {
+            *st = manifest
+                .get("initialState")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+        }
+        "increment" => {
+            let delta = payload
+                .get("delta")
+                .and_then(Value::as_f64)
+                .or_else(|| op.get("delta").and_then(Value::as_f64))
+                .unwrap_or(1.0);
+            let cur = st.get(state_key).and_then(Value::as_f64).unwrap_or(0.0);
+            let mut next = cur + delta;
+            if let Some(min) = op.get("min").and_then(Value::as_f64) {
+                next = next.max(min);
+            }
+            if let Some(max) = op.get("max").and_then(Value::as_f64) {
+                next = next.min(max);
+            }
+            st.insert(state_key.to_string(), num_value(next));
+        }
+        "toggleState" => {
+            if let Some(idx) = payload.get("index").and_then(Value::as_u64).map(|i| i as usize) {
+                if let Some(Value::Array(arr)) = st.get_mut(state_key) {
+                    if let Some(item) = arr.get_mut(idx) {
+                        if let Some(obj) = item.as_object_mut() {
+                            let cur = obj.get("done").and_then(Value::as_bool).unwrap_or(false);
+                            obj.insert("done".into(), Value::Bool(!cur));
+                            return;
+                        }
+                    }
+                }
+            }
+            let cur = st.get(state_key).and_then(Value::as_bool).unwrap_or(false);
+            st.insert(state_key.to_string(), Value::Bool(!cur));
+        }
+        "setState" => {
+            let input_str = payload.get("input").and_then(Value::as_str).unwrap_or("").trim();
+            let val = match op.get("value") {
+                Some(Value::String(s)) if s.trim() == "{{input}}" => Value::from(input_str),
+                Some(v) => v.clone(),
+                None => Value::from(input_str),
+            };
+            st.insert(state_key.to_string(), val);
+        }
+        "appendItem" => {
+            let text = payload
+                .get("input")
+                .and_then(Value::as_str)
+                .or_else(|| op.get("value").and_then(Value::as_str))
+                .unwrap_or("")
+                .trim();
+            if text.is_empty() {
+                return;
+            }
+            let max_items = op
+                .get("maxItems")
+                .and_then(Value::as_u64)
+                .unwrap_or(50)
+                .clamp(1, MAX_STATE_ITEMS as u64) as usize;
+            let mut arr = st
+                .get(state_key)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            arr.insert(
+                0,
+                json!({
+                    "id": format!("i_{now_ms}_{}", arr.len()),
+                    "title": text.chars().take(200).collect::<String>(),
+                    "done": false,
+                    "at": now_ms,
+                }),
+            );
+            arr.truncate(max_items);
+            st.insert(state_key.to_string(), Value::Array(arr));
+        }
+        "removeItem" => {
+            if let Some(Value::Array(arr)) = st.get_mut(state_key) {
+                if let Some(id) = payload.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                    arr.retain(|item| item.get("id").and_then(Value::as_str) != Some(id));
+                } else if let Some(idx) = payload.get("index").and_then(Value::as_u64).map(|i| i as usize) {
+                    if idx < arr.len() {
+                        arr.remove(idx);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Deterministic state transition for declarative actions (`setState`, `increment`, `toggleState`, `appendItem`, `removeItem`, `resetState`, `multi`).
+/// Also handles direct `stepper` / `toggleRow` / `tabs` updates via synthetic action names `__step:`, `__toggle:`, `__tab:`.
 pub fn apply_action(
     manifest: &Value,
     current_state: &Value,
@@ -850,7 +1265,6 @@ pub fn apply_action(
 ) -> Result<Value, String> {
     let mut st = current_state.as_object().cloned().unwrap_or_default();
 
-    // Direct interactive primitive mutations (stepper / toggleRow)
     if let Some(key) = action_name.strip_prefix("__step:") {
         if !is_valid_key(key, 32) {
             return Err("Invalid stateKey".into());
@@ -875,104 +1289,363 @@ pub fn apply_action(
         st.insert(key.to_string(), Value::Bool(!cur));
         return Ok(Value::Object(st));
     }
+    if let Some(key) = action_name.strip_prefix("__tab:") {
+        if !is_valid_key(key, 32) {
+            return Err("Invalid stateKey".into());
+        }
+        let val = payload["value"].as_str().unwrap_or("").trim();
+        if !val.is_empty() && val.len() <= 32 {
+            st.insert(key.to_string(), Value::from(val));
+        }
+        return Ok(Value::Object(st));
+    }
 
     let action = manifest["actions"]
         .get(action_name)
         .and_then(Value::as_object)
         .ok_or_else(|| format!("Unknown action '{action_name}'"))?;
     let kind = action.get("kind").and_then(Value::as_str).unwrap_or("");
-    let state_key = action.get("stateKey").and_then(Value::as_str).unwrap_or("");
-
-    match kind {
-        "resetState" => Ok(manifest.get("initialState").cloned().unwrap_or_else(|| json!({}))),
-        "increment" => {
-            let delta = payload.get("delta").and_then(Value::as_f64)
-                .or_else(|| action.get("delta").and_then(Value::as_f64))
-                .unwrap_or(1.0);
-            let cur = st.get(state_key).and_then(Value::as_f64).unwrap_or(0.0);
-            let mut next = cur + delta;
-            if let Some(min) = action.get("min").and_then(Value::as_f64) {
-                next = next.max(min);
+    if kind == "multi" {
+        for step in action.get("steps").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(so) = step.as_object() {
+                apply_single_op(manifest, &mut st, so, payload, now_ms);
             }
-            if let Some(max) = action.get("max").and_then(Value::as_f64) {
-                next = next.min(max);
-            }
-            st.insert(state_key.to_string(), num_value(next));
-            Ok(Value::Object(st))
         }
-        "toggleState" => {
-            if let Some(idx) = payload.get("index").and_then(Value::as_u64).map(|i| i as usize) {
-                if let Some(Value::Array(arr)) = st.get_mut(state_key) {
-                    if let Some(item) = arr.get_mut(idx) {
-                        if let Some(obj) = item.as_object_mut() {
-                            let cur = obj.get("done").and_then(Value::as_bool).unwrap_or(false);
-                            obj.insert("done".into(), Value::Bool(!cur));
-                            return Ok(Value::Object(st));
-                        }
-                    }
-                }
-            }
-            let cur = st.get(state_key).and_then(Value::as_bool).unwrap_or(false);
-            st.insert(state_key.to_string(), Value::Bool(!cur));
-            Ok(Value::Object(st))
-        }
-        "setState" => {
-            let input_str = payload.get("input").and_then(Value::as_str).unwrap_or("").trim();
-            let val = match action.get("value") {
-                Some(Value::String(s)) if s.trim() == "{{input}}" => Value::from(input_str),
-                Some(v) => v.clone(),
-                None => Value::from(input_str),
-            };
-            st.insert(state_key.to_string(), val);
-            Ok(Value::Object(st))
-        }
-        "appendItem" => {
-            let text = payload
-                .get("input")
-                .and_then(Value::as_str)
-                .or_else(|| action.get("value").and_then(Value::as_str))
-                .unwrap_or("")
-                .trim();
-            if text.is_empty() {
-                return Ok(Value::Object(st));
-            }
-            let max_items = action
-                .get("maxItems")
-                .and_then(Value::as_u64)
-                .unwrap_or(50)
-                .clamp(1, MAX_STATE_ITEMS as u64) as usize;
-            let mut arr = st
-                .get(state_key)
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            arr.insert(
-                0,
-                json!({
-                    "id": format!("i_{now_ms}_{}", arr.len()),
-                    "title": text.chars().take(200).collect::<String>(),
-                    "done": false,
-                    "at": now_ms,
-                }),
-            );
-            arr.truncate(max_items);
-            st.insert(state_key.to_string(), Value::Array(arr));
-            Ok(Value::Object(st))
-        }
-        "removeItem" => {
-            if let Some(Value::Array(arr)) = st.get_mut(state_key) {
-                if let Some(id) = payload.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-                    arr.retain(|item| item.get("id").and_then(Value::as_str) != Some(id));
-                } else if let Some(idx) = payload.get("index").and_then(Value::as_u64).map(|i| i as usize) {
-                    if idx < arr.len() {
-                        arr.remove(idx);
-                    }
-                }
-            }
-            Ok(Value::Object(st))
-        }
-        _ => Ok(Value::Object(st)),
+        return Ok(Value::Object(st));
     }
+    apply_single_op(manifest, &mut st, action, payload, now_ms);
+    Ok(Value::Object(st))
+}
+
+/// Wraps a validated manifest in a clean, secret-free shareable bundle (`sympony-custom-module` v1).
+pub fn export_bundle(manifest: &Value) -> Value {
+    json!({
+        "format": "sympony-custom-module",
+        "version": 1,
+        "manifest": manifest,
+    })
+}
+
+/// Validates and installs a shared `.symponypack.json` bundle or raw manifest (NEVER auto-approves HTTP domains).
+pub fn import_bundle(data_dir: &Path, raw: &Value, replace: bool) -> Result<Value, String> {
+    let manifest_raw = if raw.get("format").and_then(Value::as_str) == Some("sympony-custom-module") {
+        raw.get("manifest").ok_or("Bundle is missing 'manifest'")?
+    } else {
+        raw
+    };
+    save_manifest(data_dir, manifest_raw, replace)
+}
+
+/// Curated built-in starter templates (100% local / safe defaults; includes animated Pixel Tamagotchi Pet).
+pub fn starter_templates() -> Vec<Value> {
+    const RAW: &str = r##"[
+      {
+        "schemaVersion": 1,
+        "slug": "mochi-pet",
+        "name": "Mochi Pet",
+        "description": "Animated OLED pixel Tamagotchi cat you can feed, pet, play with, and pin to the notch pill",
+        "icon": "Heart",
+        "accent": "sky",
+        "defaultSize": "2x2",
+        "author": "pony",
+        "permissions": { "httpDomains": [] },
+        "initialState": {
+          "hunger": 82,
+          "happy": 88,
+          "energy": 76,
+          "xp": 14,
+          "sleeping": false,
+          "speech": "Purr~ ♥"
+        },
+        "tick": { "intervalSeconds": 600, "action": "decay" },
+        "actions": {
+          "feed": {
+            "kind": "multi",
+            "effect": "hearts",
+            "steps": [
+              { "kind": "increment", "stateKey": "hunger", "delta": 22, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "happy", "delta": 8, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "xp", "delta": 3, "min": 0, "max": 9999 },
+              { "kind": "setState", "stateKey": "sleeping", "value": false },
+              { "kind": "setState", "stateKey": "speech", "value": "Yum! ♥" }
+            ]
+          },
+          "pet": {
+            "kind": "multi",
+            "effect": "sparkles",
+            "steps": [
+              { "kind": "increment", "stateKey": "happy", "delta": 16, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "xp", "delta": 2, "min": 0, "max": 9999 },
+              { "kind": "setState", "stateKey": "speech", "value": "Purr~ ✦" }
+            ]
+          },
+          "play": {
+            "kind": "multi",
+            "effect": "stars",
+            "steps": [
+              { "kind": "increment", "stateKey": "happy", "delta": 20, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "energy", "delta": -12, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "hunger", "delta": -8, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "xp", "delta": 6, "min": 0, "max": 9999 },
+              { "kind": "setState", "stateKey": "sleeping", "value": false },
+              { "kind": "setState", "stateKey": "speech", "value": "Boing! ★" }
+            ]
+          },
+          "nap": {
+            "kind": "multi",
+            "effect": "zzz",
+            "steps": [
+              { "kind": "increment", "stateKey": "energy", "delta": 30, "min": 0, "max": 100 },
+              { "kind": "setState", "stateKey": "sleeping", "value": true },
+              { "kind": "setState", "stateKey": "speech", "value": "zZz…" }
+            ]
+          },
+          "decay": {
+            "kind": "multi",
+            "steps": [
+              { "kind": "increment", "stateKey": "hunger", "delta": -4, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "happy", "delta": -2, "min": 0, "max": 100 },
+              { "kind": "increment", "stateKey": "energy", "delta": -2, "min": 0, "max": 100 }
+            ]
+          }
+        },
+        "view": {
+          "pill": {
+            "icon": "Heart",
+            "text": "Mochi",
+            "right": "{{state.hunger | threshold:\"0:Hungry,35:Chill,75:Happy\"}} {{state.hunger}}%",
+            "tone": "accent"
+          },
+          "compact": {
+            "type": "stack",
+            "dir": "col",
+            "gap": "sm",
+            "children": [
+              { "type": "header", "title": "Mochi Pet", "subtitle": "XP {{state.xp}}", "rightAction": "nap", "rightLabel": "zZz" },
+              {
+                "type": "stack",
+                "dir": "row",
+                "gap": "md",
+                "align": "center",
+                "children": [
+                  {
+                    "type": "sprite",
+                    "kind": "pixel",
+                    "size": 56,
+                    "stage": true,
+                    "glow": true,
+                    "onClick": "pet",
+                    "speech": "{{state.speech}}",
+                    "activeState": "{{state.hunger | threshold:\"0:hungry,35:idle,75:happy\"}}",
+                    "palette": {
+                      ".": "transparent",
+                      "1": "#7dd3fc",
+                      "2": "#e0f2fe",
+                      "3": "#0f172a",
+                      "4": "#fb7185",
+                      "5": "#38bdf8"
+                    },
+                    "states": {
+                      "happy": {
+                        "fps": 4,
+                        "motion": "bounce",
+                        "frames": [
+                          [
+                            "..11....11..",
+                            ".1411111141.",
+                            ".1111111111.",
+                            "111311113111",
+                            "114112211411",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "..51111115..",
+                            "..11....11.."
+                          ],
+                          [
+                            "............",
+                            "..11....11..",
+                            ".1411111141.",
+                            "113131131311",
+                            "114112211411",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "..51111115..",
+                            "...11..11..."
+                          ]
+                        ]
+                      },
+                      "idle": {
+                        "fps": 3,
+                        "motion": "walk",
+                        "frames": [
+                          [
+                            "..11....11..",
+                            ".1411111141.",
+                            ".1111111111.",
+                            "111311113111",
+                            "111112211111",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "..11....11..",
+                            "..55....55.."
+                          ],
+                          [
+                            "..11....11..",
+                            ".1411111141.",
+                            ".1111111111.",
+                            "111111111111",
+                            "111112211111",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "...11..11...",
+                            "...55..55..."
+                          ]
+                        ]
+                      },
+                      "hungry": {
+                        "fps": 3,
+                        "motion": "shake",
+                        "frames": [
+                          [
+                            "............",
+                            "..11....11..",
+                            ".1411111141.",
+                            "111311113111",
+                            "111114411111",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "..55....55..",
+                            "............"
+                          ],
+                          [
+                            "............",
+                            "..11....11..",
+                            ".1411111141.",
+                            "111311113111",
+                            "111142241111",
+                            "111122221111",
+                            ".1122222211.",
+                            ".1122222211.",
+                            "..55....55..",
+                            "............"
+                          ]
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "stack",
+                    "dir": "col",
+                    "gap": "xs",
+                    "children": [
+                      { "type": "progress", "label": "Food", "value": "{{state.hunger}}", "max": "100", "tone": "ok" },
+                      { "type": "progress", "label": "Mood", "value": "{{state.happy}}", "max": "100", "tone": "rose" },
+                      { "type": "progress", "label": "Energy", "value": "{{state.energy}}", "max": "100", "tone": "warn" }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "grid",
+                "cols": 3,
+                "gap": "xs",
+                "children": [
+                  { "type": "button", "label": "Feed", "action": "feed", "variant": "accent", "size": "xs" },
+                  { "type": "button", "label": "Pet", "action": "pet", "variant": "ghost", "size": "xs" },
+                  { "type": "button", "label": "Play", "action": "play", "variant": "ghost", "size": "xs" }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "schemaVersion": 1,
+        "slug": "daily-habits",
+        "name": "Daily Habits",
+        "description": "Local OLED habit tracker with Apple Watch ring, steppers & reading checklist",
+        "icon": "Flame",
+        "accent": "sky",
+        "defaultSize": "2x2",
+        "author": "pony",
+        "permissions": { "httpDomains": [] },
+        "initialState": { "water": 4, "pushups": 20, "readDone": false },
+        "actions": { "reset": { "kind": "resetState" } },
+        "view": {
+          "pill": { "icon": "Flame", "text": "Water {{state.water}}/8", "tone": "accent" },
+          "compact": {
+            "type": "stack",
+            "dir": "col",
+            "gap": "sm",
+            "children": [
+              { "type": "header", "title": "Daily Habits", "rightAction": "reset", "rightLabel": "Reset" },
+              { "type": "progress", "variant": "ring", "label": "Water goal", "value": "{{state.water}}", "max": "8" },
+              {
+                "type": "stack",
+                "dir": "col",
+                "gap": "xs",
+                "children": [
+                  { "type": "stepper", "label": "Water", "stateKey": "water", "step": 1, "min": 0, "max": 12, "unit": "gl" },
+                  { "type": "stepper", "label": "Push-ups", "stateKey": "pushups", "step": 10, "min": 0, "max": 200 }
+                ]
+              },
+              { "type": "toggleRow", "label": "Read 20 min today", "stateKey": "readDone" }
+            ]
+          }
+        }
+      },
+      {
+        "schemaVersion": 1,
+        "slug": "crypto-pulse",
+        "name": "Crypto & FX Pulse",
+        "description": "Live BTC & ETH prices from CoinGecko with 24h delta badges",
+        "icon": "TrendingUp",
+        "accent": "emerald",
+        "defaultSize": "2x1",
+        "author": "pony",
+        "permissions": { "httpDomains": ["api.coingecko.com"] },
+        "dataSources": [{
+          "id": "mkt",
+          "kind": "http",
+          "method": "GET",
+          "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true",
+          "pollSeconds": 60,
+          "extract": {
+            "btc": "bitcoin.usd",
+            "btcChg": "bitcoin.usd_24h_change",
+            "eth": "ethereum.usd",
+            "ethChg": "ethereum.usd_24h_change"
+          }
+        }],
+        "actions": { "refresh": { "kind": "refresh" } },
+        "view": {
+          "pill": { "icon": "TrendingUp", "text": "BTC {{mkt.btc | currency:USD}}", "right": "{{mkt.btcChg | signedPercent:1}}", "tone": "ok" },
+          "compact": {
+            "type": "stack",
+            "dir": "col",
+            "gap": "sm",
+            "children": [
+              { "type": "header", "title": "Crypto Pulse", "subtitle": "Live", "rightAction": "refresh" },
+              {
+                "type": "grid",
+                "cols": 2,
+                "gap": "sm",
+                "children": [
+                  { "type": "metric", "label": "BTC", "value": "{{mkt.btc | currency:USD}}", "delta": "{{mkt.btcChg | signedPercent:1}}" },
+                  { "type": "metric", "label": "ETH", "value": "{{mkt.eth | currency:USD}}", "delta": "{{mkt.ethChg | signedPercent:1}}" }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ]"##;
+    serde_json::from_str::<Vec<Value>>(RAW).unwrap_or_default()
 }
 
 fn num_value(n: f64) -> Value {

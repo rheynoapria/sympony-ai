@@ -74,4 +74,32 @@ describe('Custom Modules Declarative OLED Engine', () => {
     const trav = NotchKit.renderMarkdown('![x](/Users/me/../secret.png)');
     expect(trav).not.toContain('data-local-img');
   });
+
+  test('Phase 2: threshold pipe and local multi-step animated pet actions work deterministically', () => {
+    const ctx = { state: { hunger: 82, low: 15, mid: 50 } };
+    expect(Engine.resolveExpr('{{state.hunger | threshold:"0:hungry,35:idle,75:happy"}}', ctx)).toBe('happy');
+    expect(Engine.resolveExpr('{{state.mid | threshold:"0:hungry,35:idle,75:happy"}}', ctx)).toBe('idle');
+    expect(Engine.resolveExpr('{{state.low | threshold:"0:hungry,35:idle,75:happy"}}', ctx)).toBe('hungry');
+
+    const petManifest = {
+      initialState: { hunger: 50, happy: 60, speech: 'Hi' },
+      actions: {
+        feed: {
+          kind: 'multi',
+          effect: 'hearts',
+          steps: [
+            { kind: 'increment', stateKey: 'hunger', delta: 30, min: 0, max: 100 },
+            { kind: 'increment', stateKey: 'happy', delta: 15, min: 0, max: 100 },
+            { kind: 'setState', stateKey: 'speech', value: 'Yum! ♥' },
+          ],
+        },
+      },
+    };
+    const res = Engine.applyActionLocal(petManifest, petManifest.initialState, 'feed', {});
+    expect(res.effect).toBe('hearts');
+    expect(res.state).toEqual({ hunger: 80, happy: 75, speech: 'Yum! ♥' });
+
+    const tabRes = Engine.applyActionLocal(petManifest, res.state, '__tab:view', { value: 'stats' });
+    expect(tabRes.state.view).toBe('stats');
+  });
 });

@@ -1,9 +1,10 @@
 //! Tauri IPC & Pony MCP handlers for local Declarative OLED Custom Modules (`custommod.*` / `custommod:*`).
 use serde_json::{json, Map, Value};
 use services::custom_modules::{
-    apply_action, custom_id, delete_module, fetch_data_source, list_manifests, manifest_domains,
-    read_config, read_manifest, read_state, save_manifest, secret_field_keys, validate_manifest,
-    validate_slug, write_config, write_state, MIN_POLL_SECONDS,
+    action_effect, apply_action, custom_id, delete_module, export_bundle, fetch_data_source,
+    import_bundle, list_manifests, manifest_domains, read_config, read_manifest, read_state,
+    save_manifest, secret_field_keys, starter_templates, validate_manifest, validate_slug,
+    write_config, write_state, MIN_POLL_SECONDS,
 };
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -14,6 +15,18 @@ use crate::commands::{apply_settings_patch, App};
 
 const SECRETS_KEY: &str = "customModSecrets";
 const APPROVED_KEY: &str = "customModApprovedDomains";
+const PINNED_PILL_KEY: &str = "customModPinnedPill";
+
+fn pinned_pill_slug(app: &AppHandle) -> String {
+    app.state::<App>()
+        .settings
+        .get()
+        .get(PINNED_PILL_KEY)
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
 
 #[derive(Default)]
 pub struct CustomModState {
@@ -175,6 +188,7 @@ fn build_module_summary(app: &AppHandle, manifest: &Value) -> Value {
         "secretKeysConfigured": secret_keys,
         "config": config,
         "state": state,
+        "pinnedPill": pinned_pill_slug(app) == slug,
     })
 }
 
@@ -292,7 +306,11 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         match apply_action(&manifest, &cur, action_name, &payload, now_ms)
             .and_then(|next| write_state(&data_dir, slug, &next).map(|_| next))
         {
-            Ok(next) => Ok(json!({ "ok": true, "state": next })),
+            Ok(next) => Ok(json!({
+                "ok": true,
+                "state": next,
+                "effect": action_effect(&manifest, action_name),
+            })),
             Err(e) => Ok(json!({ "ok": false, "error": e })),
         }
     }));
@@ -427,6 +445,80 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         crate::floating_chat::open_notch_module(&h, &custom_id(slug));
         Ok(json!({ "ok": true }))
     }));
+
+    let h = app.clone();
+    reg.add("custommod.export", Box::new(move |_, a| {
+        let slug = a.first().and_then(Value::as_str).unwrap_or("").trim();
+        let data_dir = h.state::<App>().data_dir.clone();
+        match read_manifest(&data_dir, slug) {
+            Ok(m) => Ok(json!({ "ok": true, "bundle": export_bundle(&m) })),
+            Err(e) => Ok(json!({ "ok": false, "error": e })),
+        }
+    }));
+
+    let h = app.clone();
+    reg.add("custommod.import", Box::new(move |_, a| {
+        let raw = a.first().cloned().unwrap_or(Value::Null);
+        let replace = a.get(1).and_then(Value::as_bool).unwrap_or(false);
+        let data_dir = h.state::<App>().data_dir.clone();
+        match import_bundle(&data_dir, &raw, replace) {
+            Ok(saved) => {
+                let slug = saved["slug"].as_str().unwrap_or("").to_string();
+                // Security invariant: NEVER auto-approve outbound HTTP domains on import!
+                save_approved_domains(&h, &slug, vec![]);
+                clear_cache(&h, &slug);
+                ensure_in_settings_modules(&h, &slug, true);
+                emit_changed(&h, &slug, "imported");
+                Ok(json!({
+                    "ok": true,
+                    "slug": slug,
+                    "id": custom_id(&slug),
+                    "requiresDomainApproval": manifest_domains(&saved),
+                }))
+            }
+            Err(e) => Ok(json!({ "ok": false, "error": e })),
+        }
+    }));
+
+    let h = app.clone();
+    reg.add("custommod.pinPill", Box::new(move |_, a| {
+        let slug = a.first().and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if !slug.is_empty() {
+            if let Err(e) = validate_slug(&slug) {
+                return Ok(json!({ "ok": false, "error": e }));
+            }
+        }
+        apply_settings_patch(&h, json!({ PINNED_PILL_KEY: slug }));
+        emit_changed(&h, &slug, "pin");
+        Ok(json!({ "ok": true, "pinnedPill": slug }))
+    }));
+
+    reg.add("custommod.templates", Box::new(move |_, _| {
+        Ok(json!({ "ok": true, "templates": starter_templates() }))
+    }));
+
+    let h = app.clone();
+    reg.add("custommod.installTemplate", Box::new(move |_, a| {
+        let want = a.first().and_then(Value::as_str).unwrap_or("").trim();
+        let Some(tpl) = starter_templates()
+            .into_iter()
+            .find(|m| m["slug"].as_str() == Some(want))
+        else {
+            return Ok(json!({ "ok": false, "error": format!("Unknown template '{want}'") }));
+        };
+        let data_dir = h.state::<App>().data_dir.clone();
+        match save_manifest(&data_dir, &tpl, true) {
+            Ok(saved) => {
+                let slug = saved["slug"].as_str().unwrap_or("").to_string();
+                // Never auto-approve outbound HTTP domains silently; local-only templates have 0 domains.
+                clear_cache(&h, &slug);
+                ensure_in_settings_modules(&h, &slug, true);
+                emit_changed(&h, &slug, "created");
+                Ok(json!({ "ok": true, "slug": slug, "id": custom_id(&slug) }))
+            }
+            Err(e) => Ok(json!({ "ok": false, "error": e })),
+        }
+    }));
 }
 
 /// Rust-side Pony MCP tool dispatcher for Custom Modules (`cm_list`, `cm_read`, `cm_preview`, `cm_save`, `cm_delete`).
@@ -512,6 +604,14 @@ pub(crate) fn handle_pony_tool(app: &AppHandle, session: &str, kind: &str, args:
                 "needsDomainApproval": missing,
                 "dryRunSample": sample,
             });
+            let _ = app.emit(
+                "custommod:preview",
+                json!({
+                    "session": session,
+                    "manifest": manifest,
+                    "missingDomains": missing,
+                }),
+            );
             Some(json!({ "ok": true, "text": serde_json::to_string_pretty(&summary).unwrap_or_default() }))
         }
         "cm_save" => {
@@ -552,7 +652,12 @@ pub(crate) fn handle_pony_tool(app: &AppHandle, session: &str, kind: &str, args:
                 if crate::exec::approve(
                     app,
                     session,
-                    json!({ "tool": "save_custom_module", "detail": detail, "canAlways": false }),
+                    json!({
+                        "tool": "save_custom_module",
+                        "detail": detail,
+                        "manifest": manifest,
+                        "canAlways": false,
+                    }),
                 ) == "deny"
                 {
                     return Some(json!({ "ok": false, "error": "The user declined installing this custom module." }));
