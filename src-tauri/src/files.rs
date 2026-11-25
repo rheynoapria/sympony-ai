@@ -306,6 +306,15 @@ fn done(ok: bool, message: String) -> Value {
     json!({"ok": ok, "message": message})
 }
 
+/// Where Trash puts things, as the OS names it.
+const BIN: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
+
+/// A drive's name in a message: a Mac volume's folder name, a Windows drive's letter (`E:`).
+fn drive_name(p: &str) -> String {
+    let n = name_of(p);
+    if n.is_empty() { p.trim_end_matches(['\\', '/']).to_string() } else { n }
+}
+
 fn run_action(action: &str, files: &[String]) -> Value {
     let files: Vec<String> = files.iter().filter(|p| Path::new(p.as_str()).exists()).cloned().collect();
     let Some(first) = files.first() else { return done(false, "Nothing to do".into()) };
@@ -315,7 +324,10 @@ fn run_action(action: &str, files: &[String]) -> Value {
             let dir = parent(first);
             let name = if files.len() == 1 { format!("{}.zip", name_of(first)) } else { "Archive.zip".into() };
             let out = unique_in(&dir, &name);
-            let r = if files.len() == 1 {
+            // (Windows has no ditto or zip: the archive is written in Rust, each item under its own name)
+            let r = if cfg!(windows) {
+                services::archive::zip_items(&out, &files.iter().map(PathBuf::from).collect::<Vec<_>>())
+            } else if files.len() == 1 {
                 run_ok(Command::new("/usr/bin/ditto").args(["-c", "-k", "--sequesterRsrc", "--keepParent"]).arg(first).arg(&out))
             } else {
                 // (names from their folder when they share it)
@@ -337,7 +349,12 @@ fn run_action(action: &str, files: &[String]) -> Value {
             for z in &zips {
                 let stem = name_of(z);
                 let out = unique_in(&parent(z), stem.trim_end_matches(".zip").trim_end_matches(".ZIP"));
-                if let Err(e) = run_ok(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(z.as_str()).arg(&out)) {
+                let r = if cfg!(windows) {
+                    services::archive::extract(Path::new(z.as_str()), &out).map(|_| ())
+                } else {
+                    run_ok(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(z.as_str()).arg(&out))
+                };
+                if let Err(e) = r {
                     return done(false, format!("Couldn’t extract {stem}: {e}"));
                 }
             }
@@ -353,7 +370,7 @@ fn run_action(action: &str, files: &[String]) -> Value {
                 let (fmt, ext) = if low.ends_with(".png") { ("jpeg", "jpg") } else { ("png", "png") };
                 let stem = Path::new(f).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 let out = unique_in(&parent(f), &format!("{stem}.{ext}"));
-                if let Err(e) = run_ok(Command::new("/usr/bin/sips").args(["-s", "format", fmt, f.as_str(), "--out"]).arg(&out)) {
+                if let Err(e) = platform::os::files::convert_picture(f, &out, fmt == "jpeg") {
                     return done(false, format!("Couldn’t convert {}: {e}", name_of(f)));
                 }
                 n += 1;
@@ -370,7 +387,13 @@ fn run_action(action: &str, files: &[String]) -> Value {
                     continue;
                 }
                 let out = unique_in(&dir, &name_of(f));
-                let r = if action == "copy" { run_ok(Command::new("/bin/cp").args(["-Rp", f.as_str()]).arg(&out)) } else { run_ok(Command::new("/bin/mv").args(["-n", f.as_str()]).arg(&out)) };
+                let r = match (cfg!(windows), action == "copy") {
+                    // (Windows: in Rust, folders whole, a move across drives copied then removed)
+                    (true, true) => services::archive::copy_tree(Path::new(f.as_str()), &out),
+                    (true, false) => services::archive::move_path(Path::new(f.as_str()), &out),
+                    (false, true) => run_ok(Command::new("/bin/cp").args(["-Rp", f.as_str()]).arg(&out)),
+                    (false, false) => run_ok(Command::new("/bin/mv").args(["-n", f.as_str()]).arg(&out)),
+                };
                 if let Err(e) = r {
                     return done(false, format!("Couldn’t {}: {e}", action));
                 }
@@ -388,22 +411,22 @@ fn run_action(action: &str, files: &[String]) -> Value {
         "trash" => {
             for f in &files {
                 if let Err(e) = platform::os::files::trash(f) {
-                    return done(false, format!("Couldn’t move {} to the Trash: {e}", name_of(f)));
+                    return done(false, format!("Couldn’t move {} to the {BIN}: {e}", name_of(f)));
                 }
             }
-            done(true, format!("Moved {what} to the Trash"))
+            done(true, format!("Moved {what} to the {BIN}"))
         }
         "eject" => {
-            let vols: Vec<&String> = files.iter().filter(|f| f.starts_with("/Volumes/") && f.trim_end_matches('/').matches('/').count() == 2).collect();
+            let vols: Vec<&String> = files.iter().filter(|f| platform::os::files::is_drive(f)).collect();
             if vols.is_empty() {
-                return done(false, "Drop a drive from Finder to eject it".into());
+                return done(false, format!("Drop a drive from {} to eject it", if cfg!(windows) { "File Explorer" } else { "Finder" }));
             }
             for v in &vols {
-                if let Err(e) = run_ok(Command::new("/usr/sbin/diskutil").arg("eject").arg(v.as_str())) {
-                    return done(false, format!("Couldn’t eject {}: {e}", name_of(v)));
+                if let Err(e) = platform::os::files::eject(v) {
+                    return done(false, format!("Couldn’t eject {}: {e}", drive_name(v)));
                 }
             }
-            done(true, format!("Ejected {}", if vols.len() == 1 { name_of(vols[0]) } else { format!("{} drives", vols.len()) }))
+            done(true, format!("Ejected {}", if vols.len() == 1 { drive_name(vols[0]) } else { format!("{} drives", vols.len()) }))
         }
         _ => done(false, "Nothing to do".into()),
     }

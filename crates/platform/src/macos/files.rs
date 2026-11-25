@@ -96,6 +96,24 @@ pub fn trash(path: &str) -> Result<(), String> {
     })
 }
 
+/// A picture converted to JPEG (`jpeg`) or PNG at `dst` (`sips`).
+pub fn convert_picture(src: &str, dst: &std::path::Path, jpeg: bool) -> Result<(), String> {
+    let o = std::process::Command::new("/usr/bin/sips").args(["-s", "format", if jpeg { "jpeg" } else { "png" }, src, "--out"]).arg(dst)
+        .output().map_err(|e| e.to_string())?;
+    if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("failed").to_string()) }
+}
+
+/// Ejects a drive (`diskutil eject`); `root` is its folder, `/Volumes/Name`.
+pub fn eject(root: &str) -> Result<(), String> {
+    let o = std::process::Command::new("/usr/sbin/diskutil").arg("eject").arg(root).output().map_err(|e| e.to_string())?;
+    if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("failed").to_string()) }
+}
+
+/// Whether `path` is a drive that `eject` takes: a volume's own folder, `/Volumes/Name`.
+pub fn is_drive(path: &str) -> bool {
+    path.starts_with("/Volumes/") && path.trim_end_matches('/').matches('/').count() == 2
+}
+
 fn urls(paths: &[String]) -> Retained<NSArray<NSURL>> {
     let v: Vec<Retained<NSURL>> = paths.iter().map(|p| NSURL::fileURLWithPath(&NSString::from_str(p))).collect();
     NSArray::from_retained_slice(&v)

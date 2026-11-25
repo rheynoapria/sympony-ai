@@ -263,6 +263,84 @@ pub fn trash(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A picture converted to JPEG (`jpeg`) or PNG at `dst` (a new file) with Windows' own codecs (WIC, through WinRT's
+/// BitmapDecoder): whatever Windows opens (JPEG, PNG, GIF, BMP, TIFF, WebP; HEIC with its extension), turned upright
+/// by its EXIF orientation, in sRGB. A file already at `dst` is never touched; when it fails, nothing it began is
+/// left there.
+pub fn convert_picture(src: &str, dst: &std::path::Path, jpeg: bool) -> Result<(), String> {
+    if dst.exists() {
+        return Err(format!("{} is already there", dst.display()));
+    }
+    let r = convert_in(src, dst, jpeg).map_err(|e| e.message());
+    if r.is_err() {
+        let _ = std::fs::remove_file(dst);
+    }
+    r
+}
+
+fn convert_in(src: &str, dst: &std::path::Path, jpeg: bool) -> ::windows::core::Result<()> {
+    use ::windows::core::HSTRING;
+    use ::windows::Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapEncoder, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode};
+    use ::windows::Storage::{CreationCollisionOption, FileAccessMode, StorageFile, StorageFolder};
+    use ::windows::Win32::Foundation::E_INVALIDARG;
+    let (Some(dir), Some(name)) = (dst.parent(), dst.file_name()) else { return Err(E_INVALIDARG.into()) };
+    let input = StorageFile::GetFileFromPathAsync(&HSTRING::from(src))?.join()?.OpenAsync(FileAccessMode::Read)?.join()?;
+    let decoder = BitmapDecoder::CreateAsync(&input)?.join()?;
+    // (JPEG has no transparency: what's see-through comes out as the colour under it)
+    let alpha = if jpeg { BitmapAlphaMode::Ignore } else { BitmapAlphaMode::Straight };
+    let bitmap = decoder.GetSoftwareBitmapTransformedAsync(BitmapPixelFormat::Bgra8, alpha, &BitmapTransform::new()?, ExifOrientationMode::RespectExifOrientation, ColorManagementMode::ColorManageToSRgb)?.join()?;
+    let folder = StorageFolder::GetFolderFromPathAsync(&HSTRING::from(dir))?.join()?;
+    let out = folder.CreateFileAsync(&HSTRING::from(name), CreationCollisionOption::FailIfExists)?.join()?;
+    let stream = out.OpenAsync(FileAccessMode::ReadWrite)?.join()?;
+    let encoder = BitmapEncoder::CreateAsync(if jpeg { BitmapEncoder::JpegEncoderId()? } else { BitmapEncoder::PngEncoderId()? }, &stream)?.join()?;
+    encoder.SetSoftwareBitmap(&bitmap)?;
+    encoder.FlushAsync()?.join()?;
+    Ok(())
+}
+
+/// Ejects a drive as File Explorer's Eject does (a USB stick is then safe to pull out; Windows says so itself, or
+/// that it's still in use). `root` is the drive, `E:\`. A drive Windows can't eject (the PC's own disk) says so.
+pub fn eject(root: &str) -> Result<(), String> {
+    let root = root.to_string();
+    // (its own thread: the shell's menus want a single-threaded COM apartment)
+    std::thread::spawn(move || eject_in(&root).map_err(|e| if e.code() == ::windows::Win32::Foundation::E_INVALIDARG { "Windows can’t eject this drive".to_string() } else { e.message() }))
+        .join().unwrap_or_else(|_| Err("the eject stopped".into()))
+}
+
+fn eject_in(root: &str) -> ::windows::core::Result<()> {
+    use ::windows::core::{s, HSTRING};
+    use ::windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, IBindCtx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+    use ::windows::Win32::UI::Shell::{IContextMenu, IShellItem, SHCreateItemFromParsingName, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO};
+    use ::windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, DestroyMenu, SW_SHOWNORMAL};
+    // SAFETY: COM calls on this thread's own apartment, set up here and torn down at the end; the menu made here is
+    // destroyed here; the verb is a static NUL-terminated string
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let r = (|| {
+            let item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(root), None)?;
+            let menu: IContextMenu = item.BindToHandler(None::<&IBindCtx>, &BHID_SFUIObject)?;
+            let hmenu = CreatePopupMenu()?;
+            // (the drive's own menu, as Explorer shows it, so its "eject" verb is there to call)
+            let r = menu.QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_NORMAL).ok().and_then(|_| {
+                let info = CMINVOKECOMMANDINFO { cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32, lpVerb: s!("eject"), nShow: SW_SHOWNORMAL.0, ..Default::default() };
+                menu.InvokeCommand(&info)
+            });
+            let _ = DestroyMenu(hmenu);
+            r
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        r
+    }
+}
+
+/// Whether `path` is a drive that `eject` takes: a drive's own folder, `E:\` (as File Explorer drops one).
+pub fn is_drive(path: &str) -> bool {
+    let b = path.as_bytes();
+    (b.len() == 2 || (b.len() == 3 && (b[2] == b'\\' || b[2] == b'/'))) && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
 thread_local! {
     // The Share window's request handler on the window it was last opened over: one at a time, the next share takes
     // its place (else that window would hand out every earlier share's files too).
@@ -495,6 +573,38 @@ mod tests {
             // SAFETY: paired with the CoInitializeEx above
             unsafe { CoUninitialize() };
         }
+    }
+
+    #[test]
+    fn a_picture_converts_to_jpeg_and_back_to_png_and_a_non_picture_leaves_nothing() {
+        let s = Scratch::new("convert");
+        // a 4×3 picture, half see-through
+        let px: Vec<u8> = (0..12).flat_map(|i| [(i * 20) as u8, 100, 200, if i % 2 == 0 { 255 } else { 128 }]).collect();
+        let png = super::super::image::png(4, 3, px, false).unwrap();
+        let src = s.0.join("photo ü.png");
+        std::fs::write(&src, png).unwrap();
+        let jpg = s.0.join("photo ü.jpg");
+        convert_picture(&src.to_string_lossy(), &jpg, true).unwrap();
+        assert_eq!(&std::fs::read(&jpg).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
+        let back = s.0.join("back.png");
+        convert_picture(&jpg.to_string_lossy(), &back, false).unwrap();
+        let (w, h, _) = super::super::image::bgra_of_png(&std::fs::read(&back).unwrap()).unwrap();
+        assert_eq!((w, h), (4, 3));
+        // never over a file that's there
+        assert!(convert_picture(&src.to_string_lossy(), &jpg, true).is_err());
+        assert_eq!(&std::fs::read(&jpg).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
+        // not a picture: an error, nothing written
+        let txt = s.0.join("note.png");
+        std::fs::write(&txt, "not a picture").unwrap();
+        let out = s.0.join("note.jpg");
+        assert!(convert_picture(&txt.to_string_lossy(), &out, true).is_err());
+        assert!(!out.exists());
+    }
+
+    #[test]
+    fn a_drive_is_its_own_folder() {
+        assert!(is_drive(r"E:\") && is_drive("E:") && is_drive("e:/"));
+        assert!(!is_drive(r"E:\photos") && !is_drive(r"C:\Users\me\a.txt") && !is_drive(r"\\server\share") && !is_drive("/Volumes/USB"));
     }
 
     #[test]
