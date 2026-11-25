@@ -182,12 +182,23 @@ pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<Stri
     if paths.is_empty() {
         return;
     }
-    let _ = app.run_on_main_thread(move || {
+    on_main(app, move || {
         if let Some(v) = crate::native::view(&w) {
-            // SAFETY: the window's own NSView, on the main thread
+            // SAFETY: the window's own NSView (HWND on Windows), on the main thread
             unsafe { platform::os::files::share(v, &paths) };
         }
     });
+}
+
+/// Runs `f` on the main thread for the share menu or a drag. On Windows from the event loop: a command that isn't
+/// async runs inside WebView2's own callback, and neither the drag's loop nor the Share window may run nested in one
+/// (`native::later_on_main_thread`). On macOS right there: AppKit's drag needs the mouse event that's current now.
+fn on_main(app: &AppHandle, f: impl FnOnce() + Send + 'static) {
+    if cfg!(windows) {
+        crate::native::later_on_main_thread(app, f);
+    } else {
+        let _ = app.run_on_main_thread(f);
+    }
 }
 
 /// A real drag of Shelf files out of `win` (to Finder, Mail…); taken off the Shelf after a drop with
@@ -198,7 +209,7 @@ pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
         return;
     }
     let h = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    on_main(app, move || {
         let Some(v) = crate::native::view(&win) else { return };
         let done = Box::new(move |dropped: bool| {
             if dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true {

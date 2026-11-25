@@ -1,6 +1,6 @@
 //! Files and the clipboard: choosing files (the Explorer file dialog), a file's icon, the clipboard (text and
-//! pictures, read and written), the Recycle Bin. Sharing and dragging files out are stand-ins for now. `view` is the
-//! window's HWND where macOS takes its NSView.
+//! pictures, read and written), the Recycle Bin, Windows' Share window and dragging files out to Explorer and apps.
+//! `view` is the window's HWND where macOS takes its NSView.
 #![allow(clippy::missing_safety_doc)]
 use std::ffi::c_void;
 
@@ -263,8 +263,244 @@ pub fn trash(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub unsafe fn share(_view: *mut c_void, _paths: &[String]) {}
+thread_local! {
+    // The Share window's request handler on the window it was last opened over: one at a time, the next share takes
+    // its place (else that window would hand out every earlier share's files too).
+    static SHARING: std::cell::RefCell<Option<(::windows::ApplicationModel::DataTransfer::DataTransferManager, i64)>> =
+        const { std::cell::RefCell::new(None) };
+}
 
-pub unsafe fn drag_out(_view: *mut c_void, _paths: &[String], _done: Box<dyn Fn(bool)>) -> bool {
-    false
+/// Windows' Share window (Nearby Sharing, Mail, other apps…) for these files and folders, over `view`'s window.
+/// Closing it shares nothing. Main thread; `view` is the window's HWND.
+///
+/// # Safety
+/// `view` must be a live window of this thread.
+pub unsafe fn share(view: *mut c_void, paths: &[String]) {
+    if view.is_null() || paths.is_empty() {
+        return;
+    }
+    let _ = share_in(::windows::Win32::Foundation::HWND(view), paths);
+}
+
+fn share_in(hwnd: ::windows::Win32::Foundation::HWND, paths: &[String]) -> ::windows::core::Result<()> {
+    use ::windows::core::HSTRING;
+    use ::windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
+    use ::windows::Foundation::TypedEventHandler;
+    use ::windows::Storage::IStorageItem;
+    use ::windows::Win32::UI::Shell::IDataTransferManagerInterop;
+    use windows_collections::IIterable;
+    let paths: Vec<String> = paths.iter().filter(|p| std::path::Path::new(p).exists()).cloned().collect();
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let title = HSTRING::from(share_title(&paths));
+    let interop = ::windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()?;
+    // SAFETY: `hwnd` is the caller's live window, on its own thread
+    let manager: DataTransferManager = unsafe { interop.GetForWindow(hwnd)? };
+    SHARING.with(|s| {
+        if let Some((m, token)) = s.borrow_mut().take() {
+            let _ = m.RemoveDataRequested(token);
+        }
+    });
+    // (asked for when the window opens, on this thread; a title is required, or Windows shows nothing to share.
+    // The storage items are made there: they can't be handed between threads, and the handler could be)
+    let token = manager.DataRequested(&TypedEventHandler::<DataTransferManager, DataRequestedEventArgs>::new(move |_, args| {
+        let Some(args) = args.as_ref() else { return Ok(()) };
+        let data = args.Request()?.Data()?;
+        data.Properties()?.SetTitle(&title)?;
+        // (WinRT lists of an interface hold Option<it>)
+        let list: IIterable<IStorageItem> = storage_items(&paths).into_iter().map(Some).collect::<Vec<_>>().into();
+        data.SetStorageItemsReadOnly(&list)
+    }))?;
+    SHARING.with(|s| *s.borrow_mut() = Some((manager, token)));
+    // SAFETY: as above
+    unsafe { interop.ShowShareUIForWindow(hwnd) }
+}
+
+/// The files and folders as WinRT storage items, the ones that are gone left out.
+fn storage_items(paths: &[String]) -> Vec<::windows::Storage::IStorageItem> {
+    use ::windows::core::{Interface, HSTRING};
+    use ::windows::Storage::{IStorageItem, StorageFile, StorageFolder};
+    paths.iter().filter_map(|p| {
+        let h = HSTRING::from(p.as_str());
+        if std::path::Path::new(p).is_dir() {
+            StorageFolder::GetFolderFromPathAsync(&h).and_then(|op| op.join()).and_then(|f| f.cast::<IStorageItem>()).ok()
+        } else {
+            StorageFile::GetFileFromPathAsync(&h).and_then(|op| op.join()).and_then(|f| f.cast::<IStorageItem>()).ok()
+        }
+    }).collect()
+}
+
+/// What the Share window names: the one file's name, else how many there are.
+fn share_title(paths: &[String]) -> String {
+    match paths {
+        [one] => std::path::Path::new(one).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| one.clone()),
+        _ => format!("{} items", paths.len()),
+    }
+}
+
+/// The files as the shell's own data object (CF_HDROP and the shell's formats, its drag picture), as Explorer makes
+/// for a drag. Files from different folders are fine. COM must be set up on this thread.
+fn data_object(paths: &[String]) -> ::windows::core::Result<::windows::Win32::System::Com::IDataObject> {
+    use ::windows::core::HSTRING;
+    use ::windows::Win32::Foundation::E_INVALIDARG;
+    use ::windows::Win32::System::Com::IDataObject;
+    use ::windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use ::windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHCreateShellItemArrayFromIDLists, BHID_DataObject};
+    // SAFETY: each ID list made here is freed below, after the item array has copied them
+    let ids: Vec<*mut ITEMIDLIST> = paths.iter().filter(|p| std::path::Path::new(p).exists())
+        .map(|p| unsafe { ILCreateFromPathW(&HSTRING::from(p.as_str())) }).filter(|id| !id.is_null()).collect();
+    if ids.is_empty() {
+        return Err(E_INVALIDARG.into());
+    }
+    let whole: Vec<*const ITEMIDLIST> = ids.iter().map(|id| *id as *const ITEMIDLIST).collect();
+    // (the items' own data object, as Explorer asks for one)
+    // SAFETY: the ID lists are live for the call
+    let data = unsafe { SHCreateShellItemArrayFromIDLists(&whole).and_then(|items| items.BindToHandler::<_, IDataObject>(None::<&::windows::Win32::System::Com::IBindCtx>, &BHID_DataObject)) };
+    for id in ids {
+        // SAFETY: made by ILCreateFromPathW above, freed once
+        unsafe { ILFree(Some(id)) };
+    }
+    data
+}
+
+/// Whether the mouse is over one of Sympony's own windows (the WebView's are another process's, under ours).
+fn over_own_window() -> bool {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetCursorPos, GetWindowThreadProcessId, WindowFromPoint, GA_ROOT};
+    let mut at = POINT { x: 0, y: 0 };
+    // SAFETY: reads of the cursor and the window under it
+    unsafe {
+        if GetCursorPos(&mut at) == 0 {
+            return false;
+        }
+        let w = WindowFromPoint(at);
+        if w.is_null() {
+            return false;
+        }
+        let root = GetAncestor(w, GA_ROOT);
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(if root.is_null() { w } else { root }, &mut pid);
+        pid == std::process::id()
+    }
+}
+
+/// Drags these files out of `view`'s window from the mouse's place now (the drag the page just started): Explorer and
+/// the desktop copy them (or make shortcuts), apps take them as attachments. `done(dropped)` when it ends; a drop back
+/// on Sympony's own windows isn't one, as on macOS. Main thread, during a mouse drag: with the button already up
+/// (a click that's over) nothing starts, false.
+///
+/// # Safety
+/// `view` must be a live window of this thread.
+pub unsafe fn drag_out(view: *mut c_void, paths: &[String], done: Box<dyn Fn(bool)>) -> bool {
+    use ::windows::Win32::System::Ole::{IDropSource, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_NONE};
+    use ::windows::Win32::UI::Shell::SHDoDragDrop;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+    if view.is_null() {
+        return false;
+    }
+    // (the primary button as the user set it, still held; GetAsyncKeyState reads the physical ones)
+    // SAFETY: plain reads of the mouse
+    let primary = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 { VK_RBUTTON } else { VK_LBUTTON };
+    if unsafe { GetAsyncKeyState(primary as i32) } >= 0 {
+        return false;
+    }
+    let Ok(data) = data_object(paths) else { return false };
+    // the shell's own drop source and drag picture; a copy or a link, never a move: the Shelf only points at files,
+    // and a drag never takes the user's file away from where it is
+    // SAFETY: `view` is the caller's live window; the drag runs its own loop here until the drop
+    let effect = unsafe { SHDoDragDrop(Some(::windows::Win32::Foundation::HWND(view)), &data, None::<&IDropSource>, DROPEFFECT_COPY | DROPEFFECT_LINK) };
+    done(matches!(effect, Ok(e) if e != DROPEFFECT_NONE) && !over_own_window());
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh folder under the temp folder, removed when dropped.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Scratch {
+            let d = std::env::temp_dir().join(format!("sy-files-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Scratch(d)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The paths a data object hands a drop target as CF_HDROP, as Explorer reads them.
+    fn dropped_paths(data: &::windows::Win32::System::Com::IDataObject) -> Vec<String> {
+        use ::windows::Win32::System::Com::{DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+        use ::windows::Win32::System::Ole::{ReleaseStgMedium, CF_HDROP};
+        use ::windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+        let fmt = FORMATETC { cfFormat: CF_HDROP.0, ptd: std::ptr::null_mut(), dwAspect: DVASPECT_CONTENT.0, lindex: -1, tymed: TYMED_HGLOBAL.0 as u32 };
+        // SAFETY: the medium is read while held and released once
+        unsafe {
+            let mut medium = data.GetData(&fmt).unwrap();
+            let drop = HDROP(medium.u.hGlobal.0);
+            let n = DragQueryFileW(drop, u32::MAX, None);
+            let out = (0..n).map(|i| {
+                let mut buf = vec![0u16; DragQueryFileW(drop, i, None) as usize + 1];
+                let len = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
+                String::from_utf16_lossy(&buf[..len])
+            }).collect();
+            ReleaseStgMedium(&mut medium);
+            out
+        }
+    }
+
+    #[test]
+    fn a_drag_hands_out_the_shelfs_files_from_any_folder_as_explorer_reads_them() {
+        use ::windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+        let s = Scratch::new("drag");
+        let (a, b) = (s.0.join("one"), s.0.join("two words"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let files = [a.join("note.txt"), b.join("picture ü.png")];
+        for f in &files {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let paths: Vec<String> = files.iter().map(|f| f.to_string_lossy().into_owned()).collect();
+        // SAFETY: this test thread's own apartment, torn down at the end
+        let init = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        {
+            // (the shell hands out long names; the temp folder may be named short, DKEASS~1)
+            let same = |a: &[String]| a.iter().map(|p| std::fs::canonicalize(p).unwrap()).collect::<Vec<_>>();
+            let data = data_object(&paths).unwrap();
+            assert_eq!(same(&dropped_paths(&data)), same(&paths));
+            // a file that's gone is left out; none left: no drag
+            let gone = s.0.join("gone.txt").to_string_lossy().into_owned();
+            assert_eq!(same(&dropped_paths(&data_object(&[gone.clone(), paths[0].clone()]).unwrap())), same(&paths[..1]));
+            assert!(data_object(&[gone]).is_err());
+        }
+        if init.is_ok() {
+            // SAFETY: paired with the CoInitializeEx above
+            unsafe { CoUninitialize() };
+        }
+    }
+
+    #[test]
+    fn the_share_window_names_one_file_or_how_many() {
+        assert_eq!(share_title(&[r"C:\Users\me\Desktop\report.pdf".into()]), "report.pdf");
+        assert_eq!(share_title(&[r"C:\a.txt".into(), r"C:\b.txt".into()]), "2 items");
+    }
+
+    #[test]
+    fn the_share_window_gets_files_and_folders_as_storage_items() {
+        let s = Scratch::new("share");
+        let f = s.0.join("a.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let paths = [f.to_string_lossy().into_owned(), s.0.to_string_lossy().into_owned(), s.0.join("gone.txt").to_string_lossy().into_owned()];
+        let names: Vec<String> = storage_items(&paths).iter().map(|i| i.Name().unwrap().to_string()).collect();
+        assert_eq!(names, vec!["a.txt".to_string(), s.0.file_name().unwrap().to_string_lossy().into_owned()]);
+    }
 }
