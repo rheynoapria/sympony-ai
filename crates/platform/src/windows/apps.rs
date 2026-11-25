@@ -178,8 +178,25 @@ pub fn activate_pid(pid: i32) {
         if IsIconic(w) != 0 {
             ShowWindow(w, SW_RESTORE);
         }
-        SetForegroundWindow(w);
+        if SetForegroundWindow(w) == 0 {
+            // Windows turns it down at times though Sympony has the front, e.g. when that's the notch (a window
+            // that never activates) after the Share window closed. As tao does to bring a window forward, a tap of
+            // Alt lets the next try through. (Injected, so the dictation key's hook passes it by.)
+            tap_alt();
+            SetForegroundWindow(w);
+        }
     }
+}
+
+/// An Alt press and release, sent to the app in front (Sympony's own window when it's used).
+fn tap_alt() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, VK_MENU};
+    // SAFETY: a plain lookup
+    let scan = unsafe { MapVirtualKeyW(u32::from(VK_MENU), MAPVK_VK_TO_VSC) } as u16;
+    let key = |flags| INPUT { r#type: INPUT_KEYBOARD, Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_MENU, wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: 0 } } };
+    let inputs = [key(0), key(KEYEVENTF_KEYUP)];
+    // SAFETY: two well-formed keyboard inputs, read during the call
+    unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
 }
 
 /// The pid of a running program with this id (`spotify.exe`).
