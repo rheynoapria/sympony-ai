@@ -406,10 +406,10 @@
   if (typeof window === 'undefined') return;
   window.CustomModEngine = Engine;
 
-  // ---- Notch Browser Runtime
-  const N = window.N;
-  if (!N) return;
-  const { st, api } = N;
+  // ---- Browser Renderer & Standalone Preview Engine (works in Notch, Floating Chat, AND Settings UI)
+  const N = window.N || null;
+  const st = (N && N.st) || { open: false };
+  const api = (N && N.api) || null;
   const _t = typeof window._t === 'function' ? window._t : (s) => s;
 
   // Live store of installed custom modules keyed by bare slug
@@ -429,6 +429,7 @@
   }
 
   function openCreatorPrompt(promptText) {
+    if (!N) return;
     if (typeof N.openModuleCreator === 'function') {
       N.openModuleCreator(promptText || '');
       return;
@@ -438,6 +439,7 @@
   }
 
   async function fetchModuleData(slug, force) {
+    if (!api) return;
     const rec = registry.get(slug);
     if (!rec) return;
     const sources = rec.manifest.dataSources || [];
@@ -569,14 +571,16 @@
     const rec = recOverride || registry.get(slug);
     if (!rec || !actionName) return;
 
-    // Sandboxed interactive preview mode (Pony Chat Live Preview) — local in-memory state only!
+    // Sandboxed interactive preview mode (Pony Chat & Settings Live Preview) — local in-memory state only!
     if (rec.isPreview) {
       const res = applyActionLocal(rec.manifest, rec.state, actionName, payload || {});
       rec.state = res.state;
       rerenderRecord(rec);
       if (res.effect) spawnEffectOnRecord(rec, res.effect);
+      if (typeof rec.onStateChange === 'function') rec.onStateChange(rec.state);
       return;
     }
+    if (!api) return;
 
     if (actionName.startsWith('__step:') || actionName.startsWith('__toggle:') || actionName.startsWith('__tab:')) {
       const r = await api.svc('custommod', 'action', slug, actionName, payload || {});
@@ -1039,7 +1043,7 @@
             row.classList.add('clickable');
             row.onclick = (e) => {
               e.stopPropagation();
-              runAction(slug, tpl.onClick, { index, id: item && item.id }, itemCtx);
+              runAction(slug, tpl.onClick, { index, id: item && item.id }, itemCtx, rec);
             };
           }
           if (tpl.onRemove) {
@@ -1047,7 +1051,7 @@
             rm.type = 'button';
             rm.onclick = (e) => {
               e.stopPropagation();
-              runAction(slug, tpl.onRemove, { index, id: item && item.id }, itemCtx);
+              runAction(slug, tpl.onRemove, { index, id: item && item.id }, itemCtx, rec);
             };
             row.appendChild(rm);
           }
@@ -1137,7 +1141,7 @@
         const inp = document.createElement('input');
         inp.type = 'text';
         inp.placeholder = resolveExpr(node.placeholder || _t('Add…'), ctx);
-        inp.onfocus = () => { if (N.focusField) N.focusField(inp); };
+        inp.onfocus = () => { if (N && N.focusField) N.focusField(inp); };
         inp.onclick = (e) => e.stopPropagation();
         const btn = el('button', 'cm-btn v-accent sz-xs', node.buttonLabel || '+');
         btn.type = 'submit';
@@ -1217,8 +1221,8 @@
       root.appendChild(eb);
     }
 
-    // In expanded/full mode, add a refined OLED footer bar with Edit with Pony pill
-    if (mode === 'expanded') {
+    // In expanded/full mode, add a refined OLED footer bar with Edit with Pony pill (suppressed in Settings studio)
+    if (mode === 'expanded' && !rec.hideFooter) {
       const foot = el('div', 'cm-foot');
       foot.appendChild(el('span', 'cm-foot-tag', `custom:${rec.manifest.slug}`));
       const editBtn = el('button', 'cm-foot-edit');
@@ -1246,6 +1250,66 @@
       renderInto(p, rec, 'expanded');
     }
   }
+
+  /** Evaluates a module's closed-notch pill descriptor (`view.pill`) with the exact same expression engine. */
+  Engine.evalPill = (manifest, state, config, data) => {
+    if (!manifest || !manifest.view || !manifest.view.pill) return null;
+    const p = manifest.view.pill;
+    const ctx = buildContext({
+      manifest,
+      state: state || manifest.initialState || {},
+      config: config || {},
+      data: data || {},
+      updatedAt: Date.now(),
+    });
+    const text = resolveExpr(p.text || manifest.name, ctx).trim();
+    if (!text) return null;
+    return {
+      slug: manifest.slug,
+      id: `custom:${manifest.slug}`,
+      name: manifest.name,
+      icon: p.icon || manifest.icon || 'Boxes',
+      accent: accentColor(manifest.accent),
+      text,
+      right: p.right ? resolveExpr(p.right, ctx).trim() : '',
+      tone: p.tone || 'accent',
+    };
+  };
+
+  /** Mounts a live, animated, interactive sandboxed OLED preview widget inside any host (Pony Chat & Settings UI). */
+  Engine.renderPreview = (host, manifest, opts = {}) => {
+    if (!host || !manifest || !manifest.view || !manifest.view.compact) return null;
+    const mode = opts.mode === 'expanded' ? 'expanded' : 'compact';
+    const rec = {
+      isPreview: true,
+      hideFooter: !!opts.hideFooter,
+      onStateChange: typeof opts.onStateChange === 'function' ? opts.onStateChange : null,
+      manifest,
+      state: Object.assign({}, manifest.initialState || {}, opts.state || {}),
+      config: Object.assign({}, opts.config || {}),
+      data: opts.data || {},
+      errors: {},
+      approvedDomains: [],
+      missingDomains: [],
+      cards: mode === 'compact' ? new Set([host]) : new Set(),
+      pages: mode === 'expanded' ? new Set([host]) : new Set(),
+    };
+    host.classList.add('cm-preview-canvas');
+    host.dataset.cmSize = manifest.defaultSize === '2x2' ? 'l' : (manifest.defaultSize === '1x1' ? 's' : 'm');
+    renderInto(host, rec, mode);
+    return {
+      rec,
+      rerender: () => rerenderRecord(rec),
+      trigger: (actionName, payload) => runAction(manifest.slug, actionName, payload || {}, null, rec),
+      destroy: () => {
+        rec.cards.clear();
+        rec.pages.clear();
+        host.innerHTML = '';
+      },
+    };
+  };
+
+  if (!N) return;
 
   function startPoll(rec) {
     stopPoll(rec);
@@ -1398,44 +1462,11 @@
   };
   N.customModPillActivity = () => {
     for (const [slug, rec] of registry.entries()) {
-      if (!rec.pinnedPill || !rec.manifest || !rec.manifest.view || !rec.manifest.view.pill) continue;
-      const p = rec.manifest.view.pill;
-      const ctx = buildContext(rec);
-      const text = resolveExpr(p.text || rec.manifest.name, ctx).trim();
-      if (!text) continue;
-      return {
-        slug,
-        id: `custom:${slug}`,
-        name: rec.manifest.name,
-        icon: p.icon || rec.manifest.icon || 'Boxes',
-        accent: accentColor(rec.manifest.accent),
-        text,
-        right: p.right ? resolveExpr(p.right, ctx).trim() : '',
-        tone: p.tone || 'accent',
-      };
+      if (!rec.pinnedPill) continue;
+      const pill = Engine.evalPill(rec.manifest, rec.state, rec.config, rec.data);
+      if (pill) return pill;
     }
     return null;
-  };
-
-  /** Mounts a live, animated, interactive sandboxed OLED preview widget inside any host (e.g. Pony Chat bubble). */
-  Engine.renderPreview = (host, manifest, opts = {}) => {
-    if (!host || !manifest || !manifest.view || !manifest.view.compact) return null;
-    const rec = {
-      isPreview: true,
-      manifest,
-      state: Object.assign({}, manifest.initialState || {}),
-      config: {},
-      data: opts.data || {},
-      errors: {},
-      approvedDomains: [],
-      missingDomains: [],
-      cards: new Set([host]),
-      pages: new Set(),
-    };
-    host.classList.add('cm-preview-canvas');
-    host.dataset.cmSize = manifest.defaultSize === '2x2' ? 'l' : (manifest.defaultSize === '1x1' ? 's' : 'm');
-    renderInto(host, rec, 'compact');
-    return rec;
   };
 
   if (api && typeof api.on === 'function') {

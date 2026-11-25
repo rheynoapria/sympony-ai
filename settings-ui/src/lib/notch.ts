@@ -80,6 +80,47 @@ export interface LocalEventsAPI {
   remove(list: LocalEvent[] | undefined, id: string): void;
 }
 
+export interface CustomModPillEval {
+  slug: string;
+  id: string;
+  name: string;
+  icon: string;
+  accent: string;
+  text: string;
+  right: string;
+  tone: string;
+}
+
+export interface CustomModPreviewHandle {
+  rec: { state: Record<string, unknown> };
+  rerender: () => void;
+  trigger: (actionName: string, payload?: Record<string, unknown>) => Promise<void> | void;
+  destroy: () => void;
+}
+
+export interface CustomModEngineAPI {
+  iconSvg: (name: string, style?: string) => string;
+  accentColor: (accent?: string) => string;
+  evalPill: (
+    manifest: unknown,
+    state?: Record<string, unknown>,
+    config?: Record<string, unknown>,
+    data?: Record<string, unknown>
+  ) => CustomModPillEval | null;
+  renderPreview: (
+    host: HTMLElement,
+    manifest: unknown,
+    opts?: {
+      mode?: "compact" | "expanded";
+      state?: Record<string, unknown>;
+      config?: Record<string, unknown>;
+      data?: Record<string, unknown>;
+      hideFooter?: boolean;
+      onStateChange?: (nextState: Record<string, unknown>) => void;
+    }
+  ) => CustomModPreviewHandle | null;
+}
+
 declare global {
   interface Window {
     notch?: Notch;
@@ -93,6 +134,7 @@ declare global {
     makeWaves?: (box: HTMLElement, shown: () => boolean) => SymponyWaveHandle | null;
     SymponyClock?: SymponyClockAPI;
     LocalEvents?: LocalEventsAPI;
+    CustomModEngine?: CustomModEngineAPI;
   }
 }
 

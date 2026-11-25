@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp, GripVertical, Palette } from "@/components/icons";
+import { ChevronDown, ChevronRight, ChevronUp, GripVertical, Palette } from "@/components/icons";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { Button } from "@/components/ui/knowns/button";
 import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
@@ -31,7 +31,7 @@ import { LeadText } from "@/rows/Rows";
 import { offTabs } from "@/rows/os";
 import type { CustomPartProps, SectionBody } from "@/rows/types";
 import { moduleMetaFor } from "./modules.meta";
-import { CustomModuleBadgeIcon, CustomModulesPanel, useCustomModules } from "./parts/CustomModules";
+import { CustomModuleBadgeIcon, useCustomModules } from "./parts/CustomModules";
 
 interface ModuleEntry {
   id: string;
@@ -50,7 +50,7 @@ const STYLE_LIBRARY_NEW_KEY = "v0.2b5:item:modules:styleLibrary";
 
 function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
   useWhatsNew();
-  const { items: customItems, refresh: refreshCustom } = useCustomModules();
+  const { items: customItems } = useCustomModules();
   const customById = new Map(customItems.map((c) => [c.id, c]));
   const every = (Array.isArray(settings.modules) ? settings.modules : []) as ModuleEntry[];
   const hiddenIds = new Set(offTabs(os));
@@ -420,9 +420,14 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
                       {isCustom ? meta.title : t(meta.title)}
                     </span>
                     {isCustom && (
-                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                        {t("Custom")}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.("custommodules")}
+                        title={t("Configure & preview in Custom Modules")}
+                        className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/18 dark:text-emerald-400"
+                      >
+                        <span>{t("Custom")}</span>
+                      </button>
                     )}
                     {isNewKeyUnseen(meta.newKey) && <NewBadge />}
                     {(() => {
@@ -520,7 +525,24 @@ function ModulesSection({ settings, set, os, onNavigate }: CustomPartProps) {
         </div>
       </PanelCard>
 
-      <CustomModulesPanel items={customItems} onChanged={refreshCustom} />
+      <PanelCard
+        title={t("Custom Modules")}
+        icon={groupIcon("Custom Modules")}
+        action={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onNavigate?.("custommodules")}
+          >
+            <span>{t("Open Custom Modules")}</span>
+            <ChevronRight className="ms-1 size-3.5 opacity-70" aria-hidden="true" />
+          </Button>
+        }
+      >
+        <p className="text-[12.5px] text-muted-foreground">
+          {t("Manage, preview, and create custom OLED modules in the dedicated Custom Modules menu.")}
+        </p>
+      </PanelCard>
 
       <PanelCard title={t("Default")} icon={groupIcon("Default")}>
         <div className="divide-y divide-border/80">

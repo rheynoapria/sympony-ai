@@ -17,6 +17,7 @@ import {
 import { general } from "@/sections/general";
 import { welcome } from "@/sections/welcome";
 import { modules } from "@/sections/modules";
+import { custommodules } from "@/sections/custommodules";
 import { about } from "@/sections/about";
 import { ai } from "@/sections/ai";
 import { aiusage } from "@/sections/aiusage";
@@ -63,6 +64,7 @@ export const BODIES: Record<string, SectionBody> = {
   welcome,
   general,
   modules,
+  custommodules,
   live,
   cursor,
   effects,

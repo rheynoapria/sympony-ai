@@ -112,7 +112,17 @@ export const SECTIONS: readonly SectionMeta[] = [
     subtitle: "Enable, reorder, and choose default notch tabs.",
     icon: "Boxes",
     tint: "#6366f1",
-    words: ["tabs", "order", "teleprompter", "notes", "bookmarks", "custom", "widget", "creator", "kustom", "modul kustom"],
+    words: ["tabs", "order", "teleprompter", "notes", "bookmarks"],
+  },
+  {
+    id: "custommodules",
+    group: "sympony",
+    title: "Custom Modules",
+    subtitle: "Create, preview, configure, and share custom OLED widgets & animated pets.",
+    icon: "Palette",
+    tint: "#10b981",
+    words: ["custom", "widget", "creator", "tamagotchi", "pet", "animated", "sprite", "preview", "template", "import", "export", "pill", "kustom", "modul kustom", "pratinjau"],
+    newKey: "v0.2b5:sec:custommodules",
   },
   {
     id: "live",
@@ -401,6 +411,7 @@ export const SECTIONS: readonly SectionMeta[] = [
 export const SEARCH_WORDS: Readonly<Record<string, string>> = {
   general: "color colour picker eyedropper pipette hex rgb hsl screen pixel ambil warna pipet",
   modules: "tabs order default module remember last turn on off teleprompter prompter autocue script read camera naskah glance ringkas notch view per modul dashboard tampilan style layout library bento compact minimal oled card size grid",
+  custommodules: "custom modules widget creator tamagotchi pet animated sprite preview live preview template mochi import export json pill kustom modul hewan peliharaan animasi pratinjau templat",
   calendar: "google outlook icloud ical ics link feeds local events meeting reminder show calendar refresh style layout compact today week strip",
   weather: "city location unit celsius fahrenheit forecast show weather detect my location gps lokasi style layout horizon minimal",
   prayer: "prayer times reminders city kemenag regency method asr hanafi count down sound adhan subuh fajr dhuhr maghrib isha volume detect my location gps lokasi sunrise terbit syuruq syuruk style layout timeline bento focus",
@@ -501,6 +512,8 @@ export const SYNONYMS: Readonly<Record<string, string>> = {
   kepribadian: "persona",
   kontrol: "control",
   berita: "news feed rss",
+  kustom: "custom",
+  pratinjau: "preview",
 };
 
 export type RowsFor = readonly Row[] | ((os: OS) => readonly Row[]);

@@ -110,6 +110,8 @@ export function createMock(
     async svc(name: string, method: string) {
       if (name === "custommod") {
         if (method === "list") return { ok: true, modules: [] };
+        if (method === "templates") return { ok: true, templates: [] };
+        if (method === "fetch") return { ok: true, data: {}, errors: {}, missingDomains: [] };
         return { ok: true };
       }
       if (name === "perm" && method === "status") {

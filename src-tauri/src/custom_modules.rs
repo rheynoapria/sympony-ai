@@ -677,7 +677,7 @@ pub(crate) fn handle_pony_tool(app: &AppHandle, session: &str, kind: &str, args:
             Some(json!({
                 "ok": true,
                 "text": format!(
-                    "Installed custom module '{}' (id: {}, size: {}, domains: [{}]). It is now live in the Notch carousel and Settings → Modules.",
+                    "Installed custom module '{}' (id: {}, size: {}, domains: [{}]). It is now live in the Notch carousel and Settings → Custom Modules.",
                     saved["name"].as_str().unwrap_or(&slug),
                     custom_id(&slug),
                     saved["defaultSize"].as_str().unwrap_or("2x1"),

@@ -27,6 +27,9 @@ const ICONS: Record<string, () => ReactNode> = {
   "Control behavior": () => tint("SlidersHorizontal", "#3b82f6"),
   "Module Style Library": () => tint("LayoutGrid", "#8b5cf6"),
   "Custom Modules": () => tint("Boxes", "#10b981"),
+  "Live Preview": () => tint("Eye", "#0ea5e9"),
+  "Installed Modules": () => tint("Boxes", "#10b981"),
+  "Starter Templates": () => tint("Sparkles", "#f59e0b"),
   "Scheduled briefs": () => tint("CalendarClock", "#0ea5e9"),
   // voice
   "Voice setup": () => tint("AudioWaveform", "#ec4899"),

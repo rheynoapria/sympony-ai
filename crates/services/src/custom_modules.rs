@@ -1602,7 +1602,7 @@ pub fn starter_templates() -> Vec<Value> {
       {
         "schemaVersion": 1,
         "slug": "crypto-pulse",
-        "name": "Crypto & FX Pulse",
+        "name": "Crypto Pulse",
         "description": "Live BTC & ETH prices from CoinGecko with 24h delta badges",
         "icon": "TrendingUp",
         "accent": "emerald",

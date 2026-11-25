@@ -58,6 +58,17 @@ test("Control lives in the System & Window group on every OS", () => {
   }
 });
 
+test("Custom Modules is its own top-level section in Sympony group on every OS", () => {
+  for (const os of ["macos", "windows", "linux"] as const) {
+    const sec = sectionsFor(os).find((s) => s.id === "custommodules");
+    assert.ok(sec, `expected custommodules section on ${os}`);
+    assert.equal(sec!.group, "sympony");
+    assert.equal(resolveSection("custommodules", os), "custommodules");
+  }
+  assert.ok(searchAll("tamagotchi", "macos").some((h) => h.section === "custommodules"));
+  assert.ok(searchAll("pratinjau", "macos").some((h) => h.section === "custommodules"));
+});
+
 test("registerSectionRows accepts per-OS functions resolved by sectionRows", () => {
   registerSectionRows("x-test", (os) =>
     os === "linux" ? [] : [{ t: "toggle", k: "haptics", label: "Zebra row" }]
