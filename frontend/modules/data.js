@@ -58,6 +58,8 @@
   // ---- the AI agents on this Mac (agents.rs): which one AI Chat and Translate answer through, for their labels
   let agents = null;
   let loading = null; // (one request at a time)
+  // (sent when the list changes behind a check: a CLI slow to start answered at last, or failed; N.watch('agents'))
+  if (api.onAgents) api.onAgents((v) => { if (Array.isArray(v)) { agents = v; set('agents', v); } });
   N.loadAgents = () => loading || (loading = api.svc('ai', 'agents').then((v) => { agents = Array.isArray(v) ? v : []; return agents; })
     .catch(() => { agents = []; return agents; }).finally(() => { loading = null; }));
   // No agent ready yet (the first check can run while a CLI is still starting: Claude Code's first cold start on

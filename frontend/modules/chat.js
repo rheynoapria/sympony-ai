@@ -132,18 +132,12 @@
     }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
-    // (asleep: look again now and then, and wake as soon as an agent answers)
-    if (!a && N.recheckAgents) { N.recheckAgents().then((woke) => { if (woke) changed(); }); lookAgain(); }
+    // (asleep: an agent that failed may work again, e.g. after its update: looked at again, at most every 15 s)
+    if (!a && N.recheckAgents) N.recheckAgents().then((woke) => { if (woke) changed(); });
     return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, asleep: true, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
   }
-  // While Pony shows asleep on screen, it looks for an agent again by itself (each look is at most every 15 s), so
-  // an agent that answers late wakes it without the user going away and back; stops when the chat is out of sight.
-  let shown = false;
-  let wakeTimer = 0;
-  function lookAgain() {
-    if (wakeTimer || !shown) return;
-    wakeTimer = setTimeout(() => { wakeTimer = 0; if (shown) render(); }, 15500);
-  }
+  // (the agents' list changed behind: one slow to start answered at last, or failed)
+  N.watch('agents', () => changed());
 
   // ---- what the assistant knows about your day: sent along with each message (Settings → AI can turn it
   // off). Plain lines, 24-hour times, a few items each, so it stays small.
@@ -1726,8 +1720,8 @@
       }
       render();
     },
-    show() { shown = true; if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },
-    hide() { shown = false; clearTimeout(wakeTimer); wakeTimer = 0; if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
+    show() { if (ponyHeaderHandle && ponyHeaderHandle.resume) ponyHeaderHandle.resume(); if (liveAva && liveAva.resume) liveAva.resume(); if (emptyPony && emptyPony.resume) emptyPony.resume(); N.loadAgents().then(render); syncHeaderPony(); render(); },
+    hide() { if (ponyHeaderHandle && ponyHeaderHandle.pause) ponyHeaderHandle.pause(); if (liveAva && liveAva.pause) liveAva.pause(); if (emptyPony && emptyPony.pause) emptyPony.pause(); },
     onSettings() { launcher = null; syncHeaderPony(); syncAutoUi(); N.loadAgents().then(render); },
     takeFiles(type, paths) {
       if (history) return false;

@@ -203,6 +203,7 @@ pub(crate) fn run_capture(cmd: &mut Command, limit: Duration) -> Result<(bool, S
 pub struct Agents {
     list: Mutex<Option<(Instant, Vec<Value>)>>,
     probing: std::sync::atomic::AtomicBool, // (a check of the CLIs is under way: no second one)
+    starting: Mutex<std::collections::HashSet<&'static str>>, // CLIs whose slow first `--version` is still awaited
     lyrics: Mutex<HashMap<String, Value>>, // what an agent made of a song's lines (romanized / translated), kept on disk
     chat_runs: Mutex<HashMap<String, std::sync::Arc<Mutex<Option<u32>>>>>, // each chat run's agent process (Stop ends it)
     roman_run: Mutex<Option<u32>>,         // the lyrics runs going on, one per kind (a newer song stops its kind's)
@@ -247,27 +248,97 @@ pub fn probe(app: &AppHandle) -> Vec<Value> {
     let h = home();
     // (each agent's `--version` on its own thread: some CLIs take seconds to start)
     let v: Vec<Value> = std::thread::scope(|sc| {
-        let jobs: Vec<_> = AGENTS.iter().map(|a| { let h = &h; sc.spawn(move || {
+        let jobs: Vec<_> = AGENTS.iter().map(|a| { let (h, ag) = (&h, &*st); sc.spawn(move || {
             let p = a.bins.iter().find_map(|b| which(b));
-            // (one that doesn't even say its version within 8 s won't answer a chat either; on Windows 20 s, since a
-            // CLI's first start can be long there: Claude Code is a 300 MB exe that Defender scans before it runs)
-            let limit = Duration::from_secs(if cfg!(windows) { 20 } else { 8 });
-            let probe = p.as_ref().map(|p| run_capture(Command::new(p).arg("--version").env("PATH", path()), limit));
-            let responding = !matches!(probe, Some(Err(_)));
-            let version = probe.and_then(|r| r.ok()).map(|(_, o, e)| {
-                let s = if o.trim().is_empty() { e } else { o };
-                s.lines().next().unwrap_or("").trim().to_string()
-            });
-            let version = version.unwrap_or_default();
+            // (its slow first start from an earlier check is still awaited: not started twice)
+            let awaited = p.is_some() && ag.starting.lock().unwrap().contains(a.id);
+            let probe = match &p {
+                Some(_) if awaited => None,
+                Some(bin) => {
+                    let late = app.clone();
+                    Some(version_of(bin, VERSION_WAIT, move |r| late_version(&late, a.id, r)))
+                }
+                None => Some(Some(Ok(String::new()))),
+            };
+            // (None: still starting; it counts as answering until it says otherwise, so Pony is ready at once)
+            let starting = !matches!(probe, Some(Some(_)));
+            if starting && !awaited {
+                ag.starting.lock().unwrap().insert(a.id);
+            }
+            let responding = !matches!(probe, Some(Some(Err(_))));
+            let version = match probe { Some(Some(Ok(v))) => v, _ => String::new() };
             json!({"id": a.id, "name": a.name, "icon": a.icon, "installed": p.is_some(), "path": p.map(|p| p.to_string_lossy().to_string()),
                    "signedIn": signed_in(a.id, h), "version": version, "update": needs_update(a.id, &version), "install": a.install,
-                   "supported": supported(a.id), "responding": responding, "tools": tools_for(a.id)})
+                   "supported": supported(a.id), "responding": responding, "starting": starting, "tools": tools_for(a.id)})
         }) }).collect();
         jobs.into_iter().filter_map(|j| j.join().ok()).collect()
     });
     *st.list.lock().unwrap() = Some((Instant::now(), v.clone()));
     st.probing.store(false, Ordering::SeqCst);
     v
+}
+
+/// How long a check waits for a CLI's `--version` before calling it "starting" and answering without it.
+const VERSION_WAIT: Duration = Duration::from_secs(8);
+/// How long a CLI that's starting is waited for behind the check: one that hasn't said its version by then hangs, and
+/// won't answer a chat either.
+const LATE_START: Duration = Duration::from_secs(120);
+
+/// A CLI's `--version` (its first line), waiting `wait` for it: `Some(Ok)` / `Some(Err)` when it answered or failed in
+/// time, `None` when it's still starting. A CLI's first start can be long: Claude Code is a 300 MB exe that Defender
+/// scans on Windows before it runs (30 s on a cold start), and it isn't broken for that. So a slow one isn't stopped:
+/// it's waited for behind, up to `LATE_START`, and `late` gets what it said (`Err` when it failed or hung).
+fn version_of(
+    bin: &std::path::Path,
+    wait: Duration,
+    late: impl FnOnce(Result<String, String>) + Send + 'static,
+) -> Option<Result<String, String>> {
+    let first_line = |(_, o, e): (bool, String, String)| {
+        let s = if o.trim().is_empty() { e } else { o };
+        s.lines().next().unwrap_or("").trim().to_string()
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let bin = bin.to_path_buf();
+    std::thread::spawn(move || {
+        let _ = tx.send(run_capture(Command::new(&bin).arg("--version").env("PATH", path()), LATE_START).map(first_line));
+    });
+    match rx.recv_timeout(wait) {
+        Ok(r) => Some(r),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Some(Err("the check ended".into())),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            std::thread::spawn(move || late(rx.recv().unwrap_or_else(|_| Err("the check ended".into()))));
+            None
+        }
+    }
+}
+
+/// A starting CLI said its version at last (or failed): the kept list gets it, and every window hears of it
+/// (`agents:list`), so Pony wakes the moment the agent answers.
+fn late_version(app: &AppHandle, id: &'static str, r: Result<String, String>) {
+    use std::sync::atomic::Ordering;
+    let st = app.state::<Agents>();
+    // (the check that started it keeps its list first, and a later one may be running too)
+    while st.probing.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    st.starting.lock().unwrap().remove(id);
+    let list = {
+        let mut kept = st.list.lock().unwrap();
+        let Some((_, v)) = kept.as_mut() else { return };
+        let Some(a) = v.iter_mut().find(|a| a["id"] == id) else { return };
+        a["starting"] = json!(false);
+        match &r {
+            Ok(version) => {
+                a["responding"] = json!(true);
+                a["version"] = json!(version);
+                a["update"] = json!(needs_update(id, version));
+            }
+            Err(_) => a["responding"] = json!(false),
+        }
+        v.clone()
+    };
+    app.state::<App>().log.line(&format!("ai: {id}: {} after a slow start", if r.is_ok() { "ready" } else { "not answering" }));
+    let _ = app.emit("agents:list", list);
 }
 
 /// The agent a feature uses: the one picked, else the first installed and signed in.
@@ -1018,6 +1089,26 @@ mod windows_tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn a_cli_slow_to_start_is_waited_for_behind_the_check_not_stopped() {
+        use std::time::Duration;
+        let s = Scratch::new("slow");
+        let fast = s.0.join("fastcli.cmd");
+        std::fs::write(&fast, "@echo off\r\necho fastcli 1.0\r\n").unwrap();
+        // (about 2 s to start, like Claude Code's cold first start, only shorter)
+        let slow = s.0.join("slowcli.cmd");
+        std::fs::write(&slow, "@echo off\r\nping -n 3 127.0.0.1 >nul\r\necho slowcli 9.9.9\r\n").unwrap();
+        // answered in time: its version, and nothing waits behind
+        let never = |_| panic!("it answered in time");
+        assert_eq!(super::version_of(&fast, Duration::from_secs(15), never), Some(Ok("fastcli 1.0".into())));
+        // one that can't run at all: failed, at once
+        assert!(matches!(super::version_of(&s.0.join("nothere.exe"), Duration::from_secs(15), never), Some(Err(_))));
+        // slower than the wait: "starting" now, and what it says comes later, whole
+        let (tx, rx) = std::sync::mpsc::channel();
+        assert_eq!(super::version_of(&slow, Duration::from_millis(300), move |r| { let _ = tx.send(r); }), None);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(30)).unwrap(), Ok("slowcli 9.9.9".into()));
     }
 
     #[test]
