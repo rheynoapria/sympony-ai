@@ -6,7 +6,7 @@
 
 # Sympony
 
-**Your desktop notch AI companion — local-first Pony assistant (MCP, Skills, Eyes & Hands), offline Indonesian-first voice dictation, and 24 OLED modules in Rust.**
+**Your desktop notch AI companion — local-first Pony assistant (MCP, Skills, Eyes & Hands, Module Creator), offline Indonesian-first voice dictation, and 24+ extensible OLED modules in Rust.**
 
 <p>
   <a href="https://sympony.enlabs.my.id"><img src="https://img.shields.io/badge/Portal-sympony.enlabs.my.id-7c5dfa?style=for-the-badge" alt="Sympony Portal" /></a>
@@ -14,7 +14,7 @@
   <a href="https://github.com/rheynoapria/sympony-ai/releases"><img src="https://img.shields.io/github/v/release/rheynoapria/sympony-ai?include_prereleases&label=Release&style=for-the-badge&color=4361ff" alt="Latest Release" /></a>
   <a href="https://github.com/rheynoapria/sympony-ai/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/rheynoapria/sympony-ai/ci.yml?branch=beta&label=CI&style=for-the-badge" alt="CI Status" /></a>
   <img src="https://img.shields.io/badge/macOS-Signed%20%26%20Notarized-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Signed & Notarized" />
-  <img src="https://img.shields.io/badge/Windows%2010%2F11-Beta%20x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 Beta x64" />
+  <img src="https://img.shields.io/badge/Windows%2010%2F11-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 x64" />
   <img src="https://img.shields.io/badge/Linux-Roadmap-1f1f27?style=for-the-badge&logo=linux&logoColor=white" alt="Linux Roadmap" />
   <img src="https://img.shields.io/badge/Rust-Tauri%202-f74c00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust + Tauri 2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-4ade80?style=for-the-badge" alt="License GPL-3.0-only" /></a>
@@ -23,7 +23,7 @@
 <p>
   <a href="#-meet-pony--your-notch-ai-companion">Meet Pony</a> •
   <a href="#-voice-v1--on-device-indonesian-first-dictation">Offline Voice</a> •
-  <a href="#-24-oled-notch-modules">Notch Modules</a> •
+  <a href="#-24-oled-notch-modules--custom-widgets">Notch Modules</a> •
   <a href="#-platform-support">Platforms</a> •
   <a href="https://github.com/rheynoapria/sympony-ai/projects">Roadmap</a> •
   <a href="#-security--privacy-by-design">Security</a> •
@@ -36,7 +36,7 @@
 
 ## Why Sympony?
 
-Most desktop notch utilities stop at media controls or file shelves. **Sympony** turns the top of your screen into a pure OLED (`#000`) command center powered by a native Rust + Tauri 2 backend — combining a **local-first AI companion (Pony)**, **on-device speech-to-text**, **YouTube video mode**, and **24 everyday productivity modules** in one lightweight desktop app.
+Most desktop notch utilities stop at media controls or file shelves. **Sympony** turns the top of your screen into a pure OLED (`#000`) command center powered by a native Rust + Tauri 2 backend — combining a **local-first AI companion (Pony)**, **on-device speech-to-text**, **YouTube video mode**, **24 built-in productivity modules**, and an extensible **Custom Modules & Animated OLED Pet engine** in one lightweight desktop app.
 
 > **Open Source & 100% Self-Contained**
 > This open-source repository ships with **no hardcoded cloud AI backend or hosted Sympony AI connection**. Pony connects directly to **your own local CLI agents** (Claude Code, Codex, Gemini CLI, etc.) or **any OpenAI-compatible server you control** (Ollama, LM Studio, or your own gateway). Any hosted Sympony AI endpoint exists solely in official Enlabs release bundles and is never embedded in source builds.
@@ -53,8 +53,8 @@ Most desktop notch utilities stop at media controls or file shelves. **Sympony**
 
 ### 🧠 Bring Your Own Brain
 - **Any OpenAI-Compatible Server** — Point Pony (and Translate) at Ollama, LM Studio, or your own OpenAI-compatible API server with full SSE streaming, automatic retries, and prompt-cache-friendly turn layout.
-- **Local Coding CLIs** — Drive Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Antigravity, Hermes, or Paseo directly from the notch.
-- **Floating Pony Chat & Live Steering** — Detach chat into an always-on-top floating window (`macOS` & `Windows`) with shared live history, steer Pony mid-run without cancelling work, or stop cleanly mid-stream.
+- **Local Coding CLIs** — Drive Claude Code, Codex, Gemini CLI, Qwen Code, OpenCode, Antigravity, Hermes, or Paseo directly from the notch on both macOS and Windows.
+- **Floating Pony Chat, Mode Selector & Inline Images** — Detach chat into an always-on-top floating window (`macOS` & `Windows`) with shared live history, switch smoothly between **Chat**, **Creator**, and **Auto UI** modes, view inline chat images with a Quick Look lightbox, and steer Pony mid-run without cancelling work.
 
 </td>
 <td width="50%" valign="top">
@@ -100,16 +100,17 @@ Fast, private dictation engineered for **Indonesian & Indonesian–English code-
 
 ---
 
-## 🎛️ 24 OLED Notch Modules
+## 🎛️ 24+ OLED Notch Modules & Custom Widgets
 
-Swipe, scroll, or pick from the floating menu notch to switch across modular widgets — styled in pure OLED Black (`#000`), Liquid Smoked Crystal **Glass**, or custom **Color** themes with 18 module layout presets:
+Swipe, scroll, or pick from the floating menu notch to switch across built-in and custom modular widgets — styled in pure OLED Black (`#000`), Liquid Smoked Crystal **Glass**, or custom **Color** themes with 18 module layout presets:
 
 | Category | Modules |
 |---|---|
-| **AI & Voice** | **Pony Assistant** (notch & floating chat, skills, memory, briefs) • **Translate** (multi-provider LLM translation) • **AI Usage** (Claude & Codex plan limits) • **Voice Dictation Pill** |
+| **AI & Voice** | **Pony Assistant** (notch & floating chat, Creator Mode, skills, memory, briefs) • **Translate** (multi-provider LLM translation) • **AI Usage** (Claude & Codex plan limits) • **Voice Dictation Pill** |
 | **Media & Focus** | **Home** (Now Playing, album-art ambient waves, **YouTube Video Mode & Floating PiP**, mirror) • **Pomodoro** (focus timer, stopwatch, ambient sounds) • **Teleprompter** (camera-aligned scrolling script) • **Radio** (Radio Browser streams) |
-| **Tasks & Time** | **Calendar** (monthly events & tasks) • **Todo** (tasks with trash/restore & optional Google Tasks sync) • **Notes** (quick scratchpad) • **World Clock** (meeting planner) • **Day Progress** • **Prayer Times** (countdown & adhan) |
-| **System & Dev** | **Shelf** (drag-and-drop file tray) • **Control** (volume, audio I/O, brightness, Wi-Fi, Bluetooth, Focus, Color Picker) • **System** (CPU, RAM, disk, network) • **GitHub** (PR review queue) • **Bluetooth / Speed Test** (Cloudflare) • **Notifications** • **Launcher** • **Bookmarks** • **Weather** (Open-Meteo) • **Health & Screen Time** |
+| **Tasks & Time** | **Calendar** (monthly events, local & Google Calendar sync) • **Todo** (tasks with trash/restore & optional Google Tasks sync) • **Notes** (quick scratchpad) • **World Clock** (meeting planner) • **Day Progress** • **Prayer Times** (countdown & adhan) |
+| **System & Dev** | **Shelf** (drag-and-drop file tray, Drop Actions, Share & drag-out) • **Control** (volume, audio I/O, brightness, Wi-Fi, Bluetooth, Focus, Color Picker) • **System** (CPU, RAM, disk, network) • **GitHub** (PR review queue) • **Feed & RSS** (with streaming Pony summaries) • **Bluetooth / Speed Test** (Cloudflare) • **Notifications** • **Launcher** • **Bookmarks** • **Weather** (Open-Meteo) • **Health & Screen Time** |
+| **Custom Modules** | **Declarative OLED Widget & Animation Engine** — Build custom widgets & animated pixel-art companions (**Mochi Pet** Tamagotchi, **Daily Habits**, **Crypto Pulse**) with **Pony Creator Mode**, test interactively in **Settings → Custom Modules Studio** (Dashboard, Full Notch & Closed Pill), pin to the closed notch, and share `.symponypack.json` packs |
 
 ---
 
@@ -120,10 +121,10 @@ Sympony is designed from day one as a **multi-platform desktop notch** using cle
 | Platform | Status | Backend & Packaging |
 |---|---|---|
 | **macOS** *(11.0+, Apple Silicon)* | ✅ **Stable & Beta** | Native `objc2` FFI, Accessibility, CoreAudio, Apple Vision OCR, Metal STT, Developer ID Signed & Notarized `.dmg` + In-App Auto-Updater (`darwin-aarch64`) |
-| **Windows** *(Windows 10/11, x64)* | 🧪 **Beta Ready** | Native Win32/WinRT notch, per-monitor DPI, GSMTC media + YouTube video/PiP, Core Audio, WMI brightness, Wi-Fi (`wlanapi`), Bluetooth audio, Color Picker, Floating Pony Chat, NSIS `.exe` installer + In-App Auto-Updater (`windows-x86_64`) |
+| **Windows** *(Windows 10/11, x64)* | ✅ **Stable & Beta** | Native Win32/WinRT notch, Fullscreen DWM Cloak & AppBar strip, per-monitor DPI, GSMTC media + YouTube video/PiP, Core Audio, WMI brightness, Wi-Fi (`wlanapi`), Bluetooth audio, Color Picker, System/Notifications/Calendar/Radio/Voice, Pony Eyes & Hands (UI Automation + Vision/OCR) & Commands/Files (Git Bash/PowerShell), Drop Actions, Shelf Share/Drag & Thumbnails, Backup, Skills, Launch at Login, NSIS `.exe` installer + Auto-Updater (`windows-x86_64`) |
 | **Linux** *(Wayland / X11)* | 🚧 **Planned** | Shared `crates/services` & `crates/voice` ready; implementing `crates/platform` Linux backend + `.deb` / `.rpm` / `.AppImage` |
 
-Contributions toward the **Windows** (UI Automation Eyes/Hands) and **Linux** `crates/platform` backends are very welcome!
+Contributions toward the **Linux** `crates/platform` backend and ongoing cross-platform polish are very welcome!
 
 ---
 
@@ -132,9 +133,10 @@ Contributions toward the **Windows** (UI Automation Eyes/Hands) and **Linux** `c
 Sympony interacts with powerful OS capabilities only when you explicitly opt in, backed by defense-in-depth safeguards (see [SECURITY.md](SECURITY.md)):
 
 - **Opt-In High-Privilege Features** — Shell/File tools (`ponyExec`), Screen Reading (`ponyEyes`), UI Automation (`ponyHands`), Ask AI (`ponyAskAi`), and external MCP servers are **disabled by default** and automatically **disarmed on backup import**.
+- **Sandboxed Custom Modules** — User-created OLED widgets run on a zero-`eval()` declarative UI & sprite renderer with an SSRF-safe HTTPS proxy requiring explicit per-domain approvals, Keychain secret bindings, and automatic `customModApprovedDomains` disarm on both `.symponypack.json` and backup import.
 - **Per-Turn Taint Tracking** — Reading untrusted external content (web pages, screen contents, external AI responses, or outside MCP results) taints the current turn so every command, file tool, memory write, and skill edit requires explicit confirmation on a card — **even in YOLO mode**.
-- **Credential & Config Protection** — Home-anchored AI CLI credentials, `.ssh`, `.aws`, `.gnupg`, Keychains, shell startup profiles, LaunchAgents, and Sympony's own secrets are guarded across symlink resolution, `..` normalization, and compound `cd` commands.
-- **Privacy Guards for Eyes & Voice** — Password managers, 2FA authenticators, secure password fields, and OS Secure Input are strictly excluded from screen reading and clipboard pasting; OCR snapshots use private auto-deleted temp files.
+- **Credential & Config Protection** — Home-anchored AI CLI credentials, `.ssh`, `.aws`, `.gnupg`, Keychains/Credential Manager, shell startup profiles, LaunchAgents/Startup keys, and Sympony's own secrets are guarded across symlink resolution, `..` normalization, and compound commands on both macOS and Windows.
+- **Privacy Guards for Eyes & Voice** — Password managers, 2FA authenticators, secure password fields, and OS Secure Input are strictly excluded from screen reading and clipboard pasting; OCR snapshots stay in memory or private auto-deleted temp files.
 - **Hardened Runtime & Scoped Permissions** — Minimal OS entitlements, `0600` data files / `0700` directories, scrubbed stdio MCP environments, constant-time token verification + CSRF headers on the local phone bridge, and SSRF-checked HTTP redirects.
 
 ---
@@ -171,8 +173,8 @@ flowchart LR
 | `crates/voice/` | Offline Indonesian-first hybrid STT engine, phonetic post-corrector, KBBI normalizer, and eval harness |
 | `crates/platform/` | Cross-platform OS traits (`Trigger`, `Capture`, `Insert`, `Secrets`, `Location`, `AX`) and native bindings |
 | `crates/contract/` | Frontend–backend IPC contract definition and parity verification (`216/216`) |
-| `frontend/` | Lightweight, zero-bundler OLED notch UI, Pony character canvas, and 24 modular tabs |
-| `settings-ui/` | Modern React + TypeScript Settings & Onboarding UI (built via Bun into `frontend/settings-dist/`) |
+| `frontend/` | Lightweight, zero-bundler OLED notch UI, Pony character canvas, 24 built-in tabs, and declarative Custom Modules engine |
+| `settings-ui/` | Modern React + TypeScript Settings, Onboarding & Custom Modules Studio UI (built via Bun into `frontend/settings-dist/`) |
 
 ---
 
@@ -183,7 +185,7 @@ flowchart LR
 Download the installer for your OS automatically at **[sympony.enlabs.my.id](https://sympony.enlabs.my.id)** (auto-detects macOS & Windows) or directly from **[GitHub Releases](https://github.com/rheynoapria/sympony-ai/releases)**:
 
 - **macOS (`darwin-aarch64`):** Apple Developer ID signed & notarized `.dmg` installer (Stable & Beta).
-- **Windows (`windows-x86_64`):** Signed NSIS `_x64-setup.exe` installer for Windows 10/11 x64 (currently on Beta channel).
+- **Windows (`windows-x86_64`):** NSIS `_x64-setup.exe` installer for Windows 10/11 x64 (Stable & Beta, updater-signed).
 - **Dual-Channel Per-OS Auto-Updater:**
   - **Stable channel (`vX.Y.Z`):** Everyday releases built from `main`.
   - **Beta channel (`vX.Y.Z-beta.N`):** Early preview builds cut from `beta`. Opt in anytime via **Settings → About & Updates → Watch Beta updates** — each OS receives independent notifications only when a signed binary for its platform (`darwin-aarch64` or `windows-x86_64`) ships, installs in-place automatically, and graduates Beta users smoothly to Stable when Stable ships.
@@ -244,7 +246,7 @@ bun test ./frontend/tests
 
 Special thanks to everyone helping bring Sympony to every desktop:
 
-- **Ery Rivaldi ([@mrerren](https://github.com/mrerren))** — **Windows Port & Floating Video Mode** (`crates/platform` Win32/WinRT backend, per-monitor DPI notch, GSMTC Music & YouTube video tracking, Floating PiP video window, Control Center Sound/Wi-Fi/Bluetooth/Brightness/Focus/Color Picker, Explorer/Shell integration, and WebView2 event-loop fixes).
+- **Ery Rivaldi ([@mrerren](https://github.com/mrerren))** — **Windows Port & Floating Video Mode** (`crates/platform` Win32/WinRT backend, per-monitor DPI notch, Fullscreen DWM Cloak & AppBar strip, GSMTC Music & YouTube video tracking, Floating PiP video window, Control Center Sound/Wi-Fi/Bluetooth/Brightness/Focus/Color Picker, System/Notifications/Calendar/Radio/Voice, Pony Eyes & Hands + Commands & Files, Drop Actions, Shelf Share/Drag & Thumbnails, Backup, Skills, AI CLI PATH, Launch at Login, and WebView2 fixes).
 
 ---
 
