@@ -219,8 +219,10 @@ fn list(app: &AppHandle) -> Vec<Value> {
     let st = app.state::<Agents>();
     let cached = st.list.lock().unwrap().clone();
     if let Some((t, v)) = cached {
-        // (older than a minute: still answered at once, checked again behind it for the next time)
-        if t.elapsed() >= Duration::from_secs(60) {
+        // (older than a minute: still answered at once, checked again behind it for the next time; after 15 s already
+        // when an installed CLI didn't answer, as it may only have been starting)
+        let unsure = v.iter().any(|a| a["installed"] == true && a["responding"] == false);
+        if t.elapsed() >= Duration::from_secs(if unsure { 15 } else { 60 }) {
             let a = app.clone();
             std::thread::spawn(move || {
                 probe(&a);
@@ -247,8 +249,10 @@ pub fn probe(app: &AppHandle) -> Vec<Value> {
     let v: Vec<Value> = std::thread::scope(|sc| {
         let jobs: Vec<_> = AGENTS.iter().map(|a| { let h = &h; sc.spawn(move || {
             let p = a.bins.iter().find_map(|b| which(b));
-            // (one that doesn't even say its version within 8 s won't answer a chat either)
-            let probe = p.as_ref().map(|p| run_capture(Command::new(p).arg("--version").env("PATH", path()), Duration::from_secs(8)));
+            // (one that doesn't even say its version within 8 s won't answer a chat either; on Windows 20 s, since a
+            // CLI's first start can be long there: Claude Code is a 300 MB exe that Defender scans before it runs)
+            let limit = Duration::from_secs(if cfg!(windows) { 20 } else { 8 });
+            let probe = p.as_ref().map(|p| run_capture(Command::new(p).arg("--version").env("PATH", path()), limit));
             let responding = !matches!(probe, Some(Err(_)));
             let version = probe.and_then(|r| r.ok()).map(|(_, o, e)| {
                 let s = if o.trim().is_empty() { e } else { o };

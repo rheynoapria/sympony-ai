@@ -132,6 +132,8 @@
     }
     const a = N.aiAgent('chatAgent');
     if (a === undefined) { N.loadAgents().then(changed); return { label: '…', ready: true }; }
+    // (asleep: look again now and then, and wake as soon as an agent answers)
+    if (!a && N.recheckAgents) N.recheckAgents().then((woke) => { if (woke) changed(); });
     return a ? { label: N.aiLabel(a), ready: true } : { label: _t('No AI agent'), ready: false, need: N.MAC ? _t('an AI agent on this Mac (Claude Code, Codex, Antigravity…)') : _t('an AI agent on this PC (Claude Code, Codex, Antigravity…)') };
   }
 
