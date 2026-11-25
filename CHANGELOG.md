@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Windows port, Pony's Commands & files:** On Windows, Pony can run commands and read, write, edit and list files (Settings → Pony Assistant → Commands & files), asking as it does on macOS. Commands run in Git Bash, so the guards that read a command work as they do on macOS (Git for Windows is found where it installs, beside the `git` on PATH, or at `CLAUDE_CODE_GIT_BASH_PATH`); without it they run in PowerShell, where every command asks, in YOLO mode too, and none is ever “always allowed”. The guards know Windows now: drive and Git Bash paths (`C:/…`, `/c/…`; `..` never climbs above a drive), `%USERPROFILE%` / `$env:APPDATA`-style folders, and Windows' secret places, never read nor named in a command (Credential Manager and DPAPI's keys, the browsers' profiles, the `gh` and `gcloud` tokens, Sympony's own `secrets.json`, the registry's hives). Never run, by Windows' names: running as administrator, `diskpart` / `format`, turning off Defender or the firewall, `cmdkey`, `iwr … | iex`, deleting a drive, Windows, Users or Program Files. `del`, `rd` and `Remove-Item` count as deleting (they always ask), Windows' shells and system tools are never “always allowed”, and changing where Windows starts things by itself (the Startup folder, PowerShell's profiles, `Run` registry values, scheduled tasks) always asks. A command is held in a job object, so Stop and the time limit end what it started too, also what Git Bash left running in the background (#44).
+
 ### Fixed
 
 - **Windows installer:** The installer and the uninstaller show Sympony's icon rather than NSIS's default one, and `release/build.sh` builds on a PC where `python3` is only the Microsoft Store's alias (it takes the first Python that runs).

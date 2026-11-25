@@ -48,6 +48,62 @@ pub fn kill_group(pid: u32) {
     }
 }
 
+/// Every process a command started, ended as one, those whose parent has gone too. On Windows that takes a job
+/// object: Git Bash's `cmd &` (MSYS's fork) leaves the child with a parent that has already exited, so taskkill /T
+/// never finds it, while a job holds everything started inside it. Elsewhere it's the group `own_group` made.
+/// Closing it leaves them running: only `end` ends them.
+pub struct Tree {
+    pid: u32,
+    #[cfg(windows)]
+    job: windows_sys::Win32::Foundation::HANDLE,
+}
+
+impl Tree {
+    /// Holds `pid` and whatever it starts from now on (call it right after the spawn).
+    pub fn hold(pid: u32) -> Tree {
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Foundation::CloseHandle;
+            use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+            use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+            // SAFETY: a new unnamed job; the process handle is opened, used and closed here
+            let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if !job.is_null() {
+                let p = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
+                if !p.is_null() {
+                    unsafe {
+                        AssignProcessToJobObject(job, p);
+                        CloseHandle(p);
+                    }
+                }
+            }
+            Tree { pid, job }
+        }
+        #[cfg(not(windows))]
+        Tree { pid }
+    }
+
+    /// Ends them all, now.
+    pub fn end(&self) {
+        #[cfg(windows)]
+        if !self.job.is_null() {
+            // SAFETY: the job this Tree made and still holds
+            unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job, 1) };
+        }
+        kill_group(self.pid);
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Tree {
+    fn drop(&mut self) {
+        if !self.job.is_null() {
+            // SAFETY: the job's own handle, closed once (no kill-on-close: what's still running goes on)
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.job) };
+        }
+    }
+}
+
 /// The process that started this one (an agent's hook: the agent), 0 when not known.
 pub fn parent_pid() -> i32 {
     #[cfg(unix)]

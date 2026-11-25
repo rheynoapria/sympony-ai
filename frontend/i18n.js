@@ -113,6 +113,7 @@
     'YOLO': 'YOLO',
     'Asks before each command or change; anything that only looks runs right away.': 'Bertanya sebelum tiap perintah atau perubahan; yang hanya melihat langsung berjalan.',
     'Runs everything without asking, except deleting files, which always asks.': 'Menjalankan semuanya tanpa bertanya, kecuali menghapus file, yang selalu bertanya.',
+    'On this PC, commands run in Git Bash. Without Git for Windows they run in PowerShell, and each one asks first, in YOLO too.': 'Di PC ini, perintah dijalankan di Git Bash. Tanpa Git for Windows, perintah dijalankan di PowerShell dan masing-masing selalu bertanya dulu, termasuk di YOLO.',
     'Commands & files': 'Perintah & file',
     'Pony can run commands and read, write and edit files on this Mac, like a coding agent. Never: sudo, erasing disks, keys and passwords.': 'Pony bisa menjalankan perintah serta membaca, menulis, dan mengubah file di Mac ini, seperti agen coding. Tidak pernah: sudo, menghapus disk, kunci dan kata sandi.',
     'Always allowed:': 'Selalu diizinkan:',

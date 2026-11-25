@@ -7,7 +7,7 @@ import { SegmentedControl } from "@/components/ui/knowns/segmented-control";
 import { Skeleton } from "@/components/ui/knowns/skeleton";
 import { SettingsRow } from "@/components/ui/knowns/blocks/settings/settings-layout";
 import { t } from "@/lib/i18n";
-import { onMac } from "@/lib/platform";
+import { detectOS, onMac } from "@/lib/platform";
 import { notch } from "@/lib/notch";
 import { cn } from "@/lib/knowns/utils";
 import type { CustomPartProps } from "@/rows/types";
@@ -442,6 +442,11 @@ export function PonyHands({ settings, set }: Props) {
               onValueChange={(v) => void set({ ponyExecMode: v })}
             />
           </div>
+          {detectOS() === "windows" && (
+            <p className="text-[12px] leading-snug text-muted-foreground" data-k="ponyExecShell">
+              {t("On this PC, commands run in Git Bash. Without Git for Windows they run in PowerShell, and each one asks first, in YOLO too.")}
+            </p>
+          )}
           {mode === "ask" && allowed.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground" data-k="ponyExecAllow">
               <span>{t("Always allowed:")}</span>

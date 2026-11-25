@@ -56,12 +56,99 @@ fn yolo(app: &AppHandle) -> bool {
     app.state::<App>().settings.get()["ponyExecMode"] == "yolo"
 }
 
+/// What runs Pony's commands: the user's shell on macOS (zsh) and Linux (sh); on Windows Git Bash, whose bash syntax
+/// the guards in services::exec read, else PowerShell, where every command asks (the guards can't read its syntax).
+// (each OS makes only its own: Unix, or Bash / PowerShell on Windows)
+#[allow(dead_code)]
+enum Runner {
+    Unix,
+    Bash(std::path::PathBuf),
+    PowerShell,
+}
+
+impl Runner {
+    fn here() -> Runner {
+        #[cfg(windows)]
+        {
+            git_bash().map(Runner::Bash).unwrap_or(Runner::PowerShell)
+        }
+        #[cfg(not(windows))]
+        {
+            Runner::Unix
+        }
+    }
+
+    /// The command line in this shell, its working folder still to be set.
+    fn command(&self, line: &str) -> Command {
+        match self {
+            Runner::Unix => {
+                let mut c = Command::new(if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" });
+                c.args(["-lc", line]);
+                c
+            }
+            Runner::Bash(bash) => {
+                let mut c = Command::new(bash);
+                // (a login shell for the user's PATH; CHERE_INVOKING keeps it in the working folder instead of ~)
+                c.args(["-lc", line]).env("CHERE_INVOKING", "1");
+                c
+            }
+            Runner::PowerShell => {
+                let mut c = Command::new("powershell");
+                // (UTF-8 out, as the pipes are read; no profile, nothing that waits for input)
+                c.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", &format!("[Console]::OutputEncoding=[Text.Encoding]::UTF8; {line}")]);
+                c
+            }
+        }
+    }
+}
+
+/// Git for Windows' bash: where Claude Code is told it is (`CLAUDE_CODE_GIT_BASH_PATH`), the usual install folders,
+/// else beside the `git` on PATH (`<Git>\cmd\git.exe` → `<Git>\bin\bash.exe`).
+#[cfg(windows)]
+fn git_bash() -> Option<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let mut tries: Vec<PathBuf> = Vec::new();
+    tries.extend(env("CLAUDE_CODE_GIT_BASH_PATH"));
+    for (var, rest) in [("ProgramFiles", r"Git\bin\bash.exe"), ("ProgramFiles(x86)", r"Git\bin\bash.exe"), ("LOCALAPPDATA", r"Programs\Git\bin\bash.exe")] {
+        if let Some(base) = env(var) {
+            tries.push(base.join(rest));
+        }
+    }
+    for dir in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        if dir.join("git.exe").is_file() {
+            // (<Git>\cmd, <Git>\bin or <Git>\mingw64\bin)
+            for up in [dir.parent(), dir.parent().and_then(Path::parent)].into_iter().flatten() {
+                tries.push(up.join(r"bin\bash.exe"));
+            }
+        }
+    }
+    tries.into_iter().find(|p| p.is_file())
+}
+
+/// `std::fs::canonicalize` without Windows' `\\?\` prefix (`\\?\C:\…` → `C:\…`, `\\?\UNC\server\…` → `\\server\…`),
+/// so the guards see the paths as the user and the model write them.
+fn canonical(p: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let c = std::fs::canonicalize(p)?;
+    #[cfg(windows)]
+    {
+        let s = c.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return Ok(std::path::PathBuf::from(format!(r"\\{rest}")));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return Ok(std::path::PathBuf::from(rest));
+        }
+    }
+    Ok(c)
+}
+
 /// Resolves `pb` to its real canonical target path even when the target does not exist yet — including dangling
 /// symlinks (e.g. `/tmp/link` → `~/.ssh/authorized_keys` before `authorized_keys` exists) and `..` segments.
 fn resolve_path(pb: &std::path::Path) -> Result<std::path::PathBuf, String> {
     let mut current = pb.to_path_buf();
     for _ in 0..40 {
-        if let Ok(canon) = std::fs::canonicalize(&current) {
+        if let Ok(canon) = canonical(&current) {
             return Ok(canon);
         }
         let mut probe = current.clone();
@@ -79,7 +166,7 @@ fn resolve_path(pb: &std::path::Path) -> Result<std::path::PathBuf, String> {
                     break;
                 }
                 Ok(_) => {
-                    let mut base = std::fs::canonicalize(&probe).unwrap_or(probe);
+                    let mut base = canonical(&probe).unwrap_or(probe);
                     for seg in tail.into_iter().rev() {
                         base.push(seg);
                     }
@@ -103,6 +190,8 @@ fn resolve_path(pb: &std::path::Path) -> Result<std::path::PathBuf, String> {
 /// (including dangling symlinks). Returns `(expanded_path, resolved_canonical_path)`.
 fn check_file_path(raw: &str, home: &str, name: &str) -> Result<(String, String), String> {
     let p = exec::expand(raw, home);
+    // (on Windows a Git Bash path, `/c/Users/…`, is `C:/Users/…`)
+    let p = if cfg!(windows) { exec::windows_path(&p) } else { p };
     if p.is_empty() {
         return Err(format!("{name} needs path"));
     }
@@ -123,11 +212,6 @@ fn check_file_path(raw: &str, home: &str, name: &str) -> Result<(String, String)
 
 /// One of services::exec::NAMES. `after_web`: Pony read the web/screen/MCP earlier in this turn (then changes ask, also in YOLO).
 pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &Value) -> Result<String, String> {
-    // (the secret-place guards read sh syntax and Unix paths: until they're made and tested for cmd and Windows paths,
-    // Pony gets no commands or files there)
-    if cfg!(windows) {
-        return Err("Pony's commands and files aren't available on Windows yet".into());
-    }
     let home = home();
     let step = |kind: &str, detail: &str| {
         let _ = app.emit("agent:step", json!({"session": session, "kind": kind, "detail": detail.chars().take(60).collect::<String>()}));
@@ -143,10 +227,11 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
                 return Err("run_command needs command".into());
             }
             let cwd = exec::expand(args["cwd"].as_str().filter(|c| !c.trim().is_empty()).unwrap_or("~"), &home);
+            let cwd = if cfg!(windows) { exec::windows_path(&cwd) } else { cwd };
             if !std::path::Path::new(&cwd).is_dir() {
                 return Err(format!("{cwd} isn't a folder"));
             }
-            let canon_cwd = std::fs::canonicalize(&cwd)
+            let canon_cwd = canonical(std::path::Path::new(&cwd))
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| cwd.clone());
             if let Some(why) = exec::blocked_at(&command, Some(&canon_cwd), Some(&home)) {
@@ -159,12 +244,16 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
                 .unwrap_or_default();
             let deletes = exec::deletes(&command);
             let touches_protected = exec::modifies_protected_config_at(&command, Some(&canon_cwd), Some(&home));
-            // In YOLO mode, only file deletions and protected configs (shell profiles / LaunchAgents) ask;
-            // in Ask mode, taint (`after_web`) or non-read-only commands ask.
-            if deletes || touches_protected || (!yolo && (after_web || !exec::auto_ok_at(&command, &allowed, after_web, Some(&canon_cwd), Some(&home)))) {
+            let sh = Runner::here();
+            // (Windows without Git Bash: PowerShell, whose syntax the guards can't read, so every command asks, in YOLO
+            // mode too, and none is ever "always allowed")
+            let powershell = matches!(sh, Runner::PowerShell);
+            // In YOLO mode, only file deletions and protected configs (shell profiles / LaunchAgents / Windows' autostart)
+            // ask; in Ask mode, taint (`after_web`) or non-read-only commands ask.
+            if deletes || touches_protected || powershell || (!yolo && (after_web || !exec::auto_ok_at(&command, &allowed, after_web, Some(&canon_cwd), Some(&home)))) {
                 let prefix = exec::prefix(&command);
                 // (deleting, shell profiles / LaunchAgents, shells/interpreters, and collapsed flag prefixes never offer "always allow")
-                let can_always = exec::can_always_at(&command, Some(&canon_cwd), Some(&home));
+                let can_always = !powershell && exec::can_always_at(&command, Some(&canon_cwd), Some(&home));
                 match approve(app, session, json!({"tool": if deletes { "delete" } else { "run_command" }, "detail": command, "cwd": cwd, "prefix": prefix, "canAlways": can_always})).as_str() {
                     "always" if can_always => {
                         let mut all = allowed.clone();
@@ -179,16 +268,17 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             }
             step("run", &command);
             let started = Instant::now();
-            let r = shell(&command, &cwd, Duration::from_secs(secs), &|| crate::brain::stopped(app, session));
+            let r = shell(&sh, &command, &cwd, Duration::from_secs(secs), &|| crate::brain::stopped(app, session));
             app.state::<App>().log.line(&format!("pony exec: {:?} in {cwd} ({:.1} s)", command.chars().take(120).collect::<String>(), started.elapsed().as_secs_f32()));
-            r
+            // (the model learns which shell ran it, to write the next one in its syntax)
+            r.map(|out| if powershell { format!("(Git for Windows isn't installed, so this ran in PowerShell)\n{out}") } else { out })
         }
         "read_file" => {
             let (p, _) = path()?;
             if !yolo && after_web && approve(app, session, json!({"tool": "read_file", "detail": p})) == "deny" {
                 return declined();
             }
-            step("read", p.rsplit('/').next().unwrap_or(&p));
+            step("read", p.rsplit(['/', '\\']).next().unwrap_or(&p));
             let text = read_text(&p)?;
             let offset = args["offset"].as_u64().unwrap_or(1) as usize;
             let limit = args["limit"].as_u64().unwrap_or(400).clamp(1, 2000) as usize;
@@ -199,7 +289,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             if !yolo && after_web && approve(app, session, json!({"tool": "list_dir", "detail": p})) == "deny" {
                 return declined();
             }
-            step("list", p.rsplit('/').next().unwrap_or(&p));
+            step("list", p.rsplit(['/', '\\']).next().unwrap_or(&p));
             let mut names: Vec<String> = std::fs::read_dir(&p)
                 .map_err(|e| format!("{p}: {e}"))?
                 .flatten()
@@ -227,7 +317,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             if (!yolo || touches_protected) && approve(app, session, json!({"tool": if exists { "overwrite_file" } else { "write_file" }, "detail": detail})) == "deny" {
                 return declined();
             }
-            step("write", p.rsplit('/').next().unwrap_or(&p));
+            step("write", p.rsplit(['/', '\\']).next().unwrap_or(&p));
             if let Some(dir) = std::path::Path::new(&p).parent() {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             }
@@ -247,7 +337,7 @@ pub fn run(app: &AppHandle, session: &str, after_web: bool, name: &str, args: &V
             if (!yolo || touches_protected) && approve(app, session, json!({"tool": "edit_file", "detail": detail})) == "deny" {
                 return declined();
             }
-            step("edit", p.rsplit('/').next().unwrap_or(&p));
+            step("edit", p.rsplit(['/', '\\']).next().unwrap_or(&p));
             std::fs::write(&p, out).map_err(|e| format!("{p}: {e}"))?;
             Ok(format!("Edited {p} ({n} change{})", if n == 1 { "" } else { "s" }))
         }
@@ -266,26 +356,12 @@ fn read_text(p: &str) -> Result<String, String> {
     String::from_utf8(std::fs::read(p).map_err(|e| format!("{p}: {e}"))?).map_err(|_| format!("{p} isn't a text file"))
 }
 
-/// A command in the user's shell, its output read as it comes; stopped at `limit`.
-fn shell(command: &str, cwd: &str, limit: Duration, stop: &dyn Fn() -> bool) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    let mut cmd = {
-        let mut c = Command::new("/bin/zsh");
-        c.args(["-lc", command]);
-        c
-    };
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut cmd = {
-        let mut c = Command::new("/bin/sh");
-        c.args(["-lc", command]);
-        c
-    };
+/// A command in `sh`, its output read as it comes; stopped at `limit`.
+fn shell(sh: &Runner, command: &str, cwd: &str, limit: Duration, stop: &dyn Fn() -> bool) -> Result<String, String> {
+    let mut cmd = sh.command(command);
+    // (Windows: no console window flashing up)
     #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    };
+    platform::process::own_group(&mut cmd);
     let mut child = cmd
         .current_dir(cwd)
         .stdin(Stdio::null())
@@ -296,6 +372,16 @@ fn shell(command: &str, cwd: &str, limit: Duration, stop: &dyn Fn() -> bool) -> 
         .env("GIT_TERMINAL_PROMPT", "0")
         .spawn()
         .map_err(|e| format!("Couldn't start the shell: {e}"))?;
+    // (Windows: held in a job right away, so Stop and the time limit end what it started too, also what Git Bash
+    // started in the background, which taskkill /T can't find)
+    #[cfg(windows)]
+    let tree = platform::process::Tree::hold(child.id());
+    let end = |child: &mut std::process::Child| {
+        #[cfg(windows)]
+        tree.end();
+        let _ = child.kill();
+        let _ = child.wait();
+    };
     // (pipes read on their own threads, so a chatty command never blocks; 4 MB each at most)
     let drain = |r: Option<Box<dyn Read + Send>>| {
         std::thread::spawn(move || {
@@ -314,19 +400,29 @@ fn shell(command: &str, cwd: &str, limit: Duration, stop: &dyn Fn() -> bool) -> 
             Ok(Some(st)) => break (st.code(), false),
             // (Stop pressed in the chat: the command goes too)
             Ok(None) if stop() => {
-                let _ = child.kill();
-                let _ = child.wait();
+                end(&mut child);
                 return Ok("Stopped by the user.".into());
             }
             Ok(None) if start.elapsed() >= limit => {
-                let _ = child.kill();
-                let _ = child.wait();
+                end(&mut child);
                 break (None, true);
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(e) => return Err(e.to_string()),
         }
     };
+    // (Windows: something it left running in the background that still holds its output gets 2 s to let go, then
+    // ends too, or the answer would wait for it; a program it opened that doesn't hold the output goes on)
+    #[cfg(windows)]
+    {
+        let held = Instant::now();
+        while !(out.is_finished() && err.is_finished()) && held.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if !(out.is_finished() && err.is_finished()) {
+            tree.end();
+        }
+    }
     Ok(exec::report(code, &out.join().unwrap_or_default(), &err.join().unwrap_or_default(), timed_out))
 }
 
@@ -350,19 +446,19 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
 // (sh syntax, /tmp and Unix symlinks; Windows gets its own when `run` works there)
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{check_file_path, shell};
+    use super::{check_file_path, shell, Runner};
     use std::time::{Duration, Instant};
 
     #[test]
     fn runs_reads_both_streams_and_stops_at_the_limit() {
-        let r = shell("echo hi; echo oops 1>&2; exit 3", "/tmp", Duration::from_secs(10), &|| false).unwrap();
+        let r = shell(&Runner::Unix, "echo hi; echo oops 1>&2; exit 3", "/tmp", Duration::from_secs(10), &|| false).unwrap();
         assert!(r.starts_with("Exit code 3"), "{r}");
         assert!(r.contains("stdout:\nhi") && r.contains("stderr:\noops"), "{r}");
         let t = Instant::now();
-        let r = shell("sleep 5", "/tmp", Duration::from_millis(400), &|| false).unwrap();
+        let r = shell(&Runner::Unix, "sleep 5", "/tmp", Duration::from_millis(400), &|| false).unwrap();
         assert!(r.contains("time limit") && t.elapsed() < Duration::from_secs(3), "{r}");
         // (lots of output never blocks the pipe)
-        let r = shell("yes | head -c 300000", "/tmp", Duration::from_secs(10), &|| false).unwrap();
+        let r = shell(&Runner::Unix, "yes | head -c 300000", "/tmp", Duration::from_secs(10), &|| false).unwrap();
         assert!(r.starts_with("Exit code 0") && r.contains("characters cut"), "{}", &r[..80]);
     }
 
@@ -411,5 +507,109 @@ mod tests {
         assert!(check_file_path(&dangling_safe.to_string_lossy(), "/Users/alice", "write_file").is_ok());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+// (Windows: Git Bash when it's installed, PowerShell otherwise, Windows' and Git Bash's paths, junctions)
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::{check_file_path, git_bash, shell, Runner};
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    /// A fresh folder under the temp folder, removed (junctions first) when dropped.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Scratch {
+            let d = super::canonical(&std::env::temp_dir()).unwrap().join(format!("sy-exec-win-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Scratch(d)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            if let Ok(entries) = std::fs::read_dir(&self.0) {
+                for e in entries.flatten() {
+                    if e.file_type().is_ok_and(|t| t.is_symlink()) {
+                        let _ = std::fs::remove_dir(e.path());
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// `C:\x\y` as Git Bash writes it: `/c/x/y`.
+    fn msys(p: &Path) -> String {
+        let s = p.to_string_lossy().replace('\\', "/");
+        format!("/{}{}", s[..1].to_ascii_lowercase(), &s[2..])
+    }
+
+    #[test]
+    fn git_bash_runs_in_the_folder_reads_both_streams_and_ends_the_whole_tree_at_the_limit() {
+        let Some(bash) = git_bash() else {
+            eprintln!("Git for Windows isn't installed here: skipped");
+            return;
+        };
+        let sh = Runner::Bash(bash);
+        let dir = Scratch::new("bash");
+        let cwd = dir.0.to_string_lossy().to_string();
+        let r = shell(&sh, "echo hi; echo oops 1>&2; basename \"$PWD\"; exit 3", &cwd, Duration::from_secs(30), &|| false).unwrap();
+        assert!(r.starts_with("Exit code 3"), "{r}");
+        assert!(r.contains("stdout:\nhi") && r.contains("stderr:\noops"), "{r}");
+        // (the login shell stays in the working folder: CHERE_INVOKING)
+        assert!(r.contains(&format!("sy-exec-win-bash-{}", std::process::id())), "{r}");
+        // a child left running in the background holds the pipes: only ending the whole tree lets it return in time
+        let t = Instant::now();
+        let r = shell(&sh, "sleep 30 & sleep 30", &cwd, Duration::from_millis(1500), &|| false).unwrap();
+        assert!(r.contains("time limit") && t.elapsed() < Duration::from_secs(15), "{r} after {:?}", t.elapsed());
+    }
+
+    #[test]
+    fn powershell_runs_and_ends_at_the_limit() {
+        let dir = Scratch::new("ps");
+        let cwd = dir.0.to_string_lossy().to_string();
+        let r = shell(&Runner::PowerShell, "Write-Output 'hi é'; [Console]::Error.WriteLine('oops'); exit 3", &cwd, Duration::from_secs(60), &|| false).unwrap();
+        assert!(r.starts_with("Exit code 3"), "{r}");
+        assert!(r.contains("hi é") && r.contains("oops"), "{r}");
+        let t = Instant::now();
+        let r = shell(&Runner::PowerShell, "Start-Sleep -Seconds 30", &cwd, Duration::from_secs(4), &|| false).unwrap();
+        assert!(r.contains("time limit") && t.elapsed() < Duration::from_secs(20), "{r} after {:?}", t.elapsed());
+    }
+
+    #[test]
+    fn file_paths_take_windows_and_git_bash_forms_and_never_reach_secrets_through_a_junction() {
+        let home = std::env::var("USERPROFILE").unwrap();
+        // secrets in Windows' spellings
+        for p in ["~/.ssh/id_rsa", r"~\.aws\credentials"] {
+            assert!(check_file_path(p, &home, "read_file").is_err(), "{p}");
+        }
+        for rest in [r"AppData\Roaming\Microsoft\Credentials\x", r"AppData\Local\Google\Chrome\User Data\Default\Login Data", r"AppData\Roaming\Sympony\secrets.json", r".claude\.credentials.json"] {
+            let p = format!(r"{home}\{rest}");
+            assert!(check_file_path(&p, &home, "read_file").is_err(), "{p}");
+            assert!(check_file_path(&msys(Path::new(&p)), &home, "read_file").is_err(), "{p} as Git Bash writes it");
+        }
+        // a Git Bash path is taken as Windows names it, and the resolved path has no \\?\ in front
+        let dir = Scratch::new("paths");
+        std::fs::create_dir_all(dir.0.join("safe")).unwrap();
+        std::fs::write(dir.0.join("safe").join("ok.txt"), "hi").unwrap();
+        let ok = dir.0.join("safe").join("ok.txt");
+        let (p, canon) = check_file_path(&msys(&ok), &home, "read_file").unwrap();
+        assert!(p.as_bytes()[1] == b':' && Path::new(&p).is_file(), "{p}");
+        assert!(!canon.starts_with(r"\\?\"), "{canon}");
+        assert!(check_file_path("/tmp/x", &home, "read_file").is_err(), "a Unix path isn't one on Windows");
+        // a junction (made without administrator rights) into a folder of keys is followed and refused
+        let keys = dir.0.join(".ssh");
+        std::fs::create_dir_all(&keys).unwrap();
+        std::fs::write(keys.join("id_rsa"), "secret").unwrap();
+        let link = dir.0.join("link-keys");
+        let made = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&keys).output().unwrap();
+        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stdout));
+        assert!(check_file_path(&link.join("id_rsa").to_string_lossy(), &home, "read_file").is_err());
+        assert!(check_file_path(&link.join("authorized_keys").to_string_lossy(), &home, "write_file").is_err());
+        assert!(check_file_path(&dir.0.join("safe").join("new.txt").to_string_lossy(), &home, "write_file").is_ok());
     }
 }
