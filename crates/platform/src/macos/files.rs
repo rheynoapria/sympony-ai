@@ -88,6 +88,11 @@ pub fn write_png(png: &[u8]) -> bool {
     })
 }
 
+/// The Downloads folder (`~/Downloads`).
+pub fn downloads() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Downloads")
+}
+
 /// Into the Trash (Finder's Put Back works).
 pub fn trash(path: &str) -> Result<(), String> {
     objc2::rc::autoreleasepool(|_| {

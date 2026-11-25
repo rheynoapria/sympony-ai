@@ -121,13 +121,13 @@ fn lan_address() -> Option<Ipv4Addr> {
     }
 }
 
+/// This computer's name, as the system's settings show it (on a phone's page and in a backup's manifest).
 pub fn pc_name() -> String {
-    std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output().ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Mac".into())
+    platform::os::system::computer_name()
 }
 
 pub fn folder(app: &AppHandle) -> PathBuf {
-    let default_dir = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Downloads").join("Sympony");
+    let default_dir = platform::os::files::downloads().join("Sympony");
     let s = app.state::<App>().settings.snapshot();
     match s["phoneFolder"].as_str().filter(|p| !p.is_empty()) {
         Some(p) if services::exec::secret_place(p).is_none() => {

@@ -58,7 +58,7 @@ fn add<W: Write + std::io::Seek>(zip: &mut zip::ZipWriter<W>, path: &Path, name:
 }
 
 /// The zip format's local time for a file's time (zip keeps 1980 to 2107, even seconds).
-fn zip_time(t: std::time::SystemTime) -> Option<zip::DateTime> {
+pub(crate) fn zip_time(t: std::time::SystemTime) -> Option<zip::DateTime> {
     use chrono::{Datelike, Timelike};
     let l: chrono::DateTime<chrono::Local> = t.into();
     zip::DateTime::from_date_and_time(u16::try_from(l.year()).ok()?, l.month() as u8, l.day() as u8, l.hour() as u8, l.minute() as u8, l.second() as u8).ok()

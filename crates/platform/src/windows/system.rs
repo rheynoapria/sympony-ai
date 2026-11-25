@@ -185,6 +185,20 @@ pub fn set_focus(on: bool) -> bool {
     }
 }
 
+/// The PC's name, as Settings → System → About shows it ("Device name"), else `COMPUTERNAME`, else "PC".
+pub fn computer_name() -> String {
+    use windows_sys::Win32::System::SystemInformation::{ComputerNamePhysicalDnsHostname, GetComputerNameExW};
+    let mut need = 0u32;
+    // SAFETY: first asked how long it is (no buffer), then given a buffer that long; it says how much it wrote
+    let name = unsafe {
+        GetComputerNameExW(ComputerNamePhysicalDnsHostname, std::ptr::null_mut(), &mut need);
+        let mut buf = vec![0u16; need.max(1) as usize];
+        let mut n = buf.len() as u32;
+        if GetComputerNameExW(ComputerNamePhysicalDnsHostname, buf.as_mut_ptr(), &mut n) != 0 { String::from_utf16_lossy(&buf[..(n as usize).min(buf.len())]) } else { String::new() }
+    };
+    Some(name).filter(|n| !n.trim().is_empty()).or_else(|| std::env::var("COMPUTERNAME").ok().filter(|n| !n.trim().is_empty())).unwrap_or_else(|| "PC".into())
+}
+
 /// Whether this session's screen is locked (Win+L, or the lock screen after sleep).
 pub fn screen_locked() -> bool {
     use windows_sys::Win32::System::RemoteDesktop::{WTSFreeMemory, WTSQuerySessionInformationW, WTSSessionInfoEx, WTSINFOEXW, WTS_CURRENT_SESSION, WTS_SESSIONSTATE_LOCK};
@@ -198,5 +212,17 @@ pub fn screen_locked() -> bool {
         let locked = size as usize >= std::mem::size_of::<WTSINFOEXW>() && ex.Level == 1 && ex.Data.WTSInfoExLevel1.SessionFlags as u32 == WTS_SESSIONSTATE_LOCK;
         WTSFreeMemory(info.cast());
         locked
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pc_is_called_what_windows_calls_it() {
+        let host = std::process::Command::new("hostname").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        assert!(!host.is_empty());
+        assert_eq!(computer_name(), host);
     }
 }

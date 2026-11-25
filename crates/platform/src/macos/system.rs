@@ -591,6 +591,12 @@ unsafe extern "C" {
     fn CGSessionCopyCurrentDictionary() -> *mut c_void;
 }
 
+/// The Mac's name, as Sharing settings show it (`scutil --get ComputerName`), else "Mac".
+pub fn computer_name() -> String {
+    std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Mac".into())
+}
+
 /// Whether the screen is locked (the login window is up), from the session's own record.
 pub fn screen_locked() -> bool {
     objc2::rc::autoreleasepool(|_| unsafe {

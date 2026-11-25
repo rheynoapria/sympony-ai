@@ -13,10 +13,26 @@ pub fn choose(what: &str, prompt: &str) -> Vec<String> {
     std::thread::spawn(move || dialog(&what, &prompt).unwrap_or_default()).join().unwrap_or_default()
 }
 
+/// The Downloads folder: Windows' own (it can be moved, to another drive or into OneDrive), else the profile's.
+pub fn downloads() -> std::path::PathBuf {
+    use ::windows::Win32::System::Com::CoTaskMemFree;
+    use ::windows::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    // SAFETY: the path the shell hands back is copied, then freed with CoTaskMemFree as its docs ask
+    let known = unsafe {
+        SHGetKnownFolderPath(&FOLDERID_Downloads, KF_FLAG_DEFAULT, None).ok().and_then(|p| {
+            let s = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const c_void));
+            s
+        })
+    };
+    known.filter(|s| !s.is_empty()).map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Downloads"))
+}
+
 /// Where the dialog starts for `what`.
 fn start_folder(what: &str) -> Option<String> {
     match what {
-        "backup" => std::env::var("USERPROFILE").ok().map(|h| format!("{h}\\Downloads")),
+        "backup" => Some(downloads().to_string_lossy().into_owned()),
         "files" | "folder" | "audio" => None,
         _ => std::env::var("ProgramData").ok().map(|d| format!("{d}\\Microsoft\\Windows\\Start Menu\\Programs")),
     }
@@ -629,5 +645,12 @@ mod tests {
         let paths = [f.to_string_lossy().into_owned(), s.0.to_string_lossy().into_owned(), s.0.join("gone.txt").to_string_lossy().into_owned()];
         let names: Vec<String> = storage_items(&paths).iter().map(|i| i.Name().unwrap().to_string()).collect();
         assert_eq!(names, vec!["a.txt".to_string(), s.0.file_name().unwrap().to_string_lossy().into_owned()]);
+    }
+
+    #[test]
+    fn downloads_is_a_folder_that_is_there() {
+        let d = downloads();
+        assert!(d.is_absolute() && d.is_dir(), "{}", d.display());
+        assert_eq!(start_folder("backup").as_deref(), Some(d.to_string_lossy().as_ref()));
     }
 }
