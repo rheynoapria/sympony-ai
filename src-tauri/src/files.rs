@@ -177,15 +177,28 @@ fn notch_view(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 
 /// The share menu for these files at the mouse, in `win` (else the notch under the mouse).
 pub fn share(app: &AppHandle, win: Option<tauri::WebviewWindow>, paths: Vec<String>) {
+    // (the log says how many and how it went, never the files' names)
+    let log = app.state::<App>().log.clone();
+    let asked = paths.len();
     let paths: Vec<String> = paths.into_iter().filter(|p| Path::new(p).exists()).collect();
-    let Some(w) = win.or_else(|| notch_view(app)) else { return };
+    let Some(w) = win.or_else(|| notch_view(app)) else {
+        log.line("share: no window to share from");
+        return;
+    };
     if paths.is_empty() {
+        log.line(&format!("share: nothing to share, the {asked} item(s) are gone"));
         return;
     }
     on_main(app, move || {
-        if let Some(v) = crate::native::view(&w) {
-            // SAFETY: the window's own NSView (HWND on Windows), on the main thread
-            unsafe { platform::os::files::share(v, &paths) };
+        let Some(v) = crate::native::view(&w) else {
+            log.line("share: no window to share from");
+            return;
+        };
+        // SAFETY: the window's own NSView (HWND on Windows), on the main thread
+        unsafe { platform::os::files::share(v, &paths) };
+        match platform::os::files::share_failed() {
+            None => log.line(&format!("share: {} item(s), the share window opened", paths.len())),
+            Some(why) => log.line(&format!("share: {} item(s), the share window didn't open: {why}", paths.len())),
         }
     });
 }
@@ -204,23 +217,39 @@ fn on_main(app: &AppHandle, f: impl FnOnce() + Send + 'static) {
 /// A real drag of Shelf files out of `win` (to Finder, Mail…); taken off the Shelf after a drop with
 /// shelfRemoveAfterDrag.
 pub fn drag_out(app: &AppHandle, win: tauri::WebviewWindow, ids: Vec<Value>) {
+    // (the log says how many and how it went, never the files' names)
+    let log = app.state::<App>().log.clone();
     let paths: Vec<String> = shelf_paths(app, &ids).into_iter().filter(|p| Path::new(p).exists()).collect();
     if paths.is_empty() {
+        log.line(&format!("shelf: drag out of {} item(s): nothing to drag, the files are gone", ids.len()));
         return;
     }
+    let n = paths.len();
     let h = app.clone();
     on_main(app, move || {
-        let Some(v) = crate::native::view(&win) else { return };
+        let Some(v) = crate::native::view(&win) else {
+            log.line("shelf: drag out: no window to drag from");
+            return;
+        };
+        let said = log.clone();
         let done = Box::new(move |dropped: bool| {
-            if dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true {
+            let remove = dropped && h.state::<App>().settings.get()["shelfRemoveAfterDrag"] == true;
+            said.line(&format!("shelf: drag out of {n} item(s): {}", match (dropped, remove) {
+                (true, true) => "dropped, taken off the Shelf (Remove after drag)",
+                (true, false) => "dropped",
+                _ => "not dropped (let go on Sympony, or cancelled)",
+            }));
+            if remove {
                 h.state::<Files>().shelf.lock().unwrap().retain(|x| !ids.contains(&x["id"]));
                 // (thumbnails and the save: not on the main thread)
                 let h = h.clone();
                 std::thread::spawn(move || { shelf_changed(&h); });
             }
         });
-        // SAFETY: the window's own NSView, on the main thread, while the page's drag goes on
-        unsafe { platform::os::files::drag_out(v, &paths, done) };
+        // SAFETY: the window's own NSView (HWND on Windows), on the main thread, while the page's drag goes on
+        if !unsafe { platform::os::files::drag_out(v, &paths, done) } {
+            log.line(&format!("shelf: drag out of {n} item(s): didn't start (no mouse drag going on, the button was up)"));
+        }
     });
 }
 

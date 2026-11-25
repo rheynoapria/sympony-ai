@@ -268,6 +268,13 @@ thread_local! {
     // its place (else that window would hand out every earlier share's files too).
     static SHARING: std::cell::RefCell<Option<(::windows::ApplicationModel::DataTransfer::DataTransferManager, i64)>> =
         const { std::cell::RefCell::new(None) };
+    // why the last `share` on this thread didn't open the Share window (None: it opened)
+    static SHARE_FAILED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Why the last `share` on this thread didn't open the Share window, taken (None: it opened, or none was asked).
+pub fn share_failed() -> Option<String> {
+    SHARE_FAILED.with(|f| f.borrow_mut().take())
 }
 
 /// Windows' Share window (Nearby Sharing, Mail, other apps…) for these files and folders, over `view`'s window.
@@ -276,10 +283,12 @@ thread_local! {
 /// # Safety
 /// `view` must be a live window of this thread.
 pub unsafe fn share(view: *mut c_void, paths: &[String]) {
-    if view.is_null() || paths.is_empty() {
-        return;
-    }
-    let _ = share_in(::windows::Win32::Foundation::HWND(view), paths);
+    let why = if view.is_null() || paths.is_empty() {
+        Some("nothing to share from".to_string())
+    } else {
+        share_in(::windows::Win32::Foundation::HWND(view), paths).err().map(|e| format!("{} ({:#010x})", e.message(), e.code().0))
+    };
+    SHARE_FAILED.with(|f| *f.borrow_mut() = why);
 }
 
 fn share_in(hwnd: ::windows::Win32::Foundation::HWND, paths: &[String]) -> ::windows::core::Result<()> {
@@ -291,7 +300,7 @@ fn share_in(hwnd: ::windows::Win32::Foundation::HWND, paths: &[String]) -> ::win
     use windows_collections::IIterable;
     let paths: Vec<String> = paths.iter().filter(|p| std::path::Path::new(p).exists()).cloned().collect();
     if paths.is_empty() {
-        return Ok(());
+        return Err(::windows::core::Error::new(::windows::Win32::Foundation::E_INVALIDARG, "the files are gone"));
     }
     let title = HSTRING::from(share_title(&paths));
     let interop = ::windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()?;
@@ -486,6 +495,14 @@ mod tests {
             // SAFETY: paired with the CoInitializeEx above
             unsafe { CoUninitialize() };
         }
+    }
+
+    #[test]
+    fn a_share_that_cant_open_says_why_once() {
+        // SAFETY: a null window is turned away before any use
+        unsafe { share(std::ptr::null_mut(), &[r"C:\a.txt".into()]) };
+        assert_eq!(share_failed().as_deref(), Some("nothing to share from"));
+        assert_eq!(share_failed(), None);
     }
 
     #[test]

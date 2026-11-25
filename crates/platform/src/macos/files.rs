@@ -125,6 +125,11 @@ pub unsafe fn share(view: *mut std::ffi::c_void, paths: &[String]) {
     LAST_PICKER.with(|slot| *slot.borrow_mut() = Some(picker));
 }
 
+/// Why the last `share` didn't open (as on Windows): the share menu has no way to fail that it tells, so None.
+pub fn share_failed() -> Option<String> {
+    None
+}
+
 pub struct DragIvars {
     done: Box<dyn Fn(bool)>,
 }
