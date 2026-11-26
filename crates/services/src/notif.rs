@@ -17,6 +17,9 @@ pub struct Note {
     pub at: i64, // Unix ms
     /// what the app asked to be given back when it's clicked (a Windows toast's `launch`; none on macOS)
     pub launch: String,
+    /// a Windows toast's picture, as its `src` (`picture_file`): the sender's, else an inline one, else the hero;
+    /// none on macOS
+    pub picture: String,
 }
 
 /// A `record.data` binary plist `{app, date, req: {titl, subt, body}}`; `app_id` from the `app` table wins.
@@ -33,12 +36,13 @@ pub fn parse_record(data: &[u8], app_id: &str) -> Option<Note> {
     let app = if app_id.is_empty() { d.get("app").and_then(|a| a.as_string()).unwrap_or("").to_string() } else { app_id.to_string() };
     // (no date, or none that makes sense: it came now)
     let at = date.filter(|d| *d > 0.0).map(|d| (d as i64 + COCOA_EPOCH) * 1000).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-    Some(Note { app_id: app, title: text("titl"), subtitle: text("subt"), body: text("body"), at, launch: String::new() })
+    Some(Note { app_id: app, title: text("titl"), subtitle: text("subt"), body: text("body"), at, launch: String::new(), picture: String::new() })
 }
 
 /// A Windows toast's XML (the payload in Windows' notification database): the first binding's texts, the first one
 /// the title and the rest the body (a line each), an attribution text (`placement="attribution"`, a browser's site)
-/// as the subtitle, and the toast's `launch`, handed back to its app when it's clicked. None when it isn't a toast.
+/// as the subtitle, the toast's `launch`, handed back to its app when it's clicked, and its picture (`Note::picture`).
+/// None when it isn't a toast.
 pub fn parse_toast(xml: &[u8], app_id: &str, at: i64) -> Option<Note> {
     use quick_xml::events::{BytesStart, Event};
     use quick_xml::XmlVersion;
@@ -48,6 +52,8 @@ pub fn parse_toast(xml: &[u8], app_id: &str, at: i64) -> Option<Note> {
     let mut r = quick_xml::Reader::from_str(std::str::from_utf8(xml).ok()?);
     let (mut toast, mut launch, mut bindings) = (false, String::new(), 0);
     let (mut texts, mut attribution) = (Vec::<String>::new(), String::new());
+    // the first binding's pictures by rank (0 the sender's, 1 inline, 2 the hero): the best one so far
+    let mut picture: Option<(u8, String)> = None;
     // inside a text: whether it's the attribution, and what it says so far
     let mut text: Option<(bool, String)> = None;
     loop {
@@ -57,6 +63,18 @@ pub fn parse_toast(xml: &[u8], app_id: &str, at: i64) -> Option<Note> {
                 launch = attr(&e, "launch");
             }
             Event::Start(e) if e.name().as_ref() == "binding" => bindings += 1,
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == "image" && bindings == 1 => {
+                let rank = match attr(&e, "placement").as_str() {
+                    "appLogoOverride" => 0,
+                    "" | "inline" => 1,
+                    "hero" => 2,
+                    _ => continue,
+                };
+                let src = attr(&e, "src");
+                if !src.is_empty() && picture.as_ref().is_none_or(|(best, _)| rank < *best) {
+                    picture = Some((rank, src));
+                }
+            }
             Event::Start(e) if e.name().as_ref() == "text" && bindings == 1 => text = Some((attr(&e, "placement") == "attribution", String::new())),
             Event::Text(t) => {
                 if let Some((_, s)) = text.as_mut() {
@@ -99,7 +117,71 @@ pub fn parse_toast(xml: &[u8], app_id: &str, at: i64) -> Option<Note> {
     let mut texts = texts.into_iter();
     let title = texts.next().unwrap_or_default();
     let body = texts.collect::<Vec<_>>().join("\n");
-    Some(Note { app_id: app_id.to_string(), title, subtitle: attribution, body, at, launch })
+    let picture = picture.map(|(_, src)| src).unwrap_or_default();
+    Some(Note { app_id: app_id.to_string(), title, subtitle: attribution, body, at, launch, picture })
+}
+
+/// Where a toast's picture (`Note::picture`) is on this PC: a file (`file:///C:/…`, or `file:///C:\…` as Telegram
+/// writes it, or a plain `C:\…`) or a Store app's own (`ms-appdata:///local|roaming|temp/…` under
+/// `<local app data>\Packages\<its package>`, never out of it). None for anything else: a share (opening one hands it
+/// this account's sign-in), the web, an app's installed files.
+pub fn picture_file(src: &str, app_id: &str, local_appdata: &Path) -> Option<PathBuf> {
+    const APPDATA: &str = "ms-appdata:///";
+    let lower = src.to_ascii_lowercase();
+    if lower.starts_with(APPDATA) {
+        let (folder, rest) = src[APPDATA.len()..].split_once('/')?;
+        let state = match folder.to_ascii_lowercase().as_str() {
+            "local" => "LocalState",
+            "roaming" => "RoamingState",
+            "temp" => "TempState",
+            _ => return None,
+        };
+        let (package, _) = app_id.split_once('!')?;
+        let parts: Vec<String> = unescape_uri(rest).split(['/', '\\']).filter(|p| !p.is_empty()).map(String::from).collect();
+        if package.is_empty() || parts.is_empty() || parts.iter().any(|p| p == "." || p == "..") {
+            return None;
+        }
+        return Some(parts.iter().fold(local_appdata.join("Packages").join(package).join(state), |p, part| p.join(part)));
+    }
+    let path = if lower.starts_with("file:///") {
+        unescape_uri(&src["file:///".len()..])
+    } else if lower.starts_with("file:") {
+        return None;
+    } else {
+        src.to_string()
+    };
+    // (a drive's own path only: `X:\` or `X:/`)
+    let b = path.as_bytes();
+    let drive = b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/');
+    drive.then(|| PathBuf::from(path.replace('/', "\\")))
+}
+
+/// `%xx` in a URI → its bytes (UTF-8); anything else as it is (a `+` stays: it isn't a form).
+fn unescape_uri(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = (b[i] == b'%' && i + 2 < b.len()).then(|| std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())).flatten();
+        match hex {
+            Some(v) => {
+                out.push(v);
+                i += 3;
+            }
+            None => {
+                out.push(b[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+/// Settings → Notifications' Telegram hint: Telegram Desktop is here (`here`) but none of the apps Windows'
+/// notification centre knows (`app_ids`, the ones that posted a toast) is it. Telegram Desktop draws its own
+/// pop-ups unless its Use Windows notifications is on (off when it's installed), and those never reach Windows.
+pub fn telegram_hint(here: bool, app_ids: &[String]) -> bool {
+    here && !app_ids.iter().any(|id| id.to_ascii_lowercase().contains("telegramdesktop"))
 }
 
 pub struct History {

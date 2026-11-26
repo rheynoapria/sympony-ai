@@ -175,10 +175,27 @@ fn app_info(app: &AppHandle, id: &str) -> (String, Value) {
     }).clone()
 }
 
-/// One new notification: under the notch (`popup`) and into the history (`dnd`: held back by Do not disturb).
-/// `launch`: what its app asked to be given back when it's clicked (Windows).
+/// A toast's picture (`Note::picture`: the sender's photo, or one it came with) as a small data URL for its pop-up;
+/// Null for none, or for one that isn't a picture file on this PC (up to 20 MB).
+fn picture(app: &AppHandle, n: &services::notif::Note) -> Value {
+    if n.picture.is_empty() {
+        return Value::Null;
+    }
+    let local = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default();
+    let Some(path) = services::notif::picture_file(&n.picture, &n.app_id, &local) else { return Value::Null };
+    if !std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() <= 20 << 20) {
+        return Value::Null;
+    }
+    let scratch = app.state::<App>().data_dir.join("thumbs");
+    platform::os::files::thumbnail(&path.to_string_lossy(), 96, &scratch)
+        .and_then(|jpeg| services::media::data_url(&jpeg))
+        .map_or(Value::Null, Value::String)
+}
+
+/// One new notification: under the notch (`popup`, with its own `image` if it has one) and into the history (`dnd`:
+/// held back by Do not disturb). `launch`: what its app asked to be given back when it's clicked (Windows).
 #[allow(clippy::too_many_arguments)]
-fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: Value, title: &str, subtitle: &str, body: &str, at: i64, popup: bool, launch: &str, dnd: bool) {
+fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: Value, image: Value, title: &str, subtitle: &str, body: &str, at: i64, popup: bool, launch: &str, dnd: bool) {
     let title: String = match (title.is_empty(), subtitle.is_empty()) {
         (_, true) => title.to_string(),
         (true, false) => subtitle.to_string(),
@@ -187,7 +204,7 @@ fn deliver(app: &AppHandle, s: &Value, id: &str, aumid: &str, name: &str, icon: 
     let title: String = title.chars().take(200).collect();
     let body: String = body.chars().take(500).collect();
     if popup {
-        let msg = json!({ "id": id, "hid": id, "app": name, "title": title, "body": body, "icon": icon, "at": at,
+        let msg = json!({ "id": id, "hid": id, "app": name, "title": title, "body": body, "icon": icon, "image": image, "at": at,
             "aumid": aumid, "launch": launch, "activation": "" });
         let _ = app.emit("notif", &msg);
     }
@@ -242,7 +259,7 @@ fn watch_banners(app: AppHandle) {
                 if s["notifHideBanners"] != false {
                     banners::close(&b);
                 }
-                deliver(&app, &s, &id, &aumid, &name, icon, &b.title, &b.subtitle, &b.body, now, true, "", false);
+                deliver(&app, &s, &id, &aumid, &name, icon, Value::Null, &b.title, &b.subtitle, &b.body, now, true, "", false);
             }
         }
     });
@@ -334,7 +351,9 @@ pub fn start(app: &AppHandle) {
                         let _ = app.emit("notif:quiet", json!({ "icon": icon }));
                     }
                 }
-                deliver(&app, &s, &r.id.to_string(), &n.app_id, &name, icon, &n.title, &n.subtitle, &n.body, n.at, i >= shown_from && !hold, &n.launch, hold);
+                let popup = i >= shown_from && !hold;
+                let image = if popup { picture(&app, &n) } else { Value::Null };
+                deliver(&app, &s, &r.id.to_string(), &n.app_id, &name, icon, image, &n.title, &n.subtitle, &n.body, n.at, popup, &n.launch, hold);
                 #[cfg(target_os = "windows")]
                 if hide_banners {
                     banners_off::hide(&app, &n.app_id);
@@ -462,6 +481,35 @@ pub fn register(reg: &mut services::Registry, app: &AppHandle) {
         let _ = std::process::Command::new("/usr/bin/osascript").args(["-e", &format!("display notification \"{TEXT}\" with title \"Sympony test\"")]).status();
         Ok(Value::Null)
     }));
-    // (Telegram on a Mac posts macOS notifications: nothing to hint)
-    reg.add("notif.telegram", Box::new(|_, _| Ok(json!({ "show": false }))));
+    let a = app.clone();
+    reg.add("notif.telegram", Box::new(move |_, _| Ok(json!({ "show": telegram_hint(&a) }))));
+}
+
+/// Settings → Notifications: whether to say Telegram's pop-ups never reach Sympony (`services::notif::telegram_hint`):
+/// Telegram Desktop is here, and none of the apps that posted a notification (Windows' notification centre, and
+/// Sympony's history) is it. (Telegram on a Mac posts macOS notifications: never.)
+fn telegram_hint(app: &AppHandle) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let Ok(mut ids) = notifications::apps() else { return false };
+        let history = with_history(app, |h| h.view());
+        ids.extend(history["items"].as_array().into_iter().flatten().filter_map(|i| i["aumid"].as_str().map(String::from)));
+        services::notif::telegram_hint(telegram_here(), &ids)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+/// Telegram Desktop on this PC: running, where its installer puts it, or from the Store.
+#[cfg(target_os = "windows")]
+fn telegram_here() -> bool {
+    let env = |k: &str| std::env::var_os(k).map(std::path::PathBuf::from);
+    apps::running("Telegram.exe")
+        || env("APPDATA").is_some_and(|d| d.join(r"Telegram Desktop\Telegram.exe").is_file())
+        || env("LOCALAPPDATA").and_then(|d| std::fs::read_dir(d.join("Packages")).ok()).is_some_and(|mut dir| {
+            dir.any(|e| e.is_ok_and(|e| e.file_name().to_string_lossy().to_ascii_lowercase().starts_with("telegrammessengerllp.telegramdesktop_")))
+        })
 }

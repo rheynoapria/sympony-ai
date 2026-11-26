@@ -138,3 +138,11 @@ pub fn read_after(after: i64) -> Result<Vec<Row>, Access> {
         .map_err(|e| Access::Failed(e.to_string()))?;
     Ok(rows.filter_map(Result::ok).collect())
 }
+
+/// The bundle ids of the apps usernoted knows (each has asked to post notifications).
+pub fn apps() -> Result<Vec<String>, Access> {
+    let db = open()?;
+    let mut st = db.prepare("SELECT IFNULL(identifier, '') FROM app").map_err(|e| Access::Failed(e.to_string()))?;
+    let rows = st.query_map([], |r| r.get::<_, String>(0)).map_err(|e| Access::Failed(e.to_string()))?;
+    Ok(rows.filter_map(Result::ok).filter(|id| !id.is_empty()).collect())
+}

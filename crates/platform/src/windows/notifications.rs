@@ -116,6 +116,21 @@ pub fn read_after(after: i64) -> Result<Vec<Row>, Access> {
     rows_after(&open()?, after).map_err(|e| Access::Failed(e.to_string()))
 }
 
+/// Apps that posted a toast here, by id (AUMID): a desktop app's entry in the notification centre comes with its first
+/// toast; a Store app's comes when it's installed, so it counts only while one of its toasts is still there.
+const APPS: &str = r#"SELECT h.PrimaryId FROM NotificationHandler h WHERE IFNULL(h.PrimaryId, '') <> ''
+    AND (h.HandlerType = 'app:desktop' OR EXISTS (SELECT 1 FROM Notification n WHERE n.HandlerId = h.RecordId AND n.Type = 'toast'))"#;
+
+/// The ids (AUMIDs) of the apps that posted a toast here (`APPS`).
+pub fn apps() -> Result<Vec<String>, Access> {
+    let db = open()?;
+    let ids = db.prepare(APPS).and_then(|mut st| {
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.filter_map(Result::ok).filter(|id| !id.is_empty()).collect())
+    });
+    ids.map_err(|e| Access::Failed(e.to_string()))
+}
+
 /// What a click on a notification does, as Windows' own click: a Store app is activated with the toast's `launch`;
 /// a desktop app that registered a toast activator (browsers, chat apps) gets it through that; otherwise the app is
 /// opened. False when none of these could be done.
@@ -238,4 +253,19 @@ pub fn post(app_id: &str, name: &str, icon: Option<&Path>, title: &str, body: &s
         ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id))?.Show(&toast)
     })()
     .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_toast_s_app_is_among_the_apps() {
+        // (this account's own notification centre; none on the machine: nothing to check)
+        let (Ok(rows), Ok(apps)) = (read_after(0), apps()) else { return };
+        let missing = rows.iter().filter(|r| !r.app.is_empty() && !apps.contains(&r.app)).count();
+        // (counted, not named: the apps are this account's)
+        assert_eq!(missing, 0, "toasts whose app isn't among the {} apps", apps.len());
+        assert!(apps.iter().all(|id| !id.is_empty()));
+    }
 }
