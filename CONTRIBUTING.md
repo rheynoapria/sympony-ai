@@ -47,6 +47,8 @@ target/release/sympony.exe &
 target/release/sympony.exe --dev-eval notch.html "N.api.svc('lang', 'state')"
 ```
 
+On its own data folder the test build runs beside an installed Sympony that's already open (the release build hands a second start to the first one).
+
 `--dev-eval <window> <script | @file>` runs the script in the window with that label or page (as the DevTools protocol's `Runtime.evaluate`, promises awaited) and prints its value as JSON, or `{"error": …}` with exit code 1. Don't start WebView2 with `--remote-debugging-port` for this: Microsoft Defender's behaviour monitoring ends the app (#73).
 
 ## Public Roadmap & AI Agent Workflow

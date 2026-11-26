@@ -88,8 +88,14 @@ pub fn dev_eval(window: &str, script: &str) -> i32 {
 }
 
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| settings_window::open(app, None)))
+    let mut builder = tauri::Builder::default();
+    // (a test build on a data folder of its own runs beside the installed Sympony: without this it would only open
+    // that one's Settings and quit; CONTRIBUTING.md, Live checks)
+    let beside = cfg!(feature = "dev-drive") && std::env::var_os("SYMPONY_DATA_DIR").is_some();
+    if !beside {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| settings_window::open(app, None)));
+    }
+    builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(shell::plugin())
         .setup(|app| {

@@ -11,9 +11,9 @@ use crate::commands::App;
 /// The name Sympony is listed under (on Windows `Run\Sympony`, which Tauri's uninstaller also removes)
 const NAME: &str = "Sympony";
 
-/// A debug build never lists itself: it would start `target\debug` at login. Taking Sympony off the list is fine
-/// from any build.
-const MAY_LIST: bool = !cfg!(debug_assertions);
+/// A debug or test (`dev-drive`) build never lists itself: it would start `target\…` at login. Taking Sympony off the
+/// list is fine from any build.
+const MAY_LIST: bool = !cfg!(debug_assertions) && !cfg!(feature = "dev-drive");
 
 fn note(app: &AppHandle, msg: &str) {
     app.state::<App>().log.line(&format!("launch at login: {msg}"));
@@ -31,7 +31,7 @@ fn list_this_app(app: &AppHandle) {
 pub fn settings_changed(app: &AppHandle, patch: &Value) {
     match patch.get("launchAtLogin").and_then(Value::as_bool) {
         Some(true) if MAY_LIST => list_this_app(app),
-        Some(true) => note(app, "not listed from a debug build"),
+        Some(true) => note(app, "not listed from a debug or test build"),
         Some(false) => match platform::os::startup::unregister(NAME) {
             Ok(()) => note(app, "off"),
             Err(e) => note(app, &e),
