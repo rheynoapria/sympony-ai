@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows port, small Mac-only calls:** On Windows, answering an agent's card with Open brings its app forward (Windows Terminal, VS Code…): the hook now takes its line of parent processes when it runs (`platform::process::ancestors`, Toolhelp; the shell an agent runs a hook through is gone by the time the card is answered, and a number reused by a later process isn't taken for a parent), and the log says what Open found; a running Paseo comes forward too. Language "auto" follows Windows' display languages and Radio's stations near you its country or region (they read macOS's `defaults`); Sympony AI's device list names the PC (it said "this computer"); a file a phone sends is marked as a download (the Mark of the Web), so Windows asks before running it; Open Calendar opens the calendar app Windows shows appointments in (#71).
 - **Windows port, notification pictures and the Telegram hint:** A notification under the notch shows the picture its toast came with: the sender's photo (Telegram's, a chat app's), else an inline picture, else the hero one, from a file on this PC or the app's own folders (`services::notif::picture_file`; never a share or the web), made small with Windows' own picture codecs. Settings → Notifications says Telegram's pop-ups never reach Sympony when Telegram Desktop is here (installed, from the Store, or running) and has never posted a Windows notification: it draws its own unless its Use Windows notifications is on, which it isn't when installed (#37).
 
+### Fixed
+
+- **Windows port, classic Settings' wording:** The classic Settings page says "this PC" on Windows where it said "this Mac": the Notifications card, Integrations (Claude Code and Paseo not found), Paseo's requests, the lyrics' romanization and translation, Pony Assistant's page (looking for agents, how many are ready, Share my day, the scheduled briefs, where chats are kept), and YouTube in Music names the browsers Windows reads (Chrome, Edge, Brave, Vivaldi) without "macOS asks once" (#39).
+
 ## [0.3.0-beta.1] - 2026-11-26
 
 ### Added

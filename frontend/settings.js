@@ -28,7 +28,7 @@ const MODULE_META = {
   worldclock: ['earth-asia', _t('World clock'), _t('The time in other places, with a meeting planner')],
   teleprompter: ['scroll', _t('Teleprompter'), _t('Your script scrolls right under the camera while you talk')],
   launcher: ['rocket', _t('Launcher'), _t('Quick access to your favourite apps and folders')],
-  notifs: ['bell', _t('Notifications'), _t('Recent notifications from your Mac and browser')],
+  notifs: ['bell', _t('Notifications'), window.SYMPONY_OS === 'macos' ? _t('Recent notifications from your Mac and browser') : _t('Recent notifications from your PC and browser')],
 };
 // what the closed notch can show on its left and right while nothing else is going on
 const IDLE_SLOTS = [['none', _t('Nothing')], ['weather', _t('Weather')], ['battery', _t('Battery')], ['date', _t('Date')], ['prayer', _t('Next prayer')],
@@ -208,8 +208,8 @@ async function renderIntegrations(el) {
   const card = (ic, name, cls, txt) => `<div class="ag-card ig-card ${cls === 'off' ? 'dim' : ''}"><span class="ag-ic">${ic}</span>
     <span class="ag-txt"><b>${esc(name)}</b><small class="ag-${cls}"><i></i>${esc(txt)}</small></span></div>`;
   const cc = !c ? ['off', _t('Unknown')] : c.state === 'installed' ? (S.claudeHooks ? ['ok', _t('Connected')] : ['warn', _t('Connected · requests hidden')])
-    : c.state === 'nodir' ? ['off', _t('Not on this Mac')] : c.state === 'bad' ? ['warn', _t('Settings file has an error')] : ['warn', _t('Not connected: Install below')];
-  const ps = !p || !p.found ? ['off', _t('Not on this Mac')] : !p.running ? ['warn', _t('Paseo isn’t running')]
+    : c.state === 'nodir' ? ['off', MAC ? _t('Not on this Mac') : _t('Not on this PC')] : c.state === 'bad' ? ['warn', _t('Settings file has an error')] : ['warn', _t('Not connected: Install below')];
+  const ps = !p || !p.found ? ['off', MAC ? _t('Not on this Mac') : _t('Not on this PC')] : !p.running ? ['warn', _t('Paseo isn’t running')]
     : S.paseoEnabled === false || !S.claudeHooks ? ['warn', _t('Found · off')]
       : ['ok', p.pending ? _t('Watching · {n} waiting', { n: p.pending }) : _t('Watching')];
   const later = (id, why) => { const a = ag(id); return card(img(a.icon || 'openai', !/-color$/.test(a.icon || '')), a.name || id, 'off', a.installed ? why : _t('Not installed')); };
@@ -226,7 +226,7 @@ async function renderIntegrations(el) {
 async function renderPaseo(el) {
   const p = await api.svc('paseo', 'status').catch(() => null);
   if (!el.isConnected) return;
-  const t = !p || !p.found ? _t('Paseo isn’t installed on this Mac.')
+  const t = !p || !p.found ? (MAC ? _t('Paseo isn’t installed on this Mac.') : _t('Paseo isn’t installed on this PC.'))
     : !p.running ? _t('Paseo is installed but its daemon isn’t running: open Paseo.')
       : S.paseoEnabled === false || !S.claudeHooks ? _t('Paseo runs; its requests aren’t shown (turn on the switches above).')
         : p.reached === false ? _t('Paseo runs but didn’t answer Sympony (its local sign-in may have changed): restart Paseo.')
@@ -554,7 +554,8 @@ const SECTIONS = [
       { t: 'number', k: 'vlcPort', label: _t('Web interface port'), sub: _t('8080 unless you changed HTTP server port in VLC (Preferences → All → Input / Codecs)'), min: 1, max: 65535 },
       { t: 'custom', render: renderVlcStatus },
       { t: 'h2', text: 'YouTube' },
-      { t: 'toggle', k: 'ytVideo', label: _t('Show YouTube videos in Music'), sub: _t('While a video plays on youtube.com in Brave, Chrome, Edge, Arc, Vivaldi, Opera or Safari, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s tab addresses to find it (macOS asks once). YouTube Music stays the music view.') },
+      { t: 'toggle', k: 'ytVideo', label: _t('Show YouTube videos in Music'), sub: MAC_SYS() ? _t('While a video plays on youtube.com in Brave, Chrome, Edge, Arc, Vivaldi, Opera or Safari, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s tab addresses to find it (macOS asks once). YouTube Music stays the music view.')
+        : _t('While a video plays on youtube.com in Chrome, Edge, Brave or Vivaldi, the Music section plays it too, muted and in step with the tab. Sympony reads the browser’s address bar and tab names to find it, never the pages. YouTube Music stays the music view.') },
       { t: 'toggle', k: 'ytVideoFill', label: _t('Fill the section with the video'), sub: _t('Off: the whole video in the middle, its colours glowing at the sides. On: edge to edge, top and bottom cropped.') },
       { t: 'h2', text: _t('Lyrics') },
       { t: 'toggle', k: 'lyricsEnabled', label: _t('Lyrics'), sub: _t('The words of the song, in time with it when there are timings; lyrics without them scroll slowly as the song plays (marked Not timed). The ❝ button in the player on Home shows the player with the lyrics next to it, and goes back to the calendar. They come from LRCLIB: the song’s title, artist, album and length are sent to lrclib.net.') },
@@ -566,7 +567,8 @@ const SECTIONS = [
       { t: 'toggle', k: 'lyricsBold', label: _t('Bold lyrics'), sub: _t('Off: the line being sung in the closed Sympony in regular weight') },
       { t: 'range', k: 'lyricsArtBg', label: _t('Album art behind the lyrics'), sub: _t('With Inside: the album art, blurred and dimmed, behind the line. 0% keeps Sympony black.'), min: 0, max: 100, step: 5, unit: '%' },
       { t: 'select', k: 'lyricsScript', label: _t('Show the lyrics as'), sub: _t('Romanized only: Korean, Japanese and Chinese lines in Latin letters in place of the original, in the closed Sympony and on Home, worked out by the AI agent picked in Pony Assistant. Lines without a romanization stay as they are; Under each line then adds only the translation.'), options: [['original', _t('Original')], ['romanized', _t('Romanized only')]] },
-      { t: 'select', k: 'lyricsExtra', label: _t('Under each line'), sub: _t('Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this Mac.'), options: [['off', _t('Nothing')], ['romanized', _t('Romanization')], ['translated', _t('Translation')], ['both', _t('Romanization and translation')]] },
+      { t: 'select', k: 'lyricsExtra', label: _t('Under each line'), sub: MAC_SYS() ? _t('Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this Mac.')
+        : _t('Korean, Japanese and Chinese lyrics in Latin letters, the lyrics translated, or both. Shown in the player on Home and under the line in the closed Sympony. Both go through the AI agent picked in Pony Assistant: each song is sent once (lyrics already in Latin letters aren’t) and the result is kept on this PC.'), options: [['off', _t('Nothing')], ['romanized', _t('Romanization')], ['translated', _t('Translation')], ['both', _t('Romanization and translation')]] },
       { t: 'select', k: 'lyricsTranslateTo', label: _t('Translate lyrics into'), sub: _t('For Translation in Under each line'), options: () => [...new Set([S.lyricsTranslateTo, 'English', 'Indonesian', 'Javanese', 'Sundanese', 'Malay', 'Arabic', 'Chinese', 'Japanese', 'Korean', 'Thai', 'Vietnamese', 'Filipino', 'Hindi', 'French', 'German', 'Spanish', 'Portuguese', 'Italian', 'Dutch', 'Russian', 'Turkish'].filter(Boolean))].map((l) => [l, LYRICS_LANGS[l] || l]) },
     ],
   },
@@ -734,7 +736,8 @@ const SECTIONS = [
     { t: 'h2', text: 'Claude Code' },
     { t: 'custom', render: renderClaudeHooks },
     { t: 'h2', text: 'Paseo' },
-    { t: 'toggle', k: 'paseoEnabled', label: _t('Show Paseo’s permission requests'), sub: _t('The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this Mac every 2 seconds, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.') },
+    { t: 'toggle', k: 'paseoEnabled', label: _t('Show Paseo’s permission requests'), sub: MAC_SYS() ? _t('The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this Mac every 2 seconds, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.')
+      : _t('The agents you run in Paseo (Claude Code, Antigravity, Codex…): Sympony asks Paseo’s app on this PC every second, with the command or the question in full. Allow, Deny and your answers go back to Paseo; a plan opens Paseo.') },
     { t: 'custom', render: renderPaseo },
   ] },
   { id: 'github', icon: 'github', color: '#24292f', title: 'GitHub', render: renderGithub },
@@ -1984,7 +1987,7 @@ async function renderAi(el, refresh = false) {
   let body = $('.ai-body', el);
   if (!body) { el.insertAdjacentHTML('beforeend', '<div class="ai-body"></div>'); body = $('.ai-body', el); }
   if (!aiAgents || refresh) {
-    body.innerHTML = `<p class="lead">${_t('Looking for AI agents on this Mac…')}</p>`;
+    body.innerHTML = `<p class="lead">${MAC ? _t('Looking for AI agents on this Mac…') : _t('Looking for AI agents on this PC…')}</p>`;
     aiAgents = await api.svc('ai', 'agents', !!refresh).catch(() => []);
     if (renderAi.el !== el || !el.isConnected) return;
   }
@@ -2016,8 +2019,8 @@ async function renderAi(el, refresh = false) {
   const opts = (list, cur, first) => (first ? `<option value="" ${!cur ? 'selected' : ''}>${first}</option>` : '')
     + list.map((a) => `<option value="${esc(a.id)}" ${a.id === cur ? 'selected' : ''}>${esc(a.name)}${a.signedIn ? '' : ` (${_t('not signed in')})`}</option>`).join('');
   const models = S.agentModels || {};
-  body.innerHTML = `<p class="lead">${_t('Pony and Translate answer through an AI agent already on this Mac, with your own sign-in and plan: no API keys. Pick one below.')}</p>
-    <div class="ag-head"><span class="hint">${ready.length ? _t('{n} ready on this Mac', { n: ready.length }) : _t('None ready yet: install one and sign in')}</span>
+  body.innerHTML = `<p class="lead">${MAC ? _t('Pony and Translate answer through an AI agent already on this Mac, with your own sign-in and plan: no API keys. Pick one below.') : _t('Pony and Translate answer through an AI agent already on this PC, with your own sign-in and plan: no API keys. Pick one below.')}</p>
+    <div class="ag-head"><span class="hint">${ready.length ? (MAC ? _t('{n} ready on this Mac', { n: ready.length }) : _t('{n} ready on this PC', { n: ready.length })) : _t('None ready yet: install one and sign in')}</span>
       <button class="btn" id="agRefresh">${fa('arrows-rotate')} ${_t('Refresh')}</button></div>
     <div class="ag-grid">${aiAgents.map(card).join('')}</div>
     ${chat && help(chat) ? `<p class="hint">${fa('circle-info')} ${help(chat)}</p>` : ''}
@@ -2026,12 +2029,12 @@ async function renderAi(el, refresh = false) {
       <label class="row"><span class="lbl">${_t('Translate uses')}<small>${_t('Also the lyrics’ romanization and translation')}</small></span><select id="agTr">${opts(aiAgents.filter(usable), trId, _t('Same as Pony'))}</select></label>
       ${chat ? `<label class="row"><span class="lbl">${_t('Model for {name}', { name: esc(chat.name) })}<small>${_t('Empty: the agent’s own default. Any model name it knows (e.g. opus, gpt-5, gemini-3-pro).')}</small></span><input type="text" id="agModel" class="short" value="${esc(models[chat.id] || '')}" placeholder="${_t('default')}"></label>` : ''}
       <label class="row"><span class="lbl">${_t('Let Pony search the web')}<small>${_t('With Claude Code, its own web search; the other agents search when they see fit.')}</small></span><input type="checkbox" id="chWeb" ${S.chatWebSearch ? 'checked' : ''}></label>
-      <label class="row"><span class="lbl">${_t('Share my day with Pony')}<small>${_t('The next 7 days of your calendar, open todos, weather, prayer times, Pomodoro and the stopwatch, today’s water, your launcher apps, how your Mac is doing and your sound and screen settings go with each message, so you can ask “what’s on today?”. They go to the agent you picked.')}</small></span><input type="checkbox" id="chCtx" ${S.chatContext !== false ? 'checked' : ''}></label>
+      <label class="row"><span class="lbl">${_t('Share my day with Pony')}<small>${MAC ? _t('The next 7 days of your calendar, open todos, weather, prayer times, Pomodoro and the stopwatch, today’s water, your launcher apps, how your Mac is doing and your sound and screen settings go with each message, so you can ask “what’s on today?”. They go to the agent you picked.') : _t('The next 7 days of your calendar, open todos, weather, prayer times, Pomodoro and the stopwatch, today’s water, your launcher apps, how your PC is doing and your sound and screen settings go with each message, so you can ask “what’s on today?”. They go to the agent you picked.')}</small></span><input type="checkbox" id="chCtx" ${S.chatContext !== false ? 'checked' : ''}></label>
     </div>
     <h2>${_t('Scheduled briefs')}</h2>
     <div class="group" id="briefs"></div>
-    <p class="hint">${_t('On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the Mac was asleep, the brief comes when it wakes, up to an hour late.')}</p>
-    <p class="hint">${fa('lock')} ${_t('Your messages go to the agent you pick and, through it, to its company under your account. Sympony starts it in an empty folder in its read-only or plan mode, without your MCP servers, plugins or extensions, and keeps your chats on this Mac only. The agent may still read files on this Mac.')}</p>`;
+    <p class="hint">${MAC ? _t('On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the Mac was asleep, the brief comes when it wakes, up to an hour late.') : _t('On the days and at the time you pick, Sympony asks Pony your message by itself and opens Pony with the answer. If the PC was asleep, the brief comes when it wakes, up to an hour late.')}</p>
+    <p class="hint">${fa('lock')} ${MAC ? _t('Your messages go to the agent you pick and, through it, to its company under your account. Sympony starts it in an empty folder in its read-only or plan mode, without your MCP servers, plugins or extensions, and keeps your chats on this Mac only. The agent may still read files on this Mac.') : _t('Your messages go to the agent you pick and, through it, to its company under your account. Sympony starts it in an empty folder in its read-only or plan mode, without your MCP servers, plugins or extensions, and keeps your chats on this PC only. The agent may still read files on this PC.')}</p>`;
   $$('[data-ag]', el).forEach((b) => {
     b.onclick = () => {
       const a = aiAgents.find((x) => x.id === b.dataset.ag);
