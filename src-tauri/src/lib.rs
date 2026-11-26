@@ -7,6 +7,8 @@ mod calendar;
 mod clipboard;
 mod colorpick;
 mod custom_modules;
+#[cfg(feature = "dev-drive")]
+mod devdrive;
 mod background;
 mod backup;
 mod commands;
@@ -77,6 +79,12 @@ pub fn mcp_bridge() {
 /// `sympony --hook <agent> <event>` (main.rs).
 pub fn hook_bridge(agent: &str, event: &str) {
     mcp::hook(agent, event);
+}
+
+/// `sympony --dev-eval <window> <script | @file>` (main.rs; test builds only): the exit code.
+#[cfg(feature = "dev-drive")]
+pub fn dev_eval(window: &str, script: &str) -> i32 {
+    devdrive::client(window, script)
 }
 
 pub fn run() {
@@ -189,6 +197,8 @@ pub fn run() {
             everyday::start(app.handle());
             calendar::start(app.handle());
             todosync::start(app.handle());
+            #[cfg(feature = "dev-drive")]
+            devdrive::start(app.handle());
             mcp::start(app.handle());
             hooks::start(app.handle());
             hooks::paseo_start(app.handle());

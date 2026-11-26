@@ -12,6 +12,7 @@ pub mod clipboard;
 pub mod colorpick;
 pub mod codemode;
 pub mod custom_modules;
+pub mod devdrive;
 pub mod exec;
 pub mod eyes;
 pub mod feed;

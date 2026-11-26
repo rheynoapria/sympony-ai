@@ -36,6 +36,19 @@ bun run --cwd settings-ui build
 bun test ./frontend/tests
 ```
 
+### Live checks in a test build (Windows)
+
+To drive the running app from a script, build it with the `dev-drive` feature (never the shipped app) and run it on its own data folder:
+
+```bash
+cargo build --release -p sympony --features dev-drive
+export SYMPONY_DATA_DIR="$TEMP/sympony-check"
+target/release/sympony.exe &
+target/release/sympony.exe --dev-eval notch.html "N.api.svc('lang', 'state')"
+```
+
+`--dev-eval <window> <script | @file>` runs the script in the window with that label or page (as the DevTools protocol's `Runtime.evaluate`, promises awaited) and prints its value as JSON, or `{"error": …}` with exit code 1. Don't start WebView2 with `--remote-debugging-port` for this: Microsoft Defender's behaviour monitoring ends the app (#73).
+
 ## Public Roadmap & AI Agent Workflow
 
 All planned features, active work, and release milestones are tracked transparently on the **[Sympony Roadmap](https://github.com/users/rheynoapria/projects/1)** (linked in the repository's **Projects** tab).

@@ -32,3 +32,9 @@ base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 uds_windows = "1.2"
+# (only with dev-drive: the version wry uses)
+webview2-com = { version = "0.39", optional = true }
+
+[features]
+# Test builds only, never the shipped app: a live check runs a script in a window over agent.sock (src/devdrive.rs)
+dev-drive = ["dep:webview2-com"]

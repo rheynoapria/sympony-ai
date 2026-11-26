@@ -397,7 +397,14 @@ pub fn start(app: &AppHandle) {
                 }
                 // (an agent's hook waits here for the card's answer; the rest are tool calls)
                 let out = serde_json::from_str::<Value>(&line)
-                    .map(|req| crate::hooks::route(&app, &req, &stream).unwrap_or_else(|| serve(&app, req)))
+                    .map(|req| {
+                        // (a test build's live check: a script to run in a window, devdrive.rs)
+                        #[cfg(feature = "dev-drive")]
+                        if let Some(out) = crate::devdrive::route(&app, &req) {
+                            return out;
+                        }
+                        crate::hooks::route(&app, &req, &stream).unwrap_or_else(|| serve(&app, req))
+                    })
                     .unwrap_or_else(|_| json!({"ok": false, "text": "bad request"}));
                 let mut s = &stream;
                 let _ = writeln!(s, "{out}");

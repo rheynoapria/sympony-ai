@@ -4699,6 +4699,7 @@ dependencies = [
  "uds_windows",
  "url",
  "voice",
+ "webview2-com",
 ]
 
 [[package]]

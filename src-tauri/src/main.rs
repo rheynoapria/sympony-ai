@@ -21,5 +21,11 @@ fn main() {
         sympony_lib::mcp_bridge();
         return;
     }
+    // (a test build's live check: a script run in one of the running app's windows, its value printed)
+    #[cfg(feature = "dev-drive")]
+    if let Some(i) = args.iter().position(|a| a == "--dev-eval") {
+        let arg = |n: usize| args.get(i + n).map(String::as_str).unwrap_or("");
+        std::process::exit(sympony_lib::dev_eval(arg(1), arg(2)));
+    }
     sympony_lib::run();
 }
