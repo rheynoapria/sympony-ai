@@ -90,12 +90,16 @@ pub unsafe fn set_window_level(handle: *mut c_void, level: isize, lower: Option<
 /// Nothing is dereferenced.
 pub unsafe fn set_window_shadow(_handle: *mut c_void, _shadow: bool) {}
 
-/// Not yet on Windows: a WebView2 window's transparency comes from composition, and making it layered to fade it
-/// breaks that. The onboarding uses it to step aside; that waits for the onboarding's own Windows work.
+/// Hides the window at once (`alpha` 0) or shows it again (anything more), as macOS's alpha does for the onboarding
+/// stepping aside (its page fades itself first, with CSS). Windows has no in-between here: a WebView2 window's
+/// see-through look comes from composition, and the layered window an alpha needs breaks it. DWM cloaks it instead
+/// (as a virtual desktop hides its windows), which leaves the composition as it is; a cloaked window takes no clicks.
 ///
 /// # Safety
-/// Nothing is dereferenced.
-pub unsafe fn set_window_alpha(_handle: *mut c_void, _alpha: f64) {}
+/// `handle` must be a live HWND of this process. Null is ignored.
+pub unsafe fn set_window_alpha(handle: *mut c_void, alpha: f64) {
+    unsafe { set_cloaked(handle, alpha <= 0.0) };
+}
 
 /// Lets clicks pass through to what's under the window (an overlay that only shows).
 ///
@@ -273,6 +277,27 @@ pub unsafe fn reserve_top(handle: *mut c_void, height: f64) {
 mod tests {
     use super::state_of;
     use windows_sys::Win32::Foundation::RECT;
+
+    #[test]
+    fn alpha_0_cloaks_a_window_and_more_shows_it_again() {
+        use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, WS_POPUP};
+        // (a window of the test's own that's never shown)
+        let h = unsafe { CreateWindowExW(0, windows_sys::core::w!("STATIC"), windows_sys::core::w!(""), WS_POPUP, 0, 0, 10, 10, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null()) };
+        assert!(!h.is_null());
+        let cloaked = || {
+            let mut v = 0u32;
+            // SAFETY: a 4-byte flags value for the test's own window
+            unsafe { DwmGetWindowAttribute(h, DWMWA_CLOAKED as u32, (&raw mut v).cast(), 4) };
+            v
+        };
+        unsafe { super::set_window_alpha(h.cast(), 0.0) };
+        assert_ne!(cloaked(), 0, "cloaked at 0");
+        unsafe { super::set_window_alpha(h.cast(), 1.0) };
+        assert_eq!(cloaked(), 0, "shown again at 1");
+        unsafe { super::set_window_alpha(std::ptr::null_mut(), 0.0) }; // (null: nothing)
+        unsafe { DestroyWindow(h) };
+    }
 
     const DISPLAY: RECT = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
 
