@@ -115,3 +115,16 @@ impl Hover {
         self.inside
     }
 }
+
+/// Keep windows below Sympony's strip while the album art shows behind the lyrics: the hover message's `strip`
+/// (`{l: [r, g, b], r: [r, g, b], x}`: the art's colours at the notch's two ends, and the notch's middle in the window)
+/// as (left 0xRRGGBB, right 0xRRGGBB, the middle as a screen pixel), for a notch window at `win_x` points on a display
+/// of `scale`. None without one.
+pub fn strip_art(strip: &Value, win_x: f64, scale: f64) -> Option<(u32, u32, i32)> {
+    let rgb = |v: &Value| -> Option<u32> {
+        let c = |i: usize| v.get(i)?.as_f64().map(|x| x.clamp(0.0, 255.0).round() as u32);
+        Some((c(0)? << 16) | (c(1)? << 8) | c(2)?)
+    };
+    let x = strip["x"].as_f64()?;
+    Some((rgb(&strip["l"])?, rgb(&strip["r"])?, ((win_x + x) * scale).round() as i32))
+}

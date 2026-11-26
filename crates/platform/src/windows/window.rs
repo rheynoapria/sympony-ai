@@ -273,6 +273,19 @@ pub unsafe fn reserve_top(handle: *mut c_void, height: f64) {
     }
 }
 
+/// How that strip looks: `frost` 0 (clear) to 100 (most frosted: `reserveBlur`), or the colour of the app just below
+/// it while that's one colour (`match_app`: `reserveMatch`). See `appbar.rs`.
+pub fn reserve_look(frost: f64, match_app: bool) {
+    super::appbar::set_look(frost.clamp(0.0, 100.0).round() as u8, match_app);
+}
+
+/// While the album art shows behind the lyrics inside the notch: its colours at the notch's left and right ends
+/// (0xRRGGBB) and where the notch's middle is (a screen pixel), for the strip to be painted like them, whatever its
+/// look; None: its own look again.
+pub fn reserve_art(art: Option<(u32, u32, i32)>) {
+    super::appbar::set_art(art);
+}
+
 #[cfg(test)]
 mod tests {
     use super::state_of;

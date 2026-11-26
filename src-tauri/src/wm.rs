@@ -82,6 +82,8 @@ pub fn start(app: &AppHandle) {
             // (the strip: only under a notch on the top edge, and not while it auto-hides)
             let reserve = s["reserveTop"] == true && s["autoHide"] != true && s["shellForm"].as_str().unwrap_or("notch") == "notch";
             let height = s["notchHeight"].as_f64().unwrap_or(32.0) + s["notchTopGap"].as_f64().unwrap_or(0.0);
+            // (how it looks: frosted over the desktop, or the colour of the app below it)
+            platform::os::window::reserve_look(s["reserveBlur"].as_f64().unwrap_or(60.0), s["reserveMatch"] == true);
             // SAFETY: as above
             unsafe { platform::os::window::reserve_top(handle, if reserve { height } else { 0.0 }) };
             let hide = front == "full" && s["hideInFullscreen"] != false && s["shellForm"] != "drawer";

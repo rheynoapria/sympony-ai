@@ -143,3 +143,9 @@ pub unsafe fn set_cloaked(_ns_window: *mut std::ffi::c_void, _cloaked: bool) {}
 /// # Safety
 /// Nothing is dereferenced.
 pub unsafe fn reserve_top(_ns_window: *mut std::ffi::c_void, _height: f64) {}
+
+/// How Keep windows below Sympony's strip looks (Windows): no strip on a Mac.
+pub fn reserve_look(_frost: f64, _match_app: bool) {}
+
+/// The album art's colours for that strip (Windows): no strip on a Mac.
+pub fn reserve_art(_art: Option<(u32, u32, i32)>) {}

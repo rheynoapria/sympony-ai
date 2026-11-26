@@ -12,6 +12,11 @@ use tauri::{AppHandle, Emitter, Manager};
 pub struct HoverState(pub Mutex<Hover>);
 
 pub fn set_area(app: &AppHandle, r: &serde_json::Value) {
+    // (Keep windows below Sympony: the strip like the album art while it shows behind the lyrics, appbar.rs)
+    let win_x = app.state::<Notch>().win.lock().unwrap().map(|w| w.x);
+    let scale = app.get_webview_window(LABEL).and_then(|w| w.scale_factor().ok());
+    let art = win_x.zip(scale).and_then(|(x, s)| services::hit::strip_art(&r["strip"], x, s));
+    platform::os::window::reserve_art(art);
     if let Some(msg) = HitMsg::parse(r) {
         let fresh = {
             let st = app.state::<HoverState>();

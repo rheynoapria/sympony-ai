@@ -103,3 +103,15 @@ fn peek_hit_makes_window_clickable_without_triggering_notch_hover() {
     assert_eq!(h.update_clickable((10.0, 200.0)), Some(false));
     assert_eq!(h.update_peek((10.0, 200.0)), Some(false));
 }
+
+#[test]
+fn the_strip_takes_the_art_s_two_colours_split_at_the_notch() {
+    use serde_json::json;
+    use services::hit::strip_art;
+    let strip = json!({ "l": [12, 34, 56], "r": [255.4, 300, -2], "x": 410 });
+    // (a notch window at 550 points on a 1.5x display: the middle at (550 + 410) * 1.5 pixels)
+    assert_eq!(strip_art(&strip, 550.0, 1.5), Some((0x0c2238, 0xffff00, 1440)));
+    assert_eq!(strip_art(&serde_json::Value::Null, 550.0, 1.5), None);
+    assert_eq!(strip_art(&json!({ "l": [1, 2], "r": [1, 2, 3], "x": 1 }), 0.0, 1.0), None);
+    assert_eq!(strip_art(&json!({ "l": [1, 2, 3], "r": [1, 2, 3] }), 0.0, 1.0), None);
+}
